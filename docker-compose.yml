@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - wireguard_configs:/etc/wireguard
+      - sqlite_data:/data
+    env_file:
+      - .env
+    depends_on:
+      - adguard
+
+  ui:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+  adguard:
+    image: adguard/adguardhome:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
+
+volumes:
+  wireguard_configs:
+  sqlite_data:
+  adguard_work:
+  adguard_conf:

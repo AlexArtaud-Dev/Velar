@@ -1,0 +1,9 @@
+[build]
+  cmd = "go build -o ./tmp/velar ./cmd/server"
+  bin = "tmp/velar"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", "vendor"]
+  delay = 1000
+
+[log]
+  time = false
