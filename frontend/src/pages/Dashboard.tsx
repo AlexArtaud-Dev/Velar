@@ -3,7 +3,6 @@ import { Network, Users, Activity, Globe } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { listInterfaces } from '@/api/interfaces'
-import { listClients } from '@/api/clients'
 import { getPublicIP } from '@/api/settings'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
@@ -18,7 +17,7 @@ interface BandwidthPoint {
 
 export default function Dashboard() {
   const { data: interfaces } = useQuery({ queryKey: ['interfaces'], queryFn: listInterfaces })
-  const { data: clients } = useQuery({ queryKey: ['clients'], queryFn: () => listClients() })
+  useQuery({ queryKey: ['clients'], queryFn: () => listClients() })
   const { data: ipData } = useQuery({ queryKey: ['public-ip'], queryFn: getPublicIP, refetchInterval: 60_000 })
   const { stats } = useWebSocket()
 
