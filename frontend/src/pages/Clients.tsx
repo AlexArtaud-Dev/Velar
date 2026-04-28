@@ -149,11 +149,13 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
         {isFetching ? (
           <div className="h-64 flex items-center justify-center text-muted-foreground">Loading…</div>
         ) : data?.qr_code ? (
-          <img
-            src={`data:image/png;base64,${data.qr_code}`}
-            alt="QR code"
-            className="mx-auto rounded-lg"
-          />
+          <div className="bg-white p-4 rounded-lg inline-block mx-auto">
+            <img
+              src={`data:image/png;base64,${data.qr_code}`}
+              alt="QR code"
+              className="block"
+            />
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>
