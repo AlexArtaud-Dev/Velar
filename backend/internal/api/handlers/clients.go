@@ -217,7 +217,7 @@ func (h *ClientHandler) GetQR(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		return
 	}
-	png, err := qrcode.Encode(conf, qrcode.High, 512)
+	png, err := qrcode.Encode(conf, qrcode.Low, 512)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "qr generation failed"})
 		return
