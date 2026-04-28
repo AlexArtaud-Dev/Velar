@@ -88,7 +88,7 @@ type PeerStatOut struct {
 }
 
 func (h *WSHub) collectStats() StatsPayload {
-	payload := StatsPayload{Timestamp: time.Now().Unix()}
+	payload := StatsPayload{Timestamp: time.Now().Unix(), Interfaces: []IfaceStats{}}
 
 	var ifaces []models.Interface
 	database.DB.Find(&ifaces)

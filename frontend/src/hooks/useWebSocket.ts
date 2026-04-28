@@ -44,7 +44,9 @@ export function useWebSocket() {
     ws.onerror = () => ws.close()
     ws.onmessage = (e) => {
       try {
-        setStats(JSON.parse(e.data))
+        const payload = JSON.parse(e.data) as StatsPayload
+        payload.interfaces = payload.interfaces ?? []
+        setStats(payload)
       } catch {
         // ignore malformed frames
       }
