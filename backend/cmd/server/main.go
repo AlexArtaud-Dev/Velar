@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/api"
@@ -43,6 +44,11 @@ func main() {
 	// Seed admin if none exists
 	seedAdmin()
 
+	// System setup (best effort — requires NET_ADMIN)
+	if !config.C.WGMock {
+		setupSystem()
+	}
+
 	// Services
 	var wg wgsvc.Service
 	if config.C.WGMock {
@@ -80,6 +86,25 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
+	}
+}
+
+func setupSystem() {
+	iface := wgsvc.DetectMainInterface()
+	slog.Info("system setup", "main_iface", iface)
+
+	if err := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1").Run(); err != nil {
+		slog.Warn("sysctl ip_forward", "err", err)
+	}
+	if err := exec.Command("sysctl", "-w", "net.ipv6.conf.all.forwarding=1").Run(); err != nil {
+		slog.Warn("sysctl ipv6_forward", "err", err)
+	}
+	// Ensure RELATED,ESTABLISHED forwarding (idempotent)
+	check := exec.Command("iptables", "-C", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT")
+	if check.Run() != nil {
+		if err := exec.Command("iptables", "-A", "FORWARD", "-m", "state", "--state", "RELATED,ESTABLISHED", "-j", "ACCEPT").Run(); err != nil {
+			slog.Warn("iptables RELATED,ESTABLISHED rule", "err", err)
+		}
 	}
 }
 

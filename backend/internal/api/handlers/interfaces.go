@@ -81,13 +81,14 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 	if dns == "" {
 		dns = "1.1.1.1"
 	}
+	mainIface := wgsvc.DetectMainInterface()
 	postUp := req.PostUp
 	if postUp == "" {
-		postUp = fmt.Sprintf("iptables -A FORWARD -i %%i -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE")
+		postUp = fmt.Sprintf("iptables -A FORWARD -i %%i -j ACCEPT; iptables -A FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -A POSTROUTING -o %s -j MASQUERADE", mainIface)
 	}
 	postDown := req.PostDown
 	if postDown == "" {
-		postDown = fmt.Sprintf("iptables -D FORWARD -i %%i -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE")
+		postDown = fmt.Sprintf("iptables -D FORWARD -i %%i -j ACCEPT; iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -o %s -j MASQUERADE", mainIface)
 	}
 
 	iface := models.Interface{

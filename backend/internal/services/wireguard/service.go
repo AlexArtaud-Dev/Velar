@@ -160,6 +160,20 @@ func NextIP(subnet string) (string, error) {
 	return ip.String(), nil
 }
 
+func DetectMainInterface() string {
+	out, err := exec.Command("ip", "route", "show", "default").Output()
+	if err != nil {
+		return "eth0"
+	}
+	parts := strings.Fields(string(out))
+	for i, p := range parts {
+		if p == "dev" && i+1 < len(parts) {
+			return parts[i+1]
+		}
+	}
+	return "eth0"
+}
+
 func runWG(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {
