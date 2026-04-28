@@ -29,7 +29,7 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'velar-auth',
-      partialize: (state) => ({ admin: state.admin, isAuthenticated: state.isAuthenticated }),
+      partialize: (state) => ({ admin: state.admin, isAuthenticated: state.isAuthenticated, accessToken: state.accessToken }),
     },
   ),
 )

@@ -47,9 +47,10 @@ export default function Dashboard() {
     prevStatsRef.current = totals
   }, [stats])
 
-  const totalPeers = stats?.interfaces.reduce((a, i) => a + (i.peers?.length ?? 0), 0) ?? 0
-  const connectedPeers = stats?.interfaces.reduce((a, i) => a + (i.peers?.filter((p) => p.connected).length ?? 0), 0) ?? 0
-  const upInterfaces = stats?.interfaces.filter((i) => i.up).length ?? 0
+  const ifaces = stats?.interfaces ?? []
+  const totalPeers = ifaces.reduce((a, i) => a + (i.peers?.length ?? 0), 0)
+  const connectedPeers = ifaces.reduce((a, i) => a + (i.peers?.filter((p) => p.connected).length ?? 0), 0)
+  const upInterfaces = ifaces.filter((i) => i.up).length
 
   return (
     <div className="p-6 space-y-6">
@@ -64,7 +65,7 @@ export default function Dashboard() {
         <StatCard
           icon={<Activity className="h-4 w-4" />}
           label="Total RX"
-          value={formatBytes(stats?.interfaces.flatMap((i) => i.peers ?? []).reduce((a, p) => a + p.bytes_rx, 0) ?? 0)}
+          value={formatBytes(ifaces.flatMap((i) => i.peers ?? []).reduce((a, p) => a + p.bytes_rx, 0))}
           sub="all time"
         />
         <StatCard icon={<Globe className="h-4 w-4" />} label="Public IP" value={ipData?.ip ?? '—'} sub="current" />
@@ -101,7 +102,7 @@ export default function Dashboard() {
       <Card>
         <CardHeader><CardTitle className="text-base">Interface status</CardTitle></CardHeader>
         <CardContent className="space-y-3">
-          {stats?.interfaces.map((iface) => (
+          {ifaces.map((iface) => (
             <div key={iface.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
               <div className="flex items-center gap-3">
                 <Badge variant={iface.up ? 'success' : 'destructive'}>{iface.up ? 'UP' : 'DOWN'}</Badge>
@@ -113,16 +114,16 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
-          {!stats?.interfaces?.length && <p className="text-sm text-muted-foreground">No interfaces found.</p>}
+          {!ifaces.length && <p className="text-sm text-muted-foreground">No interfaces found.</p>}
         </CardContent>
       </Card>
 
-      {stats?.interfaces.flatMap((i) => i.peers ?? []).some((p) => p.connected) && (
+      {ifaces.flatMap((i) => i.peers ?? []).some((p) => p.connected) && (
         <Card>
           <CardHeader><CardTitle className="text-base">Connected peers</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {stats.interfaces.flatMap((iface) =>
+              {ifaces.flatMap((iface) =>
                 (iface.peers ?? []).filter((p) => p.connected).map((p) => (
                   <div key={p.client_id} className="flex items-center justify-between text-sm py-1">
                     <div className="flex items-center gap-2">

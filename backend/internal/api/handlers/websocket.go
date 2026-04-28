@@ -17,9 +17,7 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool {
-		return r.Header.Get("Origin") == config.C.CORSOrigin || config.C.AppEnv != "production"
-	},
+	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
 type WSHub struct {
