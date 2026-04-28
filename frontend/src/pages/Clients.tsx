@@ -161,20 +161,46 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
 }
 
 function DownloadLinkButton({ clientId }: { clientId: number }) {
-  const [copied, setCopied] = useState(false)
+  const [url, setUrl] = useState<string | null>(null)
   const mut = useMutation({
     mutationFn: () => createDownloadLink(clientId),
-    onSuccess: (data) => {
-      const url = `${window.location.origin}${data.url}`
-      navigator.clipboard.writeText(url)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    },
+    onSuccess: (data) => setUrl(`${window.location.origin}${data.url}`),
   })
   return (
-    <Button variant="ghost" size="icon" title="Copy one-time download link" onClick={() => mut.mutate()}>
-      {copied ? <Download className="h-4 w-4 text-green-500" /> : <Link2 className="h-4 w-4" />}
-    </Button>
+    <>
+      <Button variant="ghost" size="icon" title="One-time download link" onClick={() => mut.mutate()}>
+        <Link2 className="h-4 w-4" />
+      </Button>
+      <Dialog open={!!url} onOpenChange={() => setUrl(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>One-time download link</DialogTitle>
+            <DialogDescription>Valid for 1 hour, single use. Share this link to allow config download without login.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={url ?? ''}
+                className="flex-1 rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono"
+              />
+              <Button size="sm" onClick={() => { navigator.clipboard?.writeText(url ?? ''); setUrl(null) }}>
+                Copy
+              </Button>
+            </div>
+            <a
+              href={url ?? '#'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="block text-xs text-primary underline break-all"
+              onClick={() => setTimeout(() => setUrl(null), 500)}
+            >
+              Click to download directly →
+            </a>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
