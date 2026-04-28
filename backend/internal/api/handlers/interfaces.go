@@ -107,7 +107,7 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 		return
 	}
 
-	if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, postUp, postDown); err != nil {
+	if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, postUp, postDown, nil); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "wg conf write failed: " + err.Error()})
 		return
 	}

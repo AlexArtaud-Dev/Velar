@@ -27,7 +27,7 @@ type PeerStat struct {
 }
 
 type Service interface {
-	EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string) error
+	EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string, peers []PeerEntry) error
 	BringUp(name string) error
 	BringDown(name string) error
 	DeleteInterface(name string) error
@@ -73,8 +73,8 @@ func (s *RealService) GeneratePSK() (string, error) {
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
-func (s *RealService) EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string) error {
-	conf := BuildServerConf(name, port, privateKey, subnet, postUp, postDown, nil)
+func (s *RealService) EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string, peers []PeerEntry) error {
+	conf := BuildServerConf(name, port, privateKey, subnet, postUp, postDown, peers)
 	path := fmt.Sprintf("%s/%s.conf", s.configDir, name)
 	if err := writeFile(path, conf); err != nil {
 		return fmt.Errorf("write conf: %w", err)
@@ -120,7 +120,7 @@ func (s *RealService) RemovePeer(ifaceName, pubKey string) error {
 }
 
 func (s *RealService) SyncConf(ifaceName, confPath string) error {
-	strip := exec.Command("wg-quick", "strip", ifaceName)
+	strip := exec.Command("wg-quick", "strip", confPath)
 	stripped, err := strip.Output()
 	if err != nil {
 		return fmt.Errorf("wg-quick strip: %w", err)
@@ -201,7 +201,7 @@ func (m *MockService) GeneratePSK() (string, error) {
 	svc := &RealService{}
 	return svc.GeneratePSK()
 }
-func (m *MockService) EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string) error {
+func (m *MockService) EnsureInterface(name string, port int, privateKey, subnet, postUp, postDown string, peers []PeerEntry) error {
 	slog.Info("[mock] EnsureInterface", "name", name)
 	return nil
 }

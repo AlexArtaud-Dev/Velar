@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/base64"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -269,6 +270,33 @@ func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client,
 }
 
 func (h *ClientHandler) syncConf(iface models.Interface) {
+	privKey, err := auth.Decrypt(iface.PrivateKey, config.C.AppSecret)
+	if err != nil {
+		slog.Error("syncConf decrypt iface key", "err", err)
+		return
+	}
+
+	var clients []models.Client
+	database.DB.Where("interface_id = ? AND enabled = true", iface.ID).Find(&clients)
+
+	peers := make([]wgsvc.PeerEntry, 0, len(clients))
+	for _, cl := range clients {
+		psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
+		peers = append(peers, wgsvc.PeerEntry{
+			Comment:    cl.Name,
+			PublicKey:  cl.PublicKey,
+			PSK:        psk,
+			AllowedIPs: cl.AssignedIP + "/32",
+		})
+	}
+
+	if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, peers); err != nil {
+		slog.Error("syncConf write", "err", err)
+		return
+	}
+
 	path := fmt.Sprintf("%s/%s.conf", config.C.WGConfigDir, iface.Name)
-	h.wg.SyncConf(iface.Name, path)
+	if err := h.wg.SyncConf(iface.Name, path); err != nil {
+		slog.Error("syncConf sync", "err", err)
+	}
 }
