@@ -141,7 +141,7 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
           <QrCode className="h-4 w-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xs text-center">
+      <DialogContent className="max-w-lg text-center">
         <DialogHeader>
           <DialogTitle>QR — {name}</DialogTitle>
           <DialogDescription>Scan with the WireGuard app</DialogDescription>
@@ -153,7 +153,7 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
             <img
               src={`data:image/png;base64,${data.qr_code}`}
               alt="QR code"
-              className="block"
+              className="block w-full"
             />
           </div>
         ) : null}
