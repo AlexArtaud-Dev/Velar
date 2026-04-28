@@ -14,6 +14,22 @@ import {
   listInterfaces, createInterface, deleteInterface, bringUp, bringDown,
   type CreateInterfacePayload,
 } from '@/api/interfaces'
+import { getAdguardStatus } from '@/api/settings'
+
+const DNS_PRESETS = [
+  { label: 'Cloudflare', value: '1.1.1.1' },
+  { label: 'Google', value: '8.8.8.8' },
+  { label: 'Quad9', value: '9.9.9.9' },
+]
+
+function serverIPFromSubnet(subnet: string): string {
+  try {
+    const base = subnet.split('/')[0]
+    const parts = base.split('.')
+    parts[3] = String(Number(parts[3]) + 1)
+    return parts.join('.')
+  } catch { return '' }
+}
 
 export default function Interfaces() {
   const navigate = useNavigate()
@@ -113,6 +129,16 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
   })
   const [error, setError] = useState('')
 
+  const { data: adguard } = useQuery({
+    queryKey: ['adguard-status'],
+    queryFn: getAdguardStatus,
+    enabled: open,
+    retry: false,
+  })
+
+  const adguardIP = serverIPFromSubnet(form.subnet ?? '10.0.0.0/24')
+  const adguardAvailable = adguard?.running === true
+
   const mutation = useMutation({
     mutationFn: createInterface,
     onSuccess: () => { setOpen(false); onCreated() },
@@ -125,6 +151,11 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: key === 'port' ? Number(e.target.value) : e.target.value }))
   }
+
+  const allPresets = [
+    ...(adguardAvailable ? [{ label: `AdGuard (${adguardIP})`, value: adguardIP }] : []),
+    ...DNS_PRESETS,
+  ]
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -143,7 +174,31 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
           <Field label="Name" id="name" value={form.name} onChange={set('name')} placeholder="wg0" />
           <Field label="Listen port" id="port" type="number" value={String(form.port)} onChange={set('port')} placeholder="51820" />
           <Field label="Subnet (CIDR)" id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
-          <Field label="DNS server" id="dns" value={form.dns_server ?? ''} onChange={set('dns_server')} placeholder="1.1.1.1" />
+          <div className="space-y-1.5">
+            <Label>DNS server</Label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {allPresets.map((p) => (
+                <button
+                  key={p.value}
+                  type="button"
+                  onClick={() => setForm((f) => ({ ...f, dns_server: p.value }))}
+                  className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                    form.dns_server === p.value
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted text-muted-foreground border-border hover:border-primary'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            <Input
+              id="dns"
+              value={form.dns_server ?? ''}
+              onChange={set('dns_server')}
+              placeholder="Custom DNS (e.g. 1.1.1.1)"
+            />
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
