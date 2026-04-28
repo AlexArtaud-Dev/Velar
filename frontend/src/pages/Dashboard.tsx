@@ -8,6 +8,7 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { useState, useEffect, useRef } from 'react'
+import React from 'react'
 
 interface BandwidthPoint {
   time: string
@@ -17,7 +18,6 @@ interface BandwidthPoint {
 
 export default function Dashboard() {
   const { data: interfaces } = useQuery({ queryKey: ['interfaces'], queryFn: listInterfaces })
-  useQuery({ queryKey: ['clients'], queryFn: () => listClients() })
   const { data: ipData } = useQuery({ queryKey: ['public-ip'], queryFn: getPublicIP, refetchInterval: 60_000 })
   const { stats } = useWebSocket()
 
@@ -36,27 +36,19 @@ export default function Dashboard() {
       },
       { rx: 0, tx: 0 },
     )
-
     if (prevStatsRef.current) {
       const deltaRx = Math.max(0, totals.rx - prevStatsRef.current.rx)
       const deltaTx = Math.max(0, totals.tx - prevStatsRef.current.tx)
       setBandwidth((prev) => [
         ...prev.slice(-29),
-        {
-          time: new Date().toLocaleTimeString(),
-          rx: Math.round(deltaRx / 5),
-          tx: Math.round(deltaTx / 5),
-        },
+        { time: new Date().toLocaleTimeString(), rx: Math.round(deltaRx / 5), tx: Math.round(deltaTx / 5) },
       ])
     }
     prevStatsRef.current = totals
   }, [stats])
 
   const totalPeers = stats?.interfaces.reduce((a, i) => a + (i.peers?.length ?? 0), 0) ?? 0
-  const connectedPeers = stats?.interfaces.reduce(
-    (a, i) => a + (i.peers?.filter((p) => p.connected).length ?? 0),
-    0,
-  ) ?? 0
+  const connectedPeers = stats?.interfaces.reduce((a, i) => a + (i.peers?.filter((p) => p.connected).length ?? 0), 0) ?? 0
   const upInterfaces = stats?.interfaces.filter((i) => i.up).length ?? 0
 
   return (
@@ -66,37 +58,18 @@ export default function Dashboard() {
         <p className="text-muted-foreground text-sm mt-1">Overview of your WireGuard server</p>
       </div>
 
-      {/* Stats cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard
-          icon={<Network className="h-4 w-4" />}
-          label="Interfaces"
-          value={`${upInterfaces} / ${interfaces?.length ?? 0}`}
-          sub="active"
-        />
-        <StatCard
-          icon={<Users className="h-4 w-4" />}
-          label="Clients"
-          value={`${connectedPeers} / ${totalPeers}`}
-          sub="connected"
-        />
+        <StatCard icon={<Network className="h-4 w-4" />} label="Interfaces" value={`${upInterfaces} / ${interfaces?.length ?? 0}`} sub="active" />
+        <StatCard icon={<Users className="h-4 w-4" />} label="Clients" value={`${connectedPeers} / ${totalPeers}`} sub="connected" />
         <StatCard
           icon={<Activity className="h-4 w-4" />}
           label="Total RX"
-          value={formatBytes(
-            stats?.interfaces.flatMap((i) => i.peers ?? []).reduce((a, p) => a + p.bytes_rx, 0) ?? 0,
-          )}
+          value={formatBytes(stats?.interfaces.flatMap((i) => i.peers ?? []).reduce((a, p) => a + p.bytes_rx, 0) ?? 0)}
           sub="all time"
         />
-        <StatCard
-          icon={<Globe className="h-4 w-4" />}
-          label="Public IP"
-          value={ipData?.ip ?? '—'}
-          sub="current"
-        />
+        <StatCard icon={<Globe className="h-4 w-4" />} label="Public IP" value={ipData?.ip ?? '—'} sub="current" />
       </div>
 
-      {/* Bandwidth chart */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Bandwidth (bytes/s)</CardTitle>
@@ -116,8 +89,8 @@ export default function Dashboard() {
                 </linearGradient>
               </defs>
               <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v)} width={70} />
-              <Tooltip formatter={(v: number) => formatBytes(v)} />
+              <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v as number)} width={70} />
+              <Tooltip formatter={(v) => formatBytes(v as number)} />
               <Area type="monotone" dataKey="rx" stroke="#3b82f6" fill="url(#rx)" name="RX" />
               <Area type="monotone" dataKey="tx" stroke="#10b981" fill="url(#tx)" name="TX" />
             </AreaChart>
@@ -125,11 +98,8 @@ export default function Dashboard() {
         </CardContent>
       </Card>
 
-      {/* Interface status */}
       <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Interface status</CardTitle>
-        </CardHeader>
+        <CardHeader><CardTitle className="text-base">Interface status</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {stats?.interfaces.map((iface) => (
             <div key={iface.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
@@ -143,37 +113,30 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
-          {!stats?.interfaces?.length && (
-            <p className="text-sm text-muted-foreground">No interfaces found.</p>
-          )}
+          {!stats?.interfaces?.length && <p className="text-sm text-muted-foreground">No interfaces found.</p>}
         </CardContent>
       </Card>
 
-      {/* Connected peers */}
       {stats?.interfaces.flatMap((i) => i.peers ?? []).some((p) => p.connected) && (
         <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Connected peers</CardTitle>
-          </CardHeader>
+          <CardHeader><CardTitle className="text-base">Connected peers</CardTitle></CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {stats?.interfaces.flatMap((iface) =>
-                (iface.peers ?? [])
-                  .filter((p) => p.connected)
-                  .map((p) => (
-                    <div key={p.client_id} className="flex items-center justify-between text-sm py-1">
-                      <div className="flex items-center gap-2">
-                        <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
-                        <span className="font-medium">{p.name}</span>
-                        <span className="text-muted-foreground font-mono text-xs">{iface.name}</span>
-                      </div>
-                      <div className="flex items-center gap-4 text-muted-foreground text-xs">
-                        <span>↓ {formatBytes(p.bytes_rx)}</span>
-                        <span>↑ {formatBytes(p.bytes_tx)}</span>
-                        <span>{timeAgo(p.last_handshake)}</span>
-                      </div>
+              {stats.interfaces.flatMap((iface) =>
+                (iface.peers ?? []).filter((p) => p.connected).map((p) => (
+                  <div key={p.client_id} className="flex items-center justify-between text-sm py-1">
+                    <div className="flex items-center gap-2">
+                      <span className="h-2 w-2 rounded-full bg-green-500 inline-block" />
+                      <span className="font-medium">{p.name}</span>
+                      <span className="text-muted-foreground font-mono text-xs">{iface.name}</span>
                     </div>
-                  )),
+                    <div className="flex items-center gap-4 text-muted-foreground text-xs">
+                      <span>↓ {formatBytes(p.bytes_rx)}</span>
+                      <span>↑ {formatBytes(p.bytes_tx)}</span>
+                      <span>{timeAgo(p.last_handshake)}</span>
+                    </div>
+                  </div>
+                )),
               )}
             </div>
           </CardContent>

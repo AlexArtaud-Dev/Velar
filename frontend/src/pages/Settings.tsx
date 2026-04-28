@@ -56,7 +56,7 @@ export default function Settings() {
             </Badge>
             {adguard?.version && <span className="text-sm text-muted-foreground">v{adguard.version}</span>}
           </div>
-          {adguard?.dns_addresses?.length > 0 && (
+          {(adguard?.dns_addresses?.length ?? 0) > 0 && (
             <p className="text-xs text-muted-foreground font-mono">DNS: {adguard.dns_addresses.join(', ')}:{adguard.dns_port}</p>
           )}
         </CardContent>
