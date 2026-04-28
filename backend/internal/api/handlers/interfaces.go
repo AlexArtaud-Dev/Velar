@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -174,9 +175,9 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 		return
 	}
 
+	// Best-effort — don't block DB cleanup on WG errors
 	if err := h.wg.DeleteInterface(iface.Name); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
+		slog.Warn("delete interface wg", "name", iface.Name, "err", err)
 	}
 
 	database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{})

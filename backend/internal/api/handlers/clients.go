@@ -168,7 +168,10 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	h.wg.RemovePeer(client.Interface.Name, client.PublicKey)
+	// Best-effort — don't block DB cleanup on WG errors
+	if err := h.wg.RemovePeer(client.Interface.Name, client.PublicKey); err != nil {
+		slog.Warn("remove peer wg", "iface", client.Interface.Name, "err", err)
+	}
 	h.syncConf(client.Interface)
 	database.DB.Delete(&client)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
