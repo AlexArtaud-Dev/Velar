@@ -90,7 +90,10 @@ export default function Interfaces() {
                     </Button>
                   )}
                   <CheckButton iface={iface} />
-                  <EditInterfaceDialog iface={iface} onUpdated={() => qc.invalidateQueries({ queryKey: ['interfaces'] })} />
+                  <EditInterfaceDialog iface={iface} onUpdated={() => {
+                    qc.invalidateQueries({ queryKey: ['interfaces'] })
+                    qc.invalidateQueries({ queryKey: ['clients'] })
+                  }} />
                   <Button
                     variant="outline"
                     size="icon"
