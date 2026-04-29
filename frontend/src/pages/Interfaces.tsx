@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,8 +11,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  listInterfaces, createInterface, deleteInterface, bringUp, bringDown,
-  type CreateInterfacePayload,
+  listInterfaces, createInterface, updateInterface, deleteInterface, bringUp, bringDown,
+  type CreateInterfacePayload, type UpdateInterfacePayload, type WGInterface,
 } from '@/api/interfaces'
 import { getAdguardStatus } from '@/api/settings'
 
@@ -89,6 +89,7 @@ export default function Interfaces() {
                       <Power className="h-4 w-4" />
                     </Button>
                   )}
+                  <EditInterfaceDialog iface={iface} onUpdated={() => qc.invalidateQueries({ queryKey: ['interfaces'] })} />
                   <Button
                     variant="outline"
                     size="icon"
@@ -173,7 +174,18 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
         <div className="space-y-4 py-2">
           <Field label="Name" id="name" value={form.name} onChange={set('name')} placeholder="wg0" />
           <Field label="Listen port" id="port" type="number" value={String(form.port)} onChange={set('port')} placeholder="51820" />
-          <Field label="Subnet (CIDR)" id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+          <div className="space-y-1.5">
+              <Label htmlFor="subnet">Subnet (CIDR)</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {SUBNET_PRESETS.map((s) => (
+                  <button key={s} type="button"
+                    onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}
+                  >{s}</button>
+                ))}
+              </div>
+              <Input id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+            </div>
           <div className="space-y-1.5">
             <Label>DNS server</Label>
             <div className="flex flex-wrap gap-1.5 mb-2">
@@ -209,6 +221,139 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+const SUBNET_PRESETS = [
+  '10.0.0.0/24',
+  '10.0.1.0/24',
+  '10.8.0.0/24',
+  '172.16.0.0/24',
+  '192.168.10.0/24',
+]
+
+function EditInterfaceDialog({ iface, onUpdated }: { iface: WGInterface; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<UpdateInterfacePayload>({})
+  const [error, setError] = useState('')
+  const { data: ifaces = [] } = useQuery({ queryKey: ['interfaces'], queryFn: listInterfaces })
+
+  function openDialog() {
+    setForm({
+      dns_server: iface.dns_server,
+      port: iface.port,
+      subnet: iface.subnet,
+      post_up: iface.post_up,
+      post_down: iface.post_down,
+    })
+    setError('')
+    setOpen(true)
+  }
+
+  const portConflict = form.port !== iface.port &&
+    ifaces.some((i) => i.id !== iface.id && i.port === form.port)
+
+  const mutation = useMutation({
+    mutationFn: () => updateInterface(iface.id, form),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  const allPresets = [
+    ...(form.subnet ? [{ label: `AdGuard (${serverIPFromSubnet(form.subnet)})`, value: serverIPFromSubnet(form.subnet) }] : []),
+    ...DNS_PRESETS,
+  ]
+
+  return (
+    <>
+      <Button variant="outline" size="icon" title="Edit" onClick={openDialog}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit {iface.name}</DialogTitle>
+            <DialogDescription>Changes to port, subnet or PostUp will restart the interface.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Listen port</Label>
+              <Input
+                type="number"
+                value={form.port ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))}
+              />
+              {portConflict && <p className="text-xs text-destructive">Port already used by another interface</p>}
+            </div>
+            <div className="space-y-1.5">
+              <Label>Subnet (CIDR)</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {SUBNET_PRESETS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                      form.subnet === s
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted text-muted-foreground border-border hover:border-primary'
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+              <Input
+                value={form.subnet ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, subnet: e.target.value }))}
+                placeholder="10.0.0.0/24"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>DNS server</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {allPresets.map((p) => (
+                  <button
+                    key={p.value}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, dns_server: p.value }))}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
+                      form.dns_server === p.value
+                        ? 'bg-primary text-primary-foreground border-primary'
+                        : 'bg-muted text-muted-foreground border-border hover:border-primary'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+              <Input
+                value={form.dns_server ?? ''}
+                onChange={(e) => setForm((f) => ({ ...f, dns_server: e.target.value }))}
+                placeholder="1.1.1.1"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>PostUp</Label>
+              <Input value={form.post_up ?? ''} onChange={(e) => setForm((f) => ({ ...f, post_up: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>PostDown</Label>
+              <Input value={form.post_down ?? ''} onChange={(e) => setForm((f) => ({ ...f, post_down: e.target.value }))} />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || portConflict}>
+              {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

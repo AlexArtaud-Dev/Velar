@@ -104,6 +104,14 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 		PostDown:      postDown,
 		Enabled:       true,
 	}
+	// Port conflict check
+	var portCount int64
+	database.DB.Model(&models.Interface{}).Where("port = ?", req.Port).Count(&portCount)
+	if portCount > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "port already in use by another interface"})
+		return
+	}
+
 	if err := database.DB.Create(&iface).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -143,27 +151,78 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 		DNSServer string `json:"dns_server"`
 		PostUp    string `json:"post_up"`
 		PostDown  string `json:"post_down"`
-		Enabled   *bool  `json:"enabled"`
+		Port      *int   `json:"port"`
+		Subnet    string `json:"subnet"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	// Port conflict check
+	if req.Port != nil && *req.Port != iface.Port {
+		var count int64
+		database.DB.Model(&models.Interface{}).Where("port = ? AND id != ?", *req.Port, iface.ID).Count(&count)
+		if count > 0 {
+			c.JSON(http.StatusConflict, gin.H{"error": "port already in use by another interface"})
+			return
+		}
+	}
+
+	needsRestart := false
 	updates := map[string]interface{}{}
-	if req.DNSServer != "" {
+	if req.DNSServer != "" && req.DNSServer != iface.DNSServer {
 		updates["dns_server"] = req.DNSServer
 	}
-	if req.PostUp != "" {
+	if req.PostUp != "" && req.PostUp != iface.PostUp {
 		updates["post_up"] = req.PostUp
+		needsRestart = true
 	}
-	if req.PostDown != "" {
+	if req.PostDown != "" && req.PostDown != iface.PostDown {
 		updates["post_down"] = req.PostDown
+		needsRestart = true
 	}
-	if req.Enabled != nil {
-		updates["enabled"] = *req.Enabled
+	if req.Port != nil && *req.Port != iface.Port {
+		updates["port"] = *req.Port
+		needsRestart = true
 	}
-	database.DB.Model(&iface).Updates(updates)
+	if req.Subnet != "" && req.Subnet != iface.Subnet {
+		updates["subnet"] = req.Subnet
+		needsRestart = true
+	}
+
+	if len(updates) > 0 {
+		database.DB.Model(&iface).Updates(updates)
+		database.DB.First(&iface, id)
+	}
+
+	if needsRestart {
+		privKey, err := auth.Decrypt(iface.PrivateKey, config.C.AppSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "decrypt failed"})
+			return
+		}
+		var clients []models.Client
+		database.DB.Where("interface_id = ? AND enabled = true", iface.ID).Find(&clients)
+		peers := make([]wgsvc.PeerEntry, 0, len(clients))
+		for _, cl := range clients {
+			psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
+			peers = append(peers, wgsvc.PeerEntry{
+				Comment: cl.Name, PublicKey: cl.PublicKey, PSK: psk,
+				AllowedIPs: cl.AssignedIP + "/32",
+			})
+		}
+		_ = h.wg.BringDown(iface.Name)
+		if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, peers); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "conf write failed: " + err.Error()})
+			return
+		}
+		if err := h.wg.BringUp(iface.Name); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "wg-quick up failed: " + err.Error()})
+			return
+		}
+	}
+
 	c.JSON(http.StatusOK, iface)
 }
 

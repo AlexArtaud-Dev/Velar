@@ -35,6 +35,17 @@ export const getInterface = (id: number) =>
 export const createInterface = (payload: CreateInterfacePayload) =>
   api.post<WGInterface>('/interfaces', payload).then((r) => r.data)
 
+export interface UpdateInterfacePayload {
+  dns_server?: string
+  post_up?: string
+  post_down?: string
+  port?: number
+  subnet?: string
+}
+
+export const updateInterface = (id: number, payload: UpdateInterfacePayload) =>
+  api.put<WGInterface>(`/interfaces/${id}`, payload).then((r) => r.data)
+
 export const deleteInterface = (id: number) =>
   api.delete(`/interfaces/${id}`)
 
