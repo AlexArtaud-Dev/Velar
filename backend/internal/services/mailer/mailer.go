@@ -1,6 +1,8 @@
 package mailer
 
 import (
+	"bytes"
+	"encoding/base64"
 	"fmt"
 	"log/slog"
 	"net/smtp"
@@ -9,46 +11,72 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 )
 
-// Enabled returns true when SMTP is fully configured.
-func Enabled() bool {
+// SMTPEnabled returns true when SMTP is configured (host + from address set).
+// Admin email is NOT required here — client notifications can work without it.
+func SMTPEnabled() bool {
 	c := config.C
-	return c.SMTPHost != "" && c.SMTPFrom != "" && c.AdminEmail != ""
+	return c.SMTPHost != "" && c.SMTPFrom != ""
 }
 
-// Send delivers a plain-text email to the admin. It is best-effort and never
-// blocks the caller — errors are logged but not returned.
+// Enabled returns true when full admin notifications are configured.
+func Enabled() bool {
+	return SMTPEnabled() && config.C.AdminEmail != ""
+}
+
+// Send delivers a plain-text email to the admin. Best-effort, non-blocking.
 func Send(subject, body string) {
 	if !Enabled() {
 		return
 	}
 	go func() {
-		if err := send(config.C.AdminEmail, subject, body); err != nil {
-			slog.Warn("mailer: send failed", "subject", subject, "err", err)
+		if err := sendPlain(config.C.AdminEmail, subject, body); err != nil {
+			slog.Warn("mailer: send to admin failed", "subject", subject, "err", err)
 		}
 	}()
 }
 
-// SendTo delivers a plain-text email to an arbitrary recipient.
+// SendTo delivers a plain-text email to any recipient. Best-effort, non-blocking.
+// Only requires SMTP_HOST and SMTP_FROM to be set (not ADMIN_EMAIL).
 func SendTo(to, subject, body string) {
-	if !Enabled() {
+	if !SMTPEnabled() || to == "" {
 		return
 	}
 	go func() {
-		if err := send(to, subject, body); err != nil {
+		if err := sendPlain(to, subject, body); err != nil {
 			slog.Warn("mailer: send failed", "to", to, "subject", subject, "err", err)
 		}
 	}()
 }
 
-func send(to, subject, body string) error {
-	c := config.C
-	addr := fmt.Sprintf("%s:%s", c.SMTPHost, c.SMTPPort)
-
-	var auth smtp.Auth
-	if c.SMTPUser != "" {
-		auth = smtp.PlainAuth("", c.SMTPUser, c.SMTPPass, c.SMTPHost)
+// SendWithAttachment sends a plain-text email with a single file attachment.
+// Used to deliver WireGuard .conf files to clients on creation.
+func SendWithAttachment(to, subject, body, attachmentName, attachmentContent string) {
+	if !SMTPEnabled() || to == "" {
+		return
 	}
+	go func() {
+		if err := sendAttachment(to, subject, body, attachmentName, attachmentContent); err != nil {
+			slog.Warn("mailer: send with attachment failed", "to", to, "subject", subject, "err", err)
+		}
+	}()
+}
 
+// ── internal ──────────────────────────────────────────────────────────────────
+
+func auth() smtp.Auth {
+	c := config.C
+	if c.SMTPUser == "" {
+		return nil
+	}
+	return smtp.PlainAuth("", c.SMTPUser, c.SMTPPass, c.SMTPHost)
+}
+
+func addr() string {
+	return fmt.Sprintf("%s:%s", config.C.SMTPHost, config.C.SMTPPort)
+}
+
+func sendPlain(to, subject, body string) error {
+	c := config.C
 	msg := strings.Join([]string{
 		"From: Velar <" + c.SMTPFrom + ">",
 		"To: " + to,
@@ -58,6 +86,43 @@ func send(to, subject, body string) error {
 		"",
 		body,
 	}, "\r\n")
+	return smtp.SendMail(addr(), auth(), c.SMTPFrom, []string{to}, []byte(msg))
+}
 
-	return smtp.SendMail(addr, auth, c.SMTPFrom, []string{to}, []byte(msg))
+func sendAttachment(to, subject, body, filename, content string) error {
+	c := config.C
+	boundary := "velar-boundary-001"
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+
+	var buf bytes.Buffer
+	buf.WriteString("From: Velar <" + c.SMTPFrom + ">\r\n")
+	buf.WriteString("To: " + to + "\r\n")
+	buf.WriteString("Subject: [Velar] " + subject + "\r\n")
+	buf.WriteString("MIME-Version: 1.0\r\n")
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/mixed; boundary=\"%s\"\r\n", boundary))
+	buf.WriteString("\r\n")
+
+	// Text part
+	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	buf.WriteString(body + "\r\n")
+
+	// Attachment part
+	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	buf.WriteString(fmt.Sprintf("Content-Type: application/octet-stream; name=\"%s\"\r\n", filename))
+	buf.WriteString("Content-Transfer-Encoding: base64\r\n")
+	buf.WriteString(fmt.Sprintf("Content-Disposition: attachment; filename=\"%s\"\r\n\r\n", filename))
+
+	// Split base64 into 76-char lines (RFC 2045)
+	for i := 0; i < len(encoded); i += 76 {
+		end := i + 76
+		if end > len(encoded) {
+			end = len(encoded)
+		}
+		buf.WriteString(encoded[i:end] + "\r\n")
+	}
+
+	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+
+	return smtp.SendMail(addr(), auth(), c.SMTPFrom, []string{to}, buf.Bytes())
 }

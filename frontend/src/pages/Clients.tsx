@@ -114,6 +114,7 @@ export default function Clients() {
                   <span>↓ {formatBytes(peer?.bytes_rx ?? client.bytes_rx)}</span>
                   <span>↑ {formatBytes(peer?.bytes_tx ?? client.bytes_tx)}</span>
                   <span>Last seen: {peer?.last_handshake ? timeAgo(peer.last_handshake) : '—'}</span>
+                  {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
               </CardContent>
             </Card>
@@ -271,13 +272,14 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
 
 function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', owner_label: '', allowed_ips: '', expires_at: '' })
+  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
   const [error, setError] = useState('')
 
   function openDialog() {
     setForm({
       name: client.name,
       owner_label: client.owner_label ?? '',
+      email: client.email ?? '',
       allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
       expires_at: client.expires_at ? client.expires_at.slice(0, 10) : '',
     })
@@ -289,6 +291,7 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
     mutationFn: () => updateClient(client.id, {
       name: form.name || undefined,
       owner_label: form.owner_label || undefined,
+      email: form.email,
       allowed_ips: form.allowed_ips || undefined,
       expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
     }),
@@ -317,6 +320,10 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
             <div className="space-y-1.5">
               <Label htmlFor="edit-owner">Owner label</Label>
               <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
+              <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-ips">Allowed IPs</Label>
@@ -354,6 +361,7 @@ function CreateClientDialog({
     interface_id: defaultInterfaceId ?? interfaces[0]?.id ?? 0,
     name: '',
     owner_label: '',
+    email: '',
     allowed_ips: '0.0.0.0/0, ::/0',
   })
   const [error, setError] = useState('')
@@ -403,6 +411,12 @@ function CreateClientDialog({
           <div className="space-y-1.5">
             <Label htmlFor="owner">Owner label</Label>
             <Input id="owner" value={form.owner_label ?? ''} onChange={(e) => setField('owner_label', e.target.value)} placeholder="alice" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">
+              Client email <span className="text-muted-foreground text-xs">(optional — receives config on creation)</span>
+            </Label>
+            <Input id="email" type="email" value={form.email ?? ''} onChange={(e) => setField('email', e.target.value)} placeholder="alice@example.com" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="allowed">Allowed IPs</Label>

@@ -5,6 +5,7 @@ export interface Client {
   interface_id: number
   name: string
   owner_label: string
+  email: string
   public_key: string
   allowed_ips: string
   assigned_ip: string
@@ -21,6 +22,7 @@ export interface CreateClientPayload {
   interface_id: number
   name: string
   owner_label?: string
+  email?: string
   allowed_ips?: string
   expires_at?: string
 }
@@ -39,6 +41,7 @@ export const createClient = (payload: CreateClientPayload) =>
 export interface UpdateClientPayload {
   name?: string
   owner_label?: string
+  email?: string
   allowed_ips?: string
   expires_at?: string | null
 }

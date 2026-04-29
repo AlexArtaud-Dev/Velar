@@ -53,6 +53,12 @@ func expirePeers(wg wgsvc.Service) {
 			fmt.Sprintf("Client expired: %s", cl.Name),
 			fmt.Sprintf("The WireGuard client \"%s\" (IP: %s, interface: %s) has expired and has been automatically disabled.\n\nYou can re-enable or delete it from the Velar dashboard.", cl.Name, cl.AssignedIP, cl.Interface.Name),
 		)
+		if cl.Email != "" {
+			mailer.SendTo(cl.Email,
+				fmt.Sprintf("VPN access expired: %s", cl.Name),
+				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has expired and has been automatically disabled.\n\nContact the administrator to renew your access.", cl.Name, cl.AssignedIP),
+			)
+		}
 	}
 }
 
@@ -68,6 +74,12 @@ func notifyExpiringSoon() {
 			fmt.Sprintf("Client expiring soon: %s", cl.Name),
 			fmt.Sprintf("The WireGuard client \"%s\" (IP: %s, interface: %s) will expire on %s.\n\nExtend its expiry or delete it from the Velar dashboard.", cl.Name, cl.AssignedIP, cl.Interface.Name, cl.ExpiresAt.Format("2006-01-02 15:04 UTC")),
 		)
+		if cl.Email != "" {
+			mailer.SendTo(cl.Email,
+				fmt.Sprintf("VPN access expiring soon: %s", cl.Name),
+				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) will expire on %s.\n\nContact the administrator to extend your access before it expires.", cl.Name, cl.AssignedIP, cl.ExpiresAt.Format("2006-01-02 15:04 UTC")),
+			)
+		}
 		slog.Info("expiry notification sent", "client", cl.Name)
 	}
 }

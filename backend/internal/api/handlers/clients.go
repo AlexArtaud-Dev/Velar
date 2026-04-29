@@ -31,6 +31,7 @@ type createClientRequest struct {
 	InterfaceID uint       `json:"interface_id" binding:"required"`
 	Name        string     `json:"name" binding:"required"`
 	OwnerLabel  string     `json:"owner_label"`
+	Email       string     `json:"email"`
 	AllowedIPs  string     `json:"allowed_ips"`
 	ExpiresAt   *time.Time `json:"expires_at"`
 }
@@ -96,6 +97,7 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		InterfaceID:  iface.ID,
 		Name:         req.Name,
 		OwnerLabel:   req.OwnerLabel,
+		Email:        req.Email,
 		PublicKey:    pubKey,
 		PrivateKey:   encPriv,
 		PresharedKey: encPSK,
@@ -115,11 +117,22 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 	h.syncConf(iface)
 
-	// Notify admin (best-effort, non-blocking)
+	// Notify admin
 	mailer.Send(
 		fmt.Sprintf("New client added: %s", client.Name),
 		fmt.Sprintf("A new WireGuard client has been created.\n\nName:      %s\nInterface: %s\nIP:        %s\nOwner:     %s\n\nView it in the Velar dashboard.", client.Name, iface.Name, client.AssignedIP, client.OwnerLabel),
 	)
+
+	// Send config to client email (with .conf attachment)
+	if client.Email != "" {
+		confStr := buildConfString(client, iface, privKey, psk)
+		expiry := "No expiry"
+		if client.ExpiresAt != nil {
+			expiry = client.ExpiresAt.Format("2006-01-02")
+		}
+		body := fmt.Sprintf("Hello,\n\nYour WireGuard VPN configuration has been created.\n\nName:      %s\nVPN IP:    %s\nExpires:   %s\n\nYour configuration file is attached. Import it directly into the WireGuard app.\n\nFor mobile: open WireGuard → Add tunnel → Scan QR or import file.\nFor desktop: open WireGuard → Import tunnel from file.\n\nDo not share this file.", client.Name, client.AssignedIP, expiry)
+		mailer.SendWithAttachment(client.Email, fmt.Sprintf("Your VPN config: %s", client.Name), body, client.Name+".conf", confStr)
+	}
 
 	c.JSON(http.StatusCreated, client)
 }
@@ -137,13 +150,14 @@ func (h *ClientHandler) Get(c *gin.Context) {
 func (h *ClientHandler) Update(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var client models.Client
-	if err := database.DB.First(&client, id).Error; err != nil {
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 	var req struct {
 		Name       string     `json:"name"`
 		OwnerLabel string     `json:"owner_label"`
+		Email      string     `json:"email"`
 		AllowedIPs string     `json:"allowed_ips"`
 		ExpiresAt  *time.Time `json:"expires_at"`
 	}
@@ -158,6 +172,8 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	if req.OwnerLabel != "" {
 		updates["owner_label"] = req.OwnerLabel
 	}
+	// Allow clearing email by sending empty string explicitly
+	updates["email"] = req.Email
 	if req.AllowedIPs != "" {
 		updates["allowed_ips"] = req.AllowedIPs
 	}
@@ -165,6 +181,21 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		updates["expires_at"] = req.ExpiresAt
 	}
 	database.DB.Model(&client).Updates(updates)
+	database.DB.Preload("Interface").First(&client, id)
+
+	// Notify client of changes
+	if client.Email != "" {
+		mailer.SendTo(client.Email,
+			fmt.Sprintf("Your VPN config was updated: %s", client.Name),
+			fmt.Sprintf("Hello,\n\nYour WireGuard VPN configuration \"%s\" has been updated by the administrator.\n\nIf your allowed IPs or expiry changed, please check your dashboard or contact support.\n\nDo not share your configuration file.", client.Name),
+		)
+	}
+	// Notify admin
+	mailer.Send(
+		fmt.Sprintf("Client updated: %s", client.Name),
+		fmt.Sprintf("Client \"%s\" (IP: %s, interface: %s) was updated.", client.Name, client.AssignedIP, client.Interface.Name),
+	)
+
 	c.JSON(http.StatusOK, client)
 }
 
@@ -180,6 +211,15 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 		slog.Warn("remove peer wg", "iface", client.Interface.Name, "err", err)
 	}
 	h.syncConf(client.Interface)
+
+	// Notify client before deleting
+	if client.Email != "" {
+		mailer.SendTo(client.Email,
+			fmt.Sprintf("VPN access revoked: %s", client.Name),
+			fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been permanently revoked.\n\nYour configuration file is no longer valid. Contact the administrator if you have questions.", client.Name, client.AssignedIP),
+		)
+	}
+
 	database.DB.Delete(&client)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
@@ -208,6 +248,21 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	}
 	database.DB.Model(&client).Update("enabled", enabled)
 	h.syncConf(client.Interface)
+
+	// Notify client
+	if client.Email != "" {
+		if enabled {
+			mailer.SendTo(client.Email,
+				fmt.Sprintf("VPN access re-enabled: %s", client.Name),
+				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been re-enabled.\n\nYou can now connect using your existing configuration.", client.Name, client.AssignedIP),
+			)
+		} else {
+			mailer.SendTo(client.Email,
+				fmt.Sprintf("VPN access disabled: %s", client.Name),
+				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been temporarily disabled by the administrator.\n\nContact the administrator if you think this is an error.", client.Name, client.AssignedIP),
+			)
+		}
+	}
 	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
 }
 
@@ -277,6 +332,13 @@ func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client,
 		client.AllowedIPs,
 	)
 	return conf, &client, nil
+}
+
+// buildConfString constructs the WireGuard client config text from raw keys.
+// Used when sending the config via email (plain keys, not yet encrypted).
+func buildConfString(client models.Client, iface models.Interface, privKey, psk string) string {
+	endpoint := fmt.Sprintf("%s:%d", config.C.WGHost, iface.Port)
+	return wgsvc.BuildClientConf(privKey, client.AssignedIP, iface.DNSServer, iface.PublicKey, psk, endpoint, client.AllowedIPs)
 }
 
 func (h *ClientHandler) syncConf(iface models.Interface) {
