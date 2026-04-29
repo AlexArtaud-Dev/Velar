@@ -313,6 +313,12 @@ func RestoreDB() gin.HandlerFunc {
 			return
 		}
 
+		// Run migrations so any tables added since the backup was taken are created
+		if err := database.AutoMigrate(); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "restored but migration failed: " + err.Error()})
+			return
+		}
+
 		c.JSON(http.StatusOK, gin.H{"message": "database restored successfully"})
 	}
 }
