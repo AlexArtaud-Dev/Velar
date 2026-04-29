@@ -19,8 +19,7 @@ export default function Login() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  async function handleSubmit() {
     setError('')
     setLoading(true)
     try {
@@ -51,7 +50,7 @@ export default function Login() {
           <CardDescription>Sign in to your WireGuard dashboard</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-4">
             {!totpRequired ? (
               <>
                 <div className="space-y-2">
@@ -61,7 +60,7 @@ export default function Login() {
                     autoFocus
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    required
+                    onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                   />
                 </div>
                 <div className="space-y-2">
@@ -71,7 +70,7 @@ export default function Login() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    required
+                    onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                   />
                 </div>
               </>
@@ -85,7 +84,7 @@ export default function Login() {
                   maxLength={6}
                   value={totpCode}
                   onChange={(e) => setTotpCode(e.target.value)}
-                  required
+                  onKeyDown={(e) => e.key === 'Enter' && handleSubmit()}
                 />
                 <p className="text-xs text-muted-foreground">
                   Enter the 6-digit code from your authenticator app.
@@ -95,7 +94,7 @@ export default function Login() {
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <Button type="submit" className="w-full" disabled={loading}>
+            <Button type="button" className="w-full" disabled={loading} onClick={handleSubmit}>
               {loading ? 'Signing in…' : totpRequired ? 'Verify' : 'Sign in'}
             </Button>
 
@@ -109,7 +108,7 @@ export default function Login() {
                 ← Back
               </Button>
             )}
-          </form>
+          </div>
         </CardContent>
       </Card>
     </div>
