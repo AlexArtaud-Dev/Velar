@@ -1,5 +1,4 @@
-import { useState, useEffect } from 'react'
-import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom'
+import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard,
   Network,
@@ -11,8 +10,6 @@ import {
   WifiOff,
   Sun,
   Moon,
-  Menu,
-  X,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore } from '@/stores/theme'
@@ -29,16 +26,9 @@ const navItems = [
 
 export default function Layout() {
   const navigate = useNavigate()
-  const location = useLocation()
   const { admin, logout: clearAuth } = useAuthStore()
   const { theme, toggleTheme } = useThemeStore()
   const { connected } = useWebSocket()
-  const [sidebarOpen, setSidebarOpen] = useState(false)
-
-  // Close mobile sidebar on navigation
-  useEffect(() => {
-    setSidebarOpen(false)
-  }, [location.pathname])
 
   async function handleLogout() {
     await logout().catch(() => {})
@@ -46,142 +36,155 @@ export default function Layout() {
     navigate('/login')
   }
 
-  // Shared sidebar content (desktop + mobile drawer)
-  const sidebarContent = (
-    <>
-      {/* Logo */}
-      <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
-        <Shield className="h-6 w-6 text-primary" />
-        <span className="text-lg font-bold tracking-tight">Velar</span>
-      </div>
-
-      {/* Nav */}
-      <nav className="flex-1 py-4 px-3 space-y-1">
-        {navItems.map(({ to, label, icon: Icon, end }) => (
-          <NavLink
-            key={to}
-            to={to}
-            end={end}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-accent text-accent-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-              )
-            }
-          >
-            <Icon className="h-4 w-4" />
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-
-      {/* Footer */}
-      <div className="px-4 py-4 border-t border-border space-y-3">
-        {/* Live indicator */}
-        <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
-          {connected ? (
-            <>
-              <Wifi className="h-3 w-3 text-green-500" />
-              <span>Live stats</span>
-            </>
-          ) : (
-            <>
-              <WifiOff className="h-3 w-3 text-red-500" />
-              <span>Reconnecting…</span>
-            </>
-          )}
-        </div>
-
-        {/* User row */}
-        <div className="flex items-center justify-between">
-          <span className="text-sm text-muted-foreground truncate">{admin?.username}</span>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={toggleTheme}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-              title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
-            <button
-              onClick={handleLogout}
-              className="text-muted-foreground hover:text-foreground transition-colors p-1 rounded"
-              title="Logout"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </>
-  )
-
   return (
     <div className="flex h-screen bg-background">
+
       {/* ── Desktop sidebar ── */}
-      <aside className="hidden lg:flex w-64 border-r border-border flex-col shrink-0">
-        {sidebarContent}
-      </aside>
+      <aside className="hidden lg:flex w-60 border-r border-border flex-col shrink-0">
 
-      {/* ── Mobile backdrop ── */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-          aria-hidden="true"
-        />
-      )}
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-border">
+          <Shield className="h-5 w-5 text-primary" />
+          <span className="text-base font-bold tracking-tight">Velar</span>
+        </div>
 
-      {/* ── Mobile sidebar drawer ── */}
-      <aside
-        className={cn(
-          'fixed inset-y-0 left-0 z-50 flex w-64 flex-col bg-background border-r border-border',
-          'transform transition-transform duration-200 ease-in-out lg:hidden',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full',
-        )}
-      >
-        {/* Close button */}
-        <button
-          onClick={() => setSidebarOpen(false)}
-          className="absolute top-4 right-3 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Close menu"
-        >
-          <X className="h-5 w-5" />
-        </button>
-        {sidebarContent}
+        {/* Nav */}
+        <nav className="flex-1 py-3 px-2 space-y-0.5">
+          {navItems.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(
+                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150',
+                  'border-l-2',
+                  isActive
+                    ? 'border-primary bg-accent text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                )
+              }
+            >
+              <Icon className="h-4 w-4 shrink-0" />
+              {label}
+            </NavLink>
+          ))}
+        </nav>
+
+        {/* Footer */}
+        <div className="px-3 py-4 border-t border-border space-y-3">
+          {/* Live indicator */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground px-2">
+            {connected ? (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span>Live</span>
+              </>
+            ) : (
+              <>
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                <span>Reconnecting…</span>
+              </>
+            )}
+          </div>
+
+          {/* User row */}
+          <div className="flex items-center justify-between px-1">
+            <span className="text-sm text-muted-foreground truncate">{admin?.username}</span>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={toggleTheme}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              >
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
       </aside>
 
       {/* ── Main area ── */}
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+
         {/* Mobile top bar */}
         <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
-          <button
-            onClick={() => setSidebarOpen(true)}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            aria-label="Open menu"
-          >
-            <Menu className="h-5 w-5" />
-          </button>
+          {/* Live dot */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {connected
+              ? <><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /><span>Live</span></>
+              : <><Wifi className="h-3.5 w-3.5 text-red-500" /><WifiOff className="h-3.5 w-3.5 text-red-500 hidden" /></>
+            }
+          </div>
 
+          {/* Logo */}
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-primary" />
             <span className="font-bold tracking-tight">Velar</span>
           </div>
 
-          <button
-            onClick={toggleTheme}
-            className="text-muted-foreground hover:text-foreground transition-colors"
-            title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-          >
-            {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
-          </button>
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
+            <button
+              onClick={handleLogout}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              title="Logout"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </header>
 
-        <main className="flex-1 overflow-auto">
+        {/* Page content — extra bottom padding on mobile clears the 56px bottom nav */}
+        <main className="flex-1 overflow-auto max-lg:pb-14">
           <Outlet />
         </main>
+
+        {/* ── Mobile bottom nav ── */}
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border">
+          {navItems.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+                  isActive
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span className={cn(
+                    'p-1 rounded-lg transition-colors',
+                    isActive ? 'bg-accent' : '',
+                  )}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  {label}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
       </div>
     </div>
   )
