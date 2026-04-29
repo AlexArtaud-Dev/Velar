@@ -1,3 +1,4 @@
+import axios from 'axios'
 import { api } from './client'
 
 export interface LoginPayload {
@@ -10,6 +11,12 @@ export const login = (payload: LoginPayload) =>
   api.post('/auth/login', payload).then((r) => r.data)
 
 export const logout = () => api.post('/auth/logout')
+
+// Uses the httpOnly refresh-token cookie — no body needed.
+// Called directly with axios (not the intercepted api instance) to avoid loops.
+export const refreshToken = () =>
+  axios.post<{ access_token: string }>('/api/v1/auth/refresh', {}, { withCredentials: true })
+    .then((r) => r.data.access_token)
 
 export const getMe = () => api.get('/me').then((r) => r.data)
 

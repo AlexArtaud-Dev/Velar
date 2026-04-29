@@ -35,6 +35,7 @@ type createInterfaceRequest struct {
 	ListenAddress string `json:"listen_address"`
 	PostUp        string `json:"post_up"`
 	PostDown      string `json:"post_down"`
+	LanAccess     bool   `json:"lan_access"`
 }
 
 func (h *InterfaceHandler) List(c *gin.Context) {
@@ -97,6 +98,11 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 		postDown = fmt.Sprintf("iptables -D FORWARD -i %%i -j ACCEPT; iptables -D FORWARD -m state --state RELATED,ESTABLISHED -j ACCEPT; iptables -t nat -D POSTROUTING -o %s -j MASQUERADE", mainIface)
 	}
 
+	lanSubnet := ""
+	if req.LanAccess {
+		lanSubnet = wgsvc.DetectLANSubnet()
+	}
+
 	iface := models.Interface{
 		Name:          req.Name,
 		Port:          req.Port,
@@ -107,6 +113,8 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 		ListenAddress: req.ListenAddress,
 		PostUp:        postUp,
 		PostDown:      postDown,
+		LanAccess:     req.LanAccess,
+		LanSubnet:     lanSubnet,
 		Enabled:       true,
 	}
 	// Port conflict check
@@ -158,6 +166,7 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 		PostDown  string `json:"post_down"`
 		Port      *int   `json:"port"`
 		Subnet    string `json:"subnet"`
+		LanAccess *bool  `json:"lan_access"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -200,6 +209,17 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 		updates["subnet"] = req.Subnet
 		needsRestart = true
 		subnetChanged = true
+	}
+	lanAccessChanged := false
+	if req.LanAccess != nil && *req.LanAccess != iface.LanAccess {
+		lanAccessChanged = true
+		updates["lan_access"] = *req.LanAccess
+		if *req.LanAccess {
+			detected := wgsvc.DetectLANSubnet()
+			updates["lan_subnet"] = detected
+		} else {
+			updates["lan_subnet"] = ""
+		}
 	}
 
 	if len(updates) > 0 {
@@ -257,6 +277,19 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "wg-quick up failed: " + err.Error()})
 			return
 		}
+	}
+
+	// Update all clients' AllowedIPs when lan_access is toggled
+	if lanAccessChanged {
+		var allClients []models.Client
+		database.DB.Where("interface_id = ?", iface.ID).Find(&allClients)
+		newAllowedIPs := defaultClientAllowedIPs(iface)
+		for _, cl := range allClients {
+			database.DB.Model(&cl).Update("allowed_ips", newAllowedIPs)
+		}
+		slog.Info("lan_access toggled: updated client AllowedIPs",
+			"iface", iface.Name, "lan_access", iface.LanAccess,
+			"allowed_ips", newAllowedIPs, "clients", len(allClients))
 	}
 
 	// Notify all clients with an email address when their config is affected
@@ -354,6 +387,20 @@ func (h *InterfaceHandler) Check(c *gin.Context) {
 		"port":         iface.Port,
 		"interface":    iface.Name,
 	})
+}
+
+// defaultClientAllowedIPs returns the AllowedIPs string to use for clients on the given interface.
+// When LAN access is enabled it returns a split-tunnel value (VPN subnet + LAN subnet).
+// Otherwise it returns a full-tunnel value.
+func defaultClientAllowedIPs(iface models.Interface) string {
+	if iface.LanAccess && iface.LanSubnet != "" {
+		_, vpnNet, err := net.ParseCIDR(iface.Subnet)
+		if err == nil {
+			return vpnNet.String() + ", " + iface.LanSubnet
+		}
+		return iface.LanSubnet
+	}
+	return "0.0.0.0/0, ::/0"
 }
 
 // checkUDPPort returns true if a UDP socket is listening on the given port.

@@ -10,6 +10,8 @@ export interface WGInterface {
   listen_address: string
   post_up: string
   post_down: string
+  lan_access: boolean
+  lan_subnet: string
   enabled: boolean
   up: boolean
   peer_count: number
@@ -24,6 +26,7 @@ export interface CreateInterfacePayload {
   dns_server?: string
   post_up?: string
   post_down?: string
+  lan_access?: boolean
 }
 
 export const listInterfaces = () =>
@@ -41,6 +44,7 @@ export interface UpdateInterfacePayload {
   post_down?: string
   port?: number
   subnet?: string
+  lan_access?: boolean
 }
 
 export const updateInterface = (id: number, payload: UpdateInterfacePayload) =>

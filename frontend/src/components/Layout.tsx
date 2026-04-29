@@ -8,8 +8,11 @@ import {
   Shield,
   Wifi,
   WifiOff,
+  Sun,
+  Moon,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
+import { useThemeStore } from '@/stores/theme'
 import { logout } from '@/api/auth'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { cn } from '@/lib/utils'
@@ -24,6 +27,7 @@ const navItems = [
 export default function Layout() {
   const navigate = useNavigate()
   const { admin, logout: clearAuth } = useAuthStore()
+  const { theme, toggleTheme } = useThemeStore()
   const { connected } = useWebSocket()
 
   async function handleLogout() {
@@ -34,16 +38,18 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="w-64 border-r border-border flex flex-col">
+
+      {/* ── Desktop sidebar ── */}
+      <aside className="hidden lg:flex w-60 border-r border-border flex-col shrink-0">
+
         {/* Logo */}
-        <div className="flex items-center gap-2 px-6 py-5 border-b border-border">
-          <Shield className="h-6 w-6 text-primary" />
-          <span className="text-lg font-bold tracking-tight">Velar</span>
+        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-border">
+          <Shield className="h-5 w-5 text-primary" />
+          <span className="text-base font-bold tracking-tight">Velar</span>
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 py-3 px-2 space-y-0.5">
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -51,53 +57,135 @@ export default function Layout() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors',
+                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150',
+                  'border-l-2',
                   isActive
-                    ? 'bg-accent text-accent-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                    ? 'border-primary bg-accent text-foreground'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50',
                 )
               }
             >
-              <Icon className="h-4 w-4" />
+              <Icon className="h-4 w-4 shrink-0" />
               {label}
             </NavLink>
           ))}
         </nav>
 
         {/* Footer */}
-        <div className="px-4 py-4 border-t border-border space-y-3">
+        <div className="px-3 py-4 border-t border-border space-y-3">
           {/* Live indicator */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground px-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground px-2">
             {connected ? (
               <>
-                <Wifi className="h-3 w-3 text-green-500" />
-                <span>Live stats</span>
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span>Live</span>
               </>
             ) : (
               <>
-                <WifiOff className="h-3 w-3 text-red-500" />
+                <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
                 <span>Reconnecting…</span>
               </>
             )}
           </div>
-          {/* User */}
-          <div className="flex items-center justify-between">
+
+          {/* User row */}
+          <div className="flex items-center justify-between px-1">
             <span className="text-sm text-muted-foreground truncate">{admin?.username}</span>
+            <div className="flex items-center gap-0.5">
+              <button
+                onClick={toggleTheme}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              >
+                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              <button
+                onClick={handleLogout}
+                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
+                title="Logout"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* ── Main area ── */}
+      <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
+
+        {/* Mobile top bar */}
+        <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
+          {/* Live dot */}
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            {connected
+              ? <><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /><span>Live</span></>
+              : <><Wifi className="h-3.5 w-3.5 text-red-500" /><WifiOff className="h-3.5 w-3.5 text-red-500 hidden" /></>
+            }
+          </div>
+
+          {/* Logo */}
+          <div className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            <span className="font-bold tracking-tight">Velar</span>
+          </div>
+
+          {/* Actions */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleTheme}
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
+              title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            >
+              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            </button>
             <button
               onClick={handleLogout}
-              className="text-muted-foreground hover:text-foreground transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
               title="Logout"
             >
               <LogOut className="h-4 w-4" />
             </button>
           </div>
-        </div>
-      </aside>
+        </header>
 
-      {/* Main content */}
-      <main className="flex-1 overflow-auto">
-        <Outlet />
-      </main>
+        {/* Page content — extra bottom padding on mobile clears the 56px bottom nav */}
+        <main className="flex-1 overflow-auto max-lg:pb-14">
+          <Outlet />
+        </main>
+
+        {/* ── Mobile bottom nav ── */}
+        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border">
+          {navItems.map(({ to, label, icon: Icon, end }) => (
+            <NavLink
+              key={to}
+              to={to}
+              end={end}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+                  isActive
+                    ? 'text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span className={cn(
+                    'p-1 rounded-lg transition-colors',
+                    isActive ? 'bg-accent' : '',
+                  )}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  {label}
+                </>
+              )}
+            </NavLink>
+          ))}
+        </nav>
+
+      </div>
     </div>
   )
 }

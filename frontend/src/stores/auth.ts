@@ -9,7 +9,9 @@ interface Admin {
 }
 
 interface AuthState {
+  // In-memory only — never written to localStorage
   accessToken: string | null
+  // Persisted — not sensitive, needed to detect "logged-in" state on reload
   admin: Admin | null
   isAuthenticated: boolean
   setAuth: (token: string, admin: Admin) => void
@@ -30,7 +32,12 @@ export const useAuthStore = create<AuthState>()(
     }),
     {
       name: 'velar-auth',
-      partialize: (state) => ({ admin: state.admin, isAuthenticated: state.isAuthenticated, accessToken: state.accessToken }),
+      // accessToken intentionally excluded — kept in memory only (XSS mitigation)
+      // refresh token is an httpOnly cookie handled by the backend
+      partialize: (state) => ({
+        admin: state.admin,
+        isAuthenticated: state.isAuthenticated,
+      }),
     },
   ),
 )
