@@ -49,14 +49,14 @@ func expirePeers(wg wgsvc.Service) {
 		}
 		database.DB.Model(&cl).Update("enabled", false)
 		slog.Info("peer expired", "client", cl.Name, "interface", cl.Interface.Name)
-		mailer.Send(
+		mailer.SendHTML(
 			fmt.Sprintf("Client expired: %s", cl.Name),
-			fmt.Sprintf("The WireGuard client \"%s\" (IP: %s, interface: %s) has expired and has been automatically disabled.\n\nYou can re-enable or delete it from the Velar dashboard.", cl.Name, cl.AssignedIP, cl.Interface.Name),
+			mailer.HTMLAdminClientExpired(cl.Name, cl.AssignedIP, cl.Interface.Name),
 		)
 		if cl.Email != "" {
-			mailer.SendTo(cl.Email,
+			mailer.SendHTMLTo(cl.Email,
 				fmt.Sprintf("VPN access expired: %s", cl.Name),
-				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has expired and has been automatically disabled.\n\nContact the administrator to renew your access.", cl.Name, cl.AssignedIP),
+				mailer.HTMLClientExpired(cl.Name, cl.AssignedIP, cl.Interface.Name),
 			)
 		}
 	}
@@ -70,14 +70,15 @@ func notifyExpiringSoon() {
 		Find(&expiring)
 
 	for _, cl := range expiring {
-		mailer.Send(
+		expiresAt := cl.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+		mailer.SendHTML(
 			fmt.Sprintf("Client expiring soon: %s", cl.Name),
-			fmt.Sprintf("The WireGuard client \"%s\" (IP: %s, interface: %s) will expire on %s.\n\nExtend its expiry or delete it from the Velar dashboard.", cl.Name, cl.AssignedIP, cl.Interface.Name, cl.ExpiresAt.Format("2006-01-02 15:04 UTC")),
+			mailer.HTMLAdminClientExpiringSoon(cl.Name, cl.AssignedIP, cl.Interface.Name, expiresAt),
 		)
 		if cl.Email != "" {
-			mailer.SendTo(cl.Email,
+			mailer.SendHTMLTo(cl.Email,
 				fmt.Sprintf("VPN access expiring soon: %s", cl.Name),
-				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) will expire on %s.\n\nContact the administrator to extend your access before it expires.", cl.Name, cl.AssignedIP, cl.ExpiresAt.Format("2006-01-02 15:04 UTC")),
+				mailer.HTMLClientExpiringSoon(cl.Name, cl.AssignedIP, cl.Interface.Name, expiresAt),
 			)
 		}
 		slog.Info("expiry notification sent", "client", cl.Name)

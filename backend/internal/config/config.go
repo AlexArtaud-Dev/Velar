@@ -25,6 +25,9 @@ type Config struct {
 	SMTPPass    string
 	SMTPFrom    string
 	AdminEmail  string
+	// Public URL of the Velar dashboard (e.g. https://velar.example.com)
+	// Used to build one-time download links in notification emails.
+	AppURL string
 }
 
 var C Config
@@ -48,6 +51,7 @@ func Load() {
 		SMTPPass:    getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:    getEnv("SMTP_FROM", ""),
 		AdminEmail:  getEnv("ADMIN_EMAIL", ""),
+		AppURL:      getEnv("APP_URL", ""),
 	}
 
 	if len(C.AppSecret) < 32 {

@@ -48,15 +48,26 @@ func SendTo(to, subject, body string) {
 	}()
 }
 
-// SendWithAttachment sends a plain-text email with a single file attachment.
-// Used to deliver WireGuard .conf files to clients on creation.
-func SendWithAttachment(to, subject, body, attachmentName, attachmentContent string) {
+// SendHTML delivers a beautiful HTML email to the admin. Best-effort, non-blocking.
+func SendHTML(subject, htmlBody string) {
+	if !Enabled() {
+		return
+	}
+	go func() {
+		if err := sendHTMLEmail(config.C.AdminEmail, subject, htmlBody); err != nil {
+			slog.Warn("mailer: send HTML to admin failed", "subject", subject, "err", err)
+		}
+	}()
+}
+
+// SendHTMLTo delivers a beautiful HTML email to any recipient. Best-effort, non-blocking.
+func SendHTMLTo(to, subject, htmlBody string) {
 	if !SMTPEnabled() || to == "" {
 		return
 	}
 	go func() {
-		if err := sendAttachment(to, subject, body, attachmentName, attachmentContent); err != nil {
-			slog.Warn("mailer: send with attachment failed", "to", to, "subject", subject, "err", err)
+		if err := sendHTMLEmail(to, subject, htmlBody); err != nil {
+			slog.Warn("mailer: send HTML failed", "to", to, "subject", subject, "err", err)
 		}
 	}()
 }
@@ -73,6 +84,34 @@ func auth() smtp.Auth {
 
 func addr() string {
 	return fmt.Sprintf("%s:%s", config.C.SMTPHost, config.C.SMTPPort)
+}
+
+func sendHTMLEmail(to, subject, htmlBody string) error {
+	c := config.C
+	boundary := "velar-alt-001"
+	plain := "This email requires an HTML-compatible mail client. Please use an email app that supports HTML."
+
+	var buf bytes.Buffer
+	buf.WriteString("From: Velar <" + c.SMTPFrom + ">\r\n")
+	buf.WriteString("To: " + to + "\r\n")
+	buf.WriteString("Subject: [Velar] " + subject + "\r\n")
+	buf.WriteString("MIME-Version: 1.0\r\n")
+	buf.WriteString(fmt.Sprintf("Content-Type: multipart/alternative; boundary=\"%s\"\r\n", boundary))
+	buf.WriteString("\r\n")
+
+	// Plain-text fallback
+	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	buf.WriteString("Content-Type: text/plain; charset=UTF-8\r\n\r\n")
+	buf.WriteString(plain + "\r\n\r\n")
+
+	// HTML part
+	buf.WriteString(fmt.Sprintf("--%s\r\n", boundary))
+	buf.WriteString("Content-Type: text/html; charset=UTF-8\r\n\r\n")
+	buf.WriteString(htmlBody + "\r\n")
+
+	buf.WriteString(fmt.Sprintf("--%s--\r\n", boundary))
+
+	return smtp.SendMail(addr(), auth(), c.SMTPFrom, []string{to}, buf.Bytes())
 }
 
 func sendPlain(to, subject, body string) error {

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Shield, Globe, Server, Key, Lock, Upload, Bell } from 'lucide-react'
+import { Shield, Globe, Key, Lock, Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { getPublicIP, getAdguardStatus, getNotificationStatus, downloadBackup, restoreBackup } from '@/api/settings'
+import { getPublicIP, getAdguardStatus, getNotificationStatus } from '@/api/settings'
 import { totpSetup, totpActivate, totpDisable, changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
@@ -119,20 +119,6 @@ export default function Settings() {
         </CardContent>
       </Card>
 
-      {/* Backup & Restore */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Database backup</CardTitle>
-          </div>
-          <CardDescription>Download or restore the SQLite database</CardDescription>
-        </CardHeader>
-        <CardContent className="flex items-center gap-3">
-          <BackupButton />
-          <RestoreButton />
-        </CardContent>
-      </Card>
     </div>
   )
 }
@@ -328,74 +314,3 @@ function DisableTOTPDialog() {
   )
 }
 
-function BackupButton() {
-  const [loading, setLoading] = useState(false)
-
-  async function handleDownload() {
-    setLoading(true)
-    try { await downloadBackup() } finally { setLoading(false) }
-  }
-
-  return (
-    <Button variant="outline" onClick={handleDownload} disabled={loading}>
-      {loading ? 'Preparing…' : 'Download backup'}
-    </Button>
-  )
-}
-
-function RestoreButton() {
-  const [open, setOpen] = useState(false)
-  const [file, setFile] = useState<File | null>(null)
-  const [error, setError] = useState('')
-
-  const mut = useMutation({
-    mutationFn: () => restoreBackup(file!),
-    onSuccess: () => {
-      setOpen(false)
-      // Force full reload so all queries pick up the restored data
-      window.location.reload()
-    },
-    onError: (e: unknown) => {
-      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Restore failed')
-    },
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={(v) => { setOpen(v); setFile(null); setError('') }}>
-      <DialogTrigger asChild>
-        <Button variant="outline">
-          <Upload className="h-4 w-4 mr-2" />
-          Restore backup
-        </Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Restore database backup</DialogTitle>
-          <DialogDescription>
-            Upload a <code>.db</code> backup file. This will replace the current database and reload the app.
-            <span className="block mt-1 text-destructive font-medium">All current data will be overwritten.</span>
-          </DialogDescription>
-        </DialogHeader>
-        <div className="space-y-3 py-2">
-          <input
-            type="file"
-            accept=".db"
-            className="block w-full text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded-md file:border file:border-input file:text-sm file:bg-muted file:text-foreground hover:file:bg-accent cursor-pointer"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button
-            variant="destructive"
-            onClick={() => mut.mutate()}
-            disabled={!file || mut.isPending}
-          >
-            {mut.isPending ? 'Restoring…' : 'Restore'}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  )
-}

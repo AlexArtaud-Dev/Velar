@@ -6,14 +6,15 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
-	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
+	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
@@ -34,6 +35,15 @@ type createClientRequest struct {
 	Email       string     `json:"email"`
 	AllowedIPs  string     `json:"allowed_ips"`
 	ExpiresAt   *time.Time `json:"expires_at"`
+}
+
+// buildDownloadURL constructs a full download URL from a raw token.
+// Falls back to the path-only form if APP_URL is not configured.
+func buildDownloadURL(rawToken string) string {
+	if base := config.C.AppURL; base != "" {
+		return strings.TrimRight(base, "/") + "/dl/" + rawToken
+	}
+	return "/dl/" + rawToken
 }
 
 func (h *ClientHandler) List(c *gin.Context) {
@@ -117,21 +127,32 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 	h.syncConf(iface)
 
-	// Notify admin
-	mailer.Send(
+	// --- Email: admin notification ---
+	owner := client.OwnerLabel
+	if owner == "" {
+		owner = "—"
+	}
+	mailer.SendHTML(
 		fmt.Sprintf("New client added: %s", client.Name),
-		fmt.Sprintf("A new WireGuard client has been created.\n\nName:      %s\nInterface: %s\nIP:        %s\nOwner:     %s\n\nView it in the Velar dashboard.", client.Name, iface.Name, client.AssignedIP, client.OwnerLabel),
+		mailer.HTMLAdminClientCreated(client.Name, client.AssignedIP, iface.Name, owner),
 	)
 
-	// Send config to client email (with .conf attachment)
+	// --- Email: send one-time download link to client ---
 	if client.Email != "" {
-		confStr := buildConfString(client, iface, privKey, psk)
-		expiry := "No expiry"
-		if client.ExpiresAt != nil {
-			expiry = client.ExpiresAt.Format("2006-01-02")
+		rawToken, _, err := tokensvc.Generate(client.ID)
+		if err == nil {
+			expiry := "No expiry"
+			if client.ExpiresAt != nil {
+				expiry = client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+			}
+			mailer.SendHTMLTo(
+				client.Email,
+				fmt.Sprintf("Your VPN access is ready: %s", client.Name),
+				mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+			)
+		} else {
+			slog.Warn("create client: failed to generate download token for email", "client", client.Name, "err", err)
 		}
-		body := fmt.Sprintf("Hello,\n\nYour WireGuard VPN configuration has been created.\n\nName:      %s\nVPN IP:    %s\nExpires:   %s\n\nYour configuration file is attached. Import it directly into the WireGuard app.\n\nFor mobile: open WireGuard → Add tunnel → Scan QR or import file.\nFor desktop: open WireGuard → Import tunnel from file.\n\nDo not share this file.", client.Name, client.AssignedIP, expiry)
-		mailer.SendWithAttachment(client.Email, fmt.Sprintf("Your VPN config: %s", client.Name), body, client.Name+".conf", confStr)
 	}
 
 	c.JSON(http.StatusCreated, client)
@@ -184,16 +205,15 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	database.DB.Preload("Interface").First(&client, id)
 
 	// Notify client of changes
-	if client.Email != "" {
-		mailer.SendTo(client.Email,
-			fmt.Sprintf("Your VPN config was updated: %s", client.Name),
-			fmt.Sprintf("Hello,\n\nYour WireGuard VPN configuration \"%s\" has been updated by the administrator.\n\nIf your allowed IPs or expiry changed, please check your dashboard or contact support.\n\nDo not share your configuration file.", client.Name),
-		)
-	}
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("Your VPN config was updated: %s", client.Name),
+		mailer.HTMLClientUpdated(client.Name, client.AssignedIP),
+	)
 	// Notify admin
-	mailer.Send(
+	mailer.SendHTML(
 		fmt.Sprintf("Client updated: %s", client.Name),
-		fmt.Sprintf("Client \"%s\" (IP: %s, interface: %s) was updated.", client.Name, client.AssignedIP, client.Interface.Name),
+		mailer.HTMLAdminClientUpdated(client.Name, client.AssignedIP, client.Interface.Name),
 	)
 
 	c.JSON(http.StatusOK, client)
@@ -213,12 +233,11 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	h.syncConf(client.Interface)
 
 	// Notify client before deleting
-	if client.Email != "" {
-		mailer.SendTo(client.Email,
-			fmt.Sprintf("VPN access revoked: %s", client.Name),
-			fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been permanently revoked.\n\nYour configuration file is no longer valid. Contact the administrator if you have questions.", client.Name, client.AssignedIP),
-		)
-	}
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("VPN access revoked: %s", client.Name),
+		mailer.HTMLClientDeleted(client.Name, client.AssignedIP),
+	)
 
 	database.DB.Delete(&client)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
@@ -250,18 +269,18 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	h.syncConf(client.Interface)
 
 	// Notify client
-	if client.Email != "" {
-		if enabled {
-			mailer.SendTo(client.Email,
-				fmt.Sprintf("VPN access re-enabled: %s", client.Name),
-				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been re-enabled.\n\nYou can now connect using your existing configuration.", client.Name, client.AssignedIP),
-			)
-		} else {
-			mailer.SendTo(client.Email,
-				fmt.Sprintf("VPN access disabled: %s", client.Name),
-				fmt.Sprintf("Hello,\n\nYour WireGuard VPN access \"%s\" (IP: %s) has been temporarily disabled by the administrator.\n\nContact the administrator if you think this is an error.", client.Name, client.AssignedIP),
-			)
-		}
+	if enabled {
+		mailer.SendHTMLTo(
+			client.Email,
+			fmt.Sprintf("VPN access re-enabled: %s", client.Name),
+			mailer.HTMLClientEnabled(client.Name, client.AssignedIP),
+		)
+	} else {
+		mailer.SendHTMLTo(
+			client.Email,
+			fmt.Sprintf("VPN access disabled: %s", client.Name),
+			mailer.HTMLClientDisabled(client.Name, client.AssignedIP),
+		)
 	}
 	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
 }
@@ -335,7 +354,7 @@ func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client,
 }
 
 // buildConfString constructs the WireGuard client config text from raw keys.
-// Used when sending the config via email (plain keys, not yet encrypted).
+// Used when we have the plain (unencrypted) keys in hand.
 func buildConfString(client models.Client, iface models.Interface, privKey, psk string) string {
 	endpoint := fmt.Sprintf("%s:%d", config.C.WGHost, iface.Port)
 	return wgsvc.BuildClientConf(privKey, client.AssignedIP, iface.DNSServer, iface.PublicKey, psk, endpoint, client.AllowedIPs)

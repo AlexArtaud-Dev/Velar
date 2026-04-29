@@ -281,7 +281,8 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       owner_label: client.owner_label ?? '',
       email: client.email ?? '',
       allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
-      expires_at: client.expires_at ? client.expires_at.slice(0, 10) : '',
+      // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
+      expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
     })
     setError('')
     setOpen(true)
@@ -293,7 +294,8 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       owner_label: form.owner_label || undefined,
       email: form.email,
       allowed_ips: form.allowed_ips || undefined,
-      expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+      // append ":00Z" so Date parses the datetime-local value as UTC
+      expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : null,
     }),
     onSuccess: () => { setOpen(false); onUpdated() },
     onError: (e: unknown) => {
@@ -330,8 +332,8 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
               <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="edit-expiry">Expiry date <span className="text-muted-foreground text-xs">(leave empty = no expiry)</span></Label>
-              <Input id="edit-expiry" type="date" value={form.expires_at} onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))} />
+              <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
+              <Input id="edit-expiry" type="datetime-local" value={form.expires_at} onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))} />
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
@@ -357,25 +359,39 @@ function CreateClientDialog({
   onCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<CreateClientPayload>({
+  const [form, setForm] = useState({
     interface_id: defaultInterfaceId ?? interfaces[0]?.id ?? 0,
     name: '',
     owner_label: '',
     email: '',
     allowed_ips: '0.0.0.0/0, ::/0',
+    expires_at: '',
   })
   const [error, setError] = useState('')
 
   const mutation = useMutation({
-    mutationFn: createClient,
+    mutationFn: (payload: CreateClientPayload) => createClient(payload),
     onSuccess: () => { setOpen(false); onCreated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
-  function setField<K extends keyof CreateClientPayload>(key: K, value: CreateClientPayload[K]) {
+  function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  function submit() {
+    const payload: CreateClientPayload = {
+      interface_id: form.interface_id,
+      name: form.name,
+      owner_label: form.owner_label || undefined,
+      email: form.email || undefined,
+      allowed_ips: form.allowed_ips || undefined,
+      // datetime-local gives "YYYY-MM-DDTHH:MM" — append seconds + Z so Date parses as UTC
+      expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : undefined,
+    }
+    mutation.mutate(payload)
   }
 
   return (
@@ -410,23 +426,34 @@ function CreateClientDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="owner">Owner label</Label>
-            <Input id="owner" value={form.owner_label ?? ''} onChange={(e) => setField('owner_label', e.target.value)} placeholder="alice" />
+            <Input id="owner" value={form.owner_label} onChange={(e) => setField('owner_label', e.target.value)} placeholder="alice" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="email">
-              Client email <span className="text-muted-foreground text-xs">(optional — receives config on creation)</span>
+              Client email <span className="text-muted-foreground text-xs">(optional — receives one-time download link)</span>
             </Label>
-            <Input id="email" type="email" value={form.email ?? ''} onChange={(e) => setField('email', e.target.value)} placeholder="alice@example.com" />
+            <Input id="email" type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="alice@example.com" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="allowed">Allowed IPs</Label>
-            <Input id="allowed" value={form.allowed_ips ?? ''} onChange={(e) => setField('allowed_ips', e.target.value)} placeholder="0.0.0.0/0, ::/0" />
+            <Input id="allowed" value={form.allowed_ips} onChange={(e) => setField('allowed_ips', e.target.value)} placeholder="0.0.0.0/0, ::/0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="create-expiry">
+              Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span>
+            </Label>
+            <Input
+              id="create-expiry"
+              type="datetime-local"
+              value={form.expires_at}
+              onChange={(e) => setField('expires_at', e.target.value)}
+            />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending || !form.name || !form.interface_id}>
+          <Button onClick={submit} disabled={mutation.isPending || !form.name || !form.interface_id}>
             {mutation.isPending ? 'Adding…' : 'Add client'}
           </Button>
         </DialogFooter>

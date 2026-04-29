@@ -103,9 +103,6 @@ func NewRouter(
 			settings.GET("/notifications", settingsHandler.GetNotificationStatus)
 		}
 
-		// Admin backup / restore
-		api.GET("/admin/backup", handlers.BackupDB())
-		api.POST("/admin/restore", handlers.RestoreDB())
 	}
 
 	return r
