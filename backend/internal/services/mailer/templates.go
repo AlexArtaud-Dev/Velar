@@ -232,6 +232,18 @@ func HTMLAdminClientExpired(name, ip, iface string) string {
 	return baseHTML("Client Expired", body)
 }
 
+// HTMLAdminIPChanged is sent to the admin when the public IP changes.
+func HTMLAdminIPChanged(oldIP, newIP string) string {
+	rows := infoRow("Previous IP", oldIP) + infoRow("New IP", newIP)
+	body := h2("&#x1F310; Public IP address changed") +
+		badge("IP Updated", "#60a5fa", "#1e3a5f") +
+		`<br><br>` +
+		para("The server's public IP address has changed. All clients whose VPN configuration hardcodes this IP have been notified by email and provided with a new one-time download link.") +
+		infoTable(rows) +
+		para("WireGuard interfaces remain up. Existing connected peers will reconnect automatically once they update their configuration.")
+	return baseHTML("Public IP Changed", body)
+}
+
 // HTMLAdminClientExpiringSoon is sent to the admin for peers expiring within 24h.
 func HTMLAdminClientExpiringSoon(name, ip, iface, expiresAt string) string {
 	rows := infoRow("Client name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface) + infoRow("Expires at (UTC)", expiresAt)
