@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"C:/Users/a.artaud/OneDrive - ABEO GROUP/Documents/Projects/Velar\" log --oneline -5)",
+      "Bash(git -C \"C:/Users/a.artaud/OneDrive - ABEO GROUP/Documents/Projects/Velar\" config user.name)",
+      "Bash(git -C \"C:/Users/a.artaud/OneDrive - ABEO GROUP/Documents/Projects/Velar\" config user.email)",
+      "Bash(git checkout *)",
+      "Bash(git reset *)",
+      "Bash(git push *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "WebSearch"
+    ]
+  }
+}

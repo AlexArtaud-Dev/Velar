@@ -1,0 +1,41 @@
+Copyright (c) 2025 Alexandre Artaud. All rights reserved.
+
+PROPRIETARY SOFTWARE LICENSE
+
+This software and its source code ("Software") are the exclusive property of
+Alexandre Artaud ("Author"). All rights are reserved.
+
+PERMITTED USES
+You may:
+  - View and read the source code for personal, educational, or evaluation
+    purposes only.
+  - Fork this repository on GitHub solely to submit pull requests or
+    contributions back to the original repository.
+
+PROHIBITED USES
+You may NOT, without prior written permission from the Author:
+  - Copy, reproduce, or redistribute the Software or any portion of it.
+  - Modify, adapt, translate, or create derivative works based on the Software.
+  - Use the Software, in whole or in part, in any commercial product or service.
+  - Deploy the Software for any purpose other than personal, private,
+    non-commercial self-hosting.
+  - Sublicense, sell, rent, lease, or otherwise transfer rights to the Software.
+  - Remove or alter any copyright notices, author attributions, or this license
+    notice from any part of the Software.
+
+REQUESTING PERMISSION
+To request permission for any use not explicitly permitted above, contact the
+Author at: smlartaudalexandre@gmail.com
+
+CONTRIBUTIONS
+By submitting a pull request or contributing code to this repository, you agree
+to assign full copyright of your contribution to the Author, and you confirm
+that you have the right to do so.
+
+NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT. IN NO EVENT SHALL THE
+AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE THEREOF.
