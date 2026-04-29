@@ -74,6 +74,7 @@ func NewRouter(
 			ifaces.DELETE("/:id", ifaceHandler.Delete)
 			ifaces.POST("/:id/up", ifaceHandler.BringUp)
 			ifaces.POST("/:id/down", ifaceHandler.BringDown)
+			ifaces.GET("/:id/check", ifaceHandler.Check)
 		}
 
 		// Clients

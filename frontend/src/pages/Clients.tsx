@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/dialog'
 import {
   listClients, createClient, deleteClient, enableClient, disableClient,
-  getClientQR, createDownloadLink, type CreateClientPayload,
+  getClientQR, getClientConfigText, createDownloadLink, type CreateClientPayload,
 } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -83,6 +83,7 @@ export default function Clients() {
                     )}
                   </div>
                   <div className="flex items-center gap-1">
+                    <ConfigButton clientId={client.id} name={client.name} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
                     <Button
@@ -124,6 +125,67 @@ export default function Clients() {
         )}
       </div>
     </div>
+  )
+}
+
+/** Works on both HTTP and HTTPS by falling back to execCommand */
+function copyToClipboard(text: string) {
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(text)
+  } else {
+    const el = document.createElement('textarea')
+    el.value = text
+    el.style.position = 'fixed'
+    el.style.opacity = '0'
+    document.body.appendChild(el)
+    el.select()
+    document.execCommand('copy')
+    document.body.removeChild(el)
+  }
+}
+
+function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
+  const [open, setOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const { data, isFetching } = useQuery({
+    queryKey: ['client-config-text', clientId],
+    queryFn: () => getClientConfigText(clientId),
+    enabled: open,
+  })
+
+  function handleCopy() {
+    if (!data) return
+    copyToClipboard(data)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="icon" title="View config">
+          <FileText className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Config — {name}</DialogTitle>
+          <DialogDescription>WireGuard client configuration</DialogDescription>
+        </DialogHeader>
+        {isFetching ? (
+          <div className="h-32 flex items-center justify-center text-muted-foreground">Loading…</div>
+        ) : (
+          <pre className="bg-muted rounded-md p-4 text-xs font-mono whitespace-pre overflow-x-auto max-h-80">
+            {data}
+          </pre>
+        )}
+        <div className="flex justify-end gap-2">
+          <Button size="sm" variant="outline" onClick={handleCopy} disabled={!data}>
+            {copied ? <><Check className="h-3 w-3 mr-1" />Copied!</> : <><Copy className="h-3 w-3 mr-1" />Copy</>}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -186,7 +248,7 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
                 value={url ?? ''}
                 className="flex-1 rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono"
               />
-              <Button size="sm" onClick={() => { navigator.clipboard?.writeText(url ?? ''); setUrl(null) }}>
+              <Button size="sm" onClick={() => { copyToClipboard(url ?? ''); setUrl(null) }}>
                 Copy
               </Button>
             </div>

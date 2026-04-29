@@ -47,6 +47,9 @@ export const disableClient = (id: number) =>
 export const getClientConfig = (id: number) =>
   api.get(`/clients/${id}/config`, { responseType: 'blob' }).then((r) => r.data)
 
+export const getClientConfigText = (id: number) =>
+  api.get<string>(`/clients/${id}/config`, { responseType: 'text' }).then((r) => r.data)
+
 export const getClientQR = (id: number) =>
   api.get<{ qr_code: string }>(`/clients/${id}/qr`).then((r) => r.data)
 

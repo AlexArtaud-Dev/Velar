@@ -3,8 +3,11 @@ package handlers
 import (
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"os/exec"
 	"strconv"
+	"strings"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
@@ -170,6 +173,8 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 	}
 
 	needsRestart := false
+	subnetChanged := false
+	oldSubnet := iface.Subnet
 	updates := map[string]interface{}{}
 	if req.DNSServer != "" && req.DNSServer != iface.DNSServer {
 		updates["dns_server"] = req.DNSServer
@@ -189,11 +194,37 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 	if req.Subnet != "" && req.Subnet != iface.Subnet {
 		updates["subnet"] = req.Subnet
 		needsRestart = true
+		subnetChanged = true
 	}
 
 	if len(updates) > 0 {
 		database.DB.Model(&iface).Updates(updates)
 		database.DB.First(&iface, id)
+	}
+
+	// Re-allocate client IPs when subnet changes (preserve last-octet offset)
+	if subnetChanged {
+		_, oldNet, errOld := net.ParseCIDR(oldSubnet)
+		_, newNet, errNew := net.ParseCIDR(iface.Subnet)
+		if errOld == nil && errNew == nil {
+			var allClients []models.Client
+			database.DB.Where("interface_id = ?", iface.ID).Find(&allClients)
+			for i := range allClients {
+				cl := allClients[i]
+				oldIP := net.ParseIP(cl.AssignedIP).To4()
+				if oldIP == nil || !oldNet.Contains(oldIP) {
+					continue
+				}
+				// Preserve the host offset (last octet for /24 subnets)
+				newBase := make(net.IP, 4)
+				copy(newBase, newNet.IP.To4())
+				newBase[3] = oldIP[3]
+				if newNet.Contains(newBase) {
+					database.DB.Model(&cl).Update("assigned_ip", newBase.String())
+					slog.Info("re-IP client", "client", cl.Name, "old", cl.AssignedIP, "new", newBase.String())
+				}
+			}
+		}
 	}
 
 	if needsRestart {
@@ -272,4 +303,33 @@ func (h *InterfaceHandler) BringDown(c *gin.Context) {
 	}
 	database.DB.Model(&iface).Update("enabled", false)
 	c.JSON(http.StatusOK, gin.H{"message": "down"})
+}
+
+// Check verifies that the interface is UP and its UDP port is bound.
+func (h *InterfaceHandler) Check(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var iface models.Interface
+	if err := database.DB.First(&iface, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+
+	status, _ := h.wg.GetInterfaceStatus(iface.Name)
+	portBound := checkUDPPort(iface.Port)
+
+	c.JSON(http.StatusOK, gin.H{
+		"interface_up": status.Up,
+		"port_bound":   portBound,
+		"port":         iface.Port,
+		"interface":    iface.Name,
+	})
+}
+
+// checkUDPPort returns true if a UDP socket is listening on the given port.
+func checkUDPPort(port int) bool {
+	out, err := exec.Command("sh", "-c", fmt.Sprintf("ss -uln 2>/dev/null | grep ':%d '", port)).Output()
+	if err != nil {
+		return false
+	}
+	return len(strings.TrimSpace(string(out))) > 0
 }

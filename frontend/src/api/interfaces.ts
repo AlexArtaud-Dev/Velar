@@ -54,3 +54,13 @@ export const bringUp = (id: number) =>
 
 export const bringDown = (id: number) =>
   api.post(`/interfaces/${id}/down`)
+
+export interface InterfaceCheck {
+  interface_up: boolean
+  port_bound: boolean
+  port: number
+  interface: string
+}
+
+export const checkInterface = (id: number) =>
+  api.get<InterfaceCheck>(`/interfaces/${id}/check`).then((r) => r.data)

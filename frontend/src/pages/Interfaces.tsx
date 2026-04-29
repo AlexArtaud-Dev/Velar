@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +11,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  listInterfaces, createInterface, updateInterface, deleteInterface, bringUp, bringDown,
+  listInterfaces, createInterface, updateInterface, deleteInterface, bringUp, bringDown, checkInterface,
   type CreateInterfacePayload, type UpdateInterfacePayload, type WGInterface,
 } from '@/api/interfaces'
 import { getAdguardStatus } from '@/api/settings'
@@ -89,6 +89,7 @@ export default function Interfaces() {
                       <Power className="h-4 w-4" />
                     </Button>
                   )}
+                  <CheckButton iface={iface} />
                   <EditInterfaceDialog iface={iface} onUpdated={() => qc.invalidateQueries({ queryKey: ['interfaces'] })} />
                   <Button
                     variant="outline"
@@ -117,6 +118,62 @@ export default function Interfaces() {
         )}
       </div>
     </div>
+  )
+}
+
+function CheckButton({ iface }: { iface: WGInterface }) {
+  const [open, setOpen] = useState(false)
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ['iface-check', iface.id],
+    queryFn: () => checkInterface(iface.id),
+    enabled: open,
+    staleTime: 0,
+  })
+
+  function StatusRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+    return (
+      <div className="flex items-center gap-3">
+        {ok
+          ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
+          : <XCircle className="h-4 w-4 text-destructive shrink-0" />}
+        <span className="text-sm flex-1">{label}</span>
+        {detail && <span className="text-xs text-muted-foreground font-mono">{detail}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="icon" title="Check connectivity">
+          <ShieldCheck className="h-4 w-4" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Connectivity check — {iface.name}</DialogTitle>
+          <DialogDescription>Verifies the interface is up and the port is bound.</DialogDescription>
+        </DialogHeader>
+        {isFetching ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" /> Checking…
+          </div>
+        ) : data ? (
+          <div className="space-y-3 py-2">
+            <StatusRow label="Interface is UP" ok={data.interface_up} detail={data.interface} />
+            <StatusRow label="UDP port bound" ok={data.port_bound} detail={`:${data.port}`} />
+            <p className="text-xs text-muted-foreground pt-1">
+              To verify external reachability, ensure port <span className="font-mono">{data.port}/UDP</span> is forwarded on your router to this server.
+            </p>
+          </div>
+        ) : null}
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>
+            {isFetching ? 'Checking…' : 'Re-check'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -294,7 +351,12 @@ function EditInterfaceDialog({ iface, onUpdated }: { iface: WGInterface; onUpdat
                   <button
                     key={s}
                     type="button"
-                    onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                    onClick={() => setForm((f) => {
+                      const newDns = f.dns_server === serverIPFromSubnet(iface.subnet)
+                        ? serverIPFromSubnet(s)
+                        : f.dns_server
+                      return { ...f, subnet: s, dns_server: newDns }
+                    })}
                     className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
                       form.subnet === s
                         ? 'bg-primary text-primary-foreground border-primary'
@@ -307,7 +369,15 @@ function EditInterfaceDialog({ iface, onUpdated }: { iface: WGInterface; onUpdat
               </div>
               <Input
                 value={form.subnet ?? ''}
-                onChange={(e) => setForm((f) => ({ ...f, subnet: e.target.value }))}
+                onChange={(e) => {
+                  const newSubnet = e.target.value
+                  setForm((f) => {
+                    const newDns = f.dns_server === serverIPFromSubnet(iface.subnet)
+                      ? serverIPFromSubnet(newSubnet)
+                      : f.dns_server
+                    return { ...f, subnet: newSubnet, dns_server: newDns }
+                  })
+                }}
                 placeholder="10.0.0.0/24"
               />
             </div>
