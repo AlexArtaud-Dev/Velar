@@ -5,6 +5,7 @@ interface Admin {
   id: number
   username: string
   totp_enabled: boolean
+  must_change_password: boolean
 }
 
 interface AuthState {

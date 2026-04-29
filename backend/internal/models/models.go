@@ -3,12 +3,13 @@ package models
 import "time"
 
 type Admin struct {
-	ID           uint      `gorm:"primaryKey" json:"id"`
-	Username     string    `gorm:"uniqueIndex;not null" json:"username"`
-	PasswordHash string    `gorm:"not null" json:"-"`
-	TOTPSecret   string    `gorm:"default:''" json:"-"`
-	TOTPEnabled  bool      `gorm:"default:false" json:"totp_enabled"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID                 uint      `gorm:"primaryKey" json:"id"`
+	Username           string    `gorm:"uniqueIndex;not null" json:"username"`
+	PasswordHash       string    `gorm:"not null" json:"-"`
+	TOTPSecret         string    `gorm:"default:''" json:"-"`
+	TOTPEnabled        bool      `gorm:"default:false" json:"totp_enabled"`
+	MustChangePassword bool      `gorm:"default:false" json:"must_change_password"`
+	CreatedAt          time.Time `json:"created_at"`
 }
 
 type RefreshToken struct {

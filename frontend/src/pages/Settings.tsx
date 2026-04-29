@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Shield, Globe, Server, Key } from 'lucide-react'
+import { Shield, Globe, Server, Key, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { getPublicIP, getAdguardStatus } from '@/api/settings'
-import { totpSetup, totpActivate } from '@/api/auth'
+import { totpSetup, totpActivate, changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 export default function Settings() {
@@ -62,6 +62,20 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* Change password */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <Lock className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Password</CardTitle>
+          </div>
+          <CardDescription>Change your admin password</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ChangePasswordForm />
+        </CardContent>
+      </Card>
+
       {/* TOTP */}
       <Card>
         <CardHeader>
@@ -97,6 +111,56 @@ export default function Settings() {
           </Button>
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+function ChangePasswordForm() {
+  const [current, setCurrent] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [error, setError] = useState('')
+  const [success, setSuccess] = useState(false)
+  const { admin, setAuth, accessToken } = useAuthStore()
+
+  const mutation = useMutation({
+    mutationFn: () => changePassword(current, next),
+    onSuccess: () => {
+      if (admin && accessToken) setAuth(accessToken, { ...admin, must_change_password: false })
+      setCurrent(''); setNext(''); setConfirm(''); setSuccess(true)
+      setTimeout(() => setSuccess(false), 3000)
+    },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  function submit() {
+    setError('')
+    if (next.length < 8) { setError('Password must be at least 8 characters'); return }
+    if (next !== confirm) { setError('Passwords do not match'); return }
+    mutation.mutate()
+  }
+
+  return (
+    <div className="space-y-3 max-w-sm">
+      <div className="space-y-1.5">
+        <Label htmlFor="s-current">Current password</Label>
+        <Input id="s-current" type="password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="s-new">New password</Label>
+        <Input id="s-new" type="password" value={next} onChange={(e) => setNext(e.target.value)} />
+      </div>
+      <div className="space-y-1.5">
+        <Label htmlFor="s-confirm">Confirm</Label>
+        <Input id="s-confirm" type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+      </div>
+      {error && <p className="text-sm text-destructive">{error}</p>}
+      {success && <p className="text-sm text-green-500">Password updated successfully</p>}
+      <Button size="sm" onClick={submit} disabled={mutation.isPending}>
+        {mutation.isPending ? 'Saving…' : 'Update password'}
+      </Button>
     </div>
   )
 }

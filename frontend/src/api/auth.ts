@@ -13,6 +13,9 @@ export const logout = () => api.post('/auth/logout')
 
 export const getMe = () => api.get('/me').then((r) => r.data)
 
+export const changePassword = (current_password: string, new_password: string) =>
+  api.put('/auth/password', { current_password, new_password }).then((r) => r.data)
+
 export const totpSetup = () => api.get('/auth/totp/setup').then((r) => r.data)
 
 export const totpActivate = (code: string) =>

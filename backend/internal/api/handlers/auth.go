@@ -74,9 +74,10 @@ func Login() gin.HandlerFunc {
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": accessToken,
 			"admin": gin.H{
-				"id":           admin.ID,
-				"username":     admin.Username,
-				"totp_enabled": admin.TOTPEnabled,
+				"id":                   admin.ID,
+				"username":             admin.Username,
+				"totp_enabled":         admin.TOTPEnabled,
+				"must_change_password": admin.MustChangePassword,
 			},
 		})
 	}
@@ -181,6 +182,43 @@ func GetMe() gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, admin)
+	}
+}
+
+func ChangePassword() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			CurrentPassword string `json:"current_password" binding:"required"`
+			NewPassword     string `json:"new_password" binding:"required,min=8"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		adminID := c.GetUint("admin_id")
+		var admin models.Admin
+		if err := database.DB.First(&admin, adminID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+			return
+		}
+
+		if !auth.CheckPassword(admin.PasswordHash, req.CurrentPassword) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "current password is incorrect"})
+			return
+		}
+
+		hash, err := auth.HashPassword(req.NewPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not hash password"})
+			return
+		}
+
+		database.DB.Model(&admin).Updates(map[string]interface{}{
+			"password_hash":        hash,
+			"must_change_password": false,
+		})
+		c.JSON(http.StatusOK, gin.H{"message": "password updated"})
 	}
 }
 

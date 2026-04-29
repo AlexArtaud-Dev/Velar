@@ -7,9 +7,10 @@ import Dashboard from '@/pages/Dashboard'
 import Interfaces from '@/pages/Interfaces'
 import Clients from '@/pages/Clients'
 import Settings from '@/pages/Settings'
+import ForceChangePassword from '@/components/ForceChangePassword'
 
 export default function App() {
-  const { isAuthenticated } = useAuthStore()
+  const { isAuthenticated, admin } = useAuthStore()
 
   return (
     <BrowserRouter>
@@ -29,6 +30,7 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {isAuthenticated && admin?.must_change_password && <ForceChangePassword />}
     </BrowserRouter>
   )
 }

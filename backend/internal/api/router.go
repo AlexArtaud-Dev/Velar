@@ -52,6 +52,7 @@ func NewRouter(
 		authGroup.POST("/login", loginRL.Middleware(), handlers.Login())
 		authGroup.POST("/refresh", handlers.RefreshToken())
 		authGroup.POST("/logout", middleware.JWT(), handlers.Logout())
+		authGroup.PUT("/password", middleware.JWT(), handlers.ChangePassword())
 		authGroup.GET("/totp/setup", middleware.JWT(), handlers.TOTPSetup())
 		authGroup.POST("/totp/activate", middleware.JWT(), handlers.TOTPActivate())
 	}

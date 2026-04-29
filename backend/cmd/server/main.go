@@ -123,8 +123,9 @@ func seedAdmin() {
 	}
 
 	admin := models.Admin{
-		Username:    "admin",
-		PasswordHash: hash,
+		Username:           "admin",
+		PasswordHash:       hash,
+		MustChangePassword: true,
 	}
 	if err := database.DB.Create(&admin).Error; err != nil {
 		slog.Error("seed admin: create", "err", err)
