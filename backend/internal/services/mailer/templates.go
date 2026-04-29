@@ -36,7 +36,7 @@ func baseHTML(subtitle, bodyContent string) string {
   <!-- Footer -->
   <tr>
     <td style="padding:20px 40px;border-top:1px solid #334155;text-align:center;color:#475569;font-size:12px;line-height:1.7;">
-      Velar &mdash; WireGuard Management Platform<br>
+      Velar &mdash; VPN Management Platform<br>
       <span style="color:#334155;">This is an automated notification. Do not reply to this email.</span>
     </td>
   </tr>
@@ -80,179 +80,226 @@ func para(text string) string {
 	return fmt.Sprintf(`<p style="margin:0 0 16px;color:#94a3b8;font-size:14px;line-height:1.75;">%s</p>`, text)
 }
 
+func highlight(text string) string {
+	return fmt.Sprintf(`<p style="margin:0 0 16px;background:#0f172a;border-left:3px solid #6366f1;padding:12px 16px;border-radius:0 8px 8px 0;color:#e2e8f0;font-size:14px;line-height:1.75;">%s</p>`, text)
+}
+
 func note(text string) string {
 	return fmt.Sprintf(`<p style="margin:16px 0 0;color:#475569;font-size:12px;line-height:1.6;text-align:center;">%s</p>`, text)
 }
 
 func divider() string {
-	return `<div style="height:1px;background:#334155;margin:20px 0;"></div>`
+	return `<div style="height:1px;background:#334155;margin:24px 0;"></div>`
+}
+
+// stepsList renders a numbered list of instructions.
+func stepsList(steps []string) string {
+	rows := ""
+	for i, s := range steps {
+		rows += fmt.Sprintf(`<tr>
+  <td style="padding:8px 12px 8px 0;vertical-align:top;width:36px;">
+    <div style="background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-weight:800;font-size:12px;width:26px;height:26px;border-radius:50%%;text-align:center;line-height:26px;">%d</div>
+  </td>
+  <td style="padding:8px 0;color:#cbd5e1;font-size:14px;line-height:1.65;vertical-align:top;">%s</td>
+</tr>`, i+1, s)
+	}
+	return fmt.Sprintf(`<table cellpadding="0" cellspacing="0" border="0" width="100%%" style="margin:16px 0 20px;">
+<tbody>%s</tbody>
+</table>`, rows)
 }
 
 // ── Client-facing templates ───────────────────────────────────────────────────
+// Written in plain language for non-technical users.
+// No jargon: "WireGuard" → "VPN app", "config" → "VPN profile", etc.
 
 // HTMLClientWelcome is sent on client creation with a one-time download link.
 func HTMLClientWelcome(name, ip, expiry, downloadURL string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip) + infoRow("Expires", expiry)
-	body := h2("Your VPN access is ready &#x1F389;") +
-		para("Your WireGuard VPN configuration has been created. Use the button below to download your configuration file &mdash; the link is valid for <strong style=\"color:#f1f5f9;\">1 hour</strong> and can only be used once.") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip) + infoRow("Access expires on", expiry)
+	body := h2("Welcome! Your VPN access is ready &#x1F389;") +
+		para("Your VPN access has been set up. To start using it, you need to download your personal VPN profile and load it into the <strong style=\"color:#f1f5f9;\">WireGuard</strong> app on your device.") +
 		infoTable(rows) +
-		ctaButton("&#x2B07; Download my config", downloadURL) +
+		para("<strong style=\"color:#f1f5f9;\">Click the button below to download your profile.</strong> The link is personal, works only once, and expires in 1&nbsp;hour &mdash; so download it now.") +
+		ctaButton("&#x2B07;&nbsp; Download my VPN profile", downloadURL) +
 		divider() +
-		note("Import the <code>.conf</code> file into the WireGuard app on any device.<br>&#x26A0;&#xFE0F; Do not share this file or link with anyone.")
-	return baseHTML("WireGuard VPN Access", body)
+		para("<strong style=\"color:#f1f5f9;\">How to install it on your phone or tablet:</strong>") +
+		stepsList([]string{
+			"Open the <strong style=\"color:#f1f5f9;\">WireGuard</strong> app (download it free from the App Store or Google Play if you don't have it).",
+			"Tap the <strong style=\"color:#f1f5f9;\">+</strong> button, then choose <strong style=\"color:#f1f5f9;\">&ldquo;Import from file or archive&rdquo;</strong>.",
+			"Select the file you just downloaded. Your VPN is ready to use.",
+		}) +
+		para("<strong style=\"color:#f1f5f9;\">How to install it on your computer:</strong>") +
+		stepsList([]string{
+			"Open the <strong style=\"color:#f1f5f9;\">WireGuard</strong> app (download it free from wireguard.com if you don't have it).",
+			"Click <strong style=\"color:#f1f5f9;\">&ldquo;Import tunnel(s) from file&rdquo;</strong>.",
+			"Select the file you just downloaded. Your VPN is ready to use.",
+		}) +
+		note("&#x1F512;&nbsp; Your VPN profile is personal — like a password. Never share this file or this link with anyone.")
+	return baseHTML("Your VPN Access", body)
 }
 
-// HTMLClientUpdated is sent to the client when their config metadata is edited.
+// HTMLClientUpdated is sent to the client when their account settings are edited by an admin.
 func HTMLClientUpdated(name, ip string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip)
-	body := h2("Your VPN configuration was updated") +
-		para("An administrator has made changes to your WireGuard VPN access. If your allowed routes or expiry date changed, please check with your administrator.") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip)
+	body := h2("Your VPN account was updated") +
+		para("Your VPN account has been updated by your administrator. In most cases, <strong style=\"color:#f1f5f9;\">no action is needed on your side</strong> &mdash; you can keep using your VPN normally.") +
 		infoTable(rows) +
-		para("Your existing configuration file remains valid unless the interface itself was reconfigured. Contact your administrator if you have questions.")
-	return baseHTML("Configuration Updated", body)
+		highlight("If your VPN stops working or you notice anything unexpected after this change, contact your administrator &mdash; they may need to send you a new profile.") +
+		para("Otherwise, everything should continue working as before.")
+	return baseHTML("Account Updated", body)
 }
 
-// HTMLClientInterfaceUpdated is sent when a subnet or DNS change requires a new config.
+// HTMLClientInterfaceUpdated is sent when a subnet or DNS change requires re-importing the VPN profile.
 func HTMLClientInterfaceUpdated(name, ip string, changes []string, downloadURL string) string {
-	changesHTML := ""
-	for _, ch := range changes {
-		changesHTML += fmt.Sprintf(`<li style="color:#94a3b8;font-size:14px;margin-bottom:6px;line-height:1.6;">%s</li>`, ch)
-	}
-	changesList := fmt.Sprintf(`<ul style="margin:12px 0 20px;padding-left:20px;">%s</ul>`, changesHTML)
-
-	rows := infoRow("Name", name) + infoRow("New VPN IP", ip)
-	body := h2("&#x26A0;&#xFE0F; Your VPN config needs to be updated") +
-		badge("Action Required", "#fbbf24", "#451a03") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip)
+	body := h2("&#x26A0;&#xFE0F;&nbsp; Action required &mdash; update your VPN app") +
+		badge("You need to act", "#fbbf24", "#451a03") +
 		`<br><br>` +
-		para("Your VPN interface was reconfigured by an administrator. The following settings have changed:") +
-		changesList +
-		para("<strong style=\"color:#f1f5f9;\">You must download a new configuration file</strong> and re-import it into your WireGuard app. Your old config will no longer work.") +
+		para("Your administrator has updated the VPN server settings. Because of this change, <strong style=\"color:#f1f5f9;\">your current VPN setup will no longer work</strong> and you need to replace it with a new one.") +
+		para("Don't worry &mdash; it only takes a minute. Just follow the steps below.") +
 		infoTable(rows) +
-		ctaButton("&#x2B07; Download new config", downloadURL) +
-		note("&#x26A0;&#xFE0F; Delete your old configuration and replace it with this new one.")
-	return baseHTML("Interface Reconfigured", body)
+		ctaButton("&#x2B07;&nbsp; Download my new VPN profile", downloadURL) +
+		divider() +
+		para("<strong style=\"color:#f1f5f9;\">Steps to update (phone or tablet):</strong>") +
+		stepsList([]string{
+			"Click the button above and download your new VPN profile.",
+			"Open the <strong style=\"color:#f1f5f9;\">WireGuard</strong> app.",
+			"Find your old profile named <strong style=\"color:#f1f5f9;\">&ldquo;" + name + "&rdquo;</strong> and delete it (swipe left on mobile, or select and click the trash icon).",
+			"Tap <strong style=\"color:#f1f5f9;\">+</strong> &rarr; <strong style=\"color:#f1f5f9;\">&ldquo;Import from file&rdquo;</strong> and select the file you just downloaded.",
+			"Done! Your VPN is working again.",
+		}) +
+		note("&#x1F512;&nbsp; This link works only once and expires in 1&nbsp;hour. Download your profile now.<br>Contact your administrator if you missed the window.")
+	return baseHTML("Action Required — Update Your VPN", body)
 }
 
-// HTMLClientEnabled is sent when access is re-enabled.
+// HTMLClientEnabled is sent when access is re-enabled by an admin.
 func HTMLClientEnabled(name, ip string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip)
-	body := h2("Your VPN access has been re-enabled &#x2705;") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip)
+	body := h2("Good news &mdash; your VPN access is back! &#x2705;") +
 		badge("Active", "#34d399", "#064e3b") +
 		`<br><br>` +
-		para("Your WireGuard VPN access has been restored. You can connect immediately using your existing configuration file.") +
-		infoTable(rows)
-	return baseHTML("Access Re-enabled", body)
+		para("Your VPN access has been restored by your administrator. You can connect right now &mdash; <strong style=\"color:#f1f5f9;\">no changes are needed in your app</strong>.") +
+		infoTable(rows) +
+		highlight("Just open the WireGuard app and toggle your VPN on as usual. Everything should work immediately.") +
+		para("If you have any trouble connecting, contact your administrator.")
+	return baseHTML("VPN Access Restored", body)
 }
 
 // HTMLClientDisabled is sent when access is temporarily disabled.
 func HTMLClientDisabled(name, ip string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip)
-	body := h2("Your VPN access has been temporarily disabled") +
-		badge("Disabled", "#fbbf24", "#451a03") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip)
+	body := h2("Your VPN access has been paused") +
+		badge("Suspended", "#fbbf24", "#451a03") +
 		`<br><br>` +
-		para("Your WireGuard VPN access has been suspended by an administrator. Your configuration file is still valid and your access may be restored.") +
+		para("Your VPN access has been temporarily suspended by your administrator. <strong style=\"color:#f1f5f9;\">You will not be able to connect to the VPN</strong> until your access is restored.") +
 		infoTable(rows) +
+		highlight("This suspension is usually temporary. Your VPN profile is still saved on your device &mdash; you won't need to reconfigure anything when access is restored.") +
 		divider() +
-		para("Contact your administrator if you believe this is an error or need your access restored.")
-	return baseHTML("Access Suspended", body)
+		para("If you think this is a mistake, or need your access restored urgently, please contact your administrator.")
+	return baseHTML("VPN Access Paused", body)
 }
 
 // HTMLClientDeleted is sent when access is permanently revoked.
 func HTMLClientDeleted(name, ip string) string {
-	rows := infoRow("Name", name) + infoRow("Former VPN IP", ip)
-	body := h2("Your VPN access has been revoked") +
-		badge("Revoked", "#f87171", "#450a0a") +
+	rows := infoRow("Your name", name) + infoRow("Former VPN address", ip)
+	body := h2("Your VPN access has been removed") +
+		badge("Removed", "#f87171", "#450a0a") +
 		`<br><br>` +
-		para("Your WireGuard VPN access has been permanently removed. Your configuration file is no longer valid and connections will be rejected.") +
+		para("Your VPN access has been permanently removed by your administrator. <strong style=\"color:#f1f5f9;\">You will no longer be able to connect</strong> using the VPN profile on your device.") +
 		infoTable(rows) +
+		highlight("You can safely delete the profile named &ldquo;" + name + "&rdquo; from your WireGuard app &mdash; it will not work anymore.") +
 		divider() +
-		para("Contact your administrator if you have questions or need access restored.")
-	return baseHTML("Access Revoked", body)
+		para("If you believe this was done in error, or if you need VPN access again in the future, please contact your administrator.")
+	return baseHTML("VPN Access Removed", body)
 }
 
 // HTMLClientExpired is sent when a peer's access expires automatically.
 func HTMLClientExpired(name, ip, iface string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface)
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip)
 	body := h2("Your VPN access has expired") +
 		badge("Expired", "#f87171", "#450a0a") +
 		`<br><br>` +
-		para("Your WireGuard VPN access has reached its scheduled expiry date and has been automatically disabled. You can no longer connect using your existing configuration.") +
+		para("Your VPN access was set up with an expiry date, and that date has now passed. As a result, <strong style=\"color:#f1f5f9;\">your VPN has been automatically disconnected</strong> and you can no longer connect.") +
 		infoTable(rows) +
+		highlight("Think of it like a visitor badge that was valid for a limited time &mdash; it has simply run out. Your administrator can renew your access if needed.") +
 		divider() +
-		para("Contact your administrator to renew your access.")
+		para("Contact your administrator to renew your VPN access.")
 	return baseHTML("VPN Access Expired", body)
 }
 
 // HTMLClientExpiringSoon is sent ~24h before expiry.
 func HTMLClientExpiringSoon(name, ip, iface, expiresAt string) string {
-	rows := infoRow("Name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface) + infoRow("Expires at (UTC)", expiresAt)
-	body := h2("&#x23F0; Your VPN access expires soon") +
+	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip) + infoRow("Stops working on", expiresAt)
+	body := h2("&#x23F0;&nbsp; Your VPN access expires soon") +
 		badge("Expiring Soon", "#fbbf24", "#451a03") +
 		`<br><br>` +
-		para("Your WireGuard VPN access will expire within the next <strong style=\"color:#f1f5f9;\">24 hours</strong> and will be automatically disabled.") +
+		para("Your VPN access is set to expire within the next <strong style=\"color:#f1f5f9;\">24 hours</strong>. Once it expires, you will no longer be able to connect &mdash; until your administrator renews it.") +
 		infoTable(rows) +
+		highlight("&#x1F514;&nbsp; To avoid any interruption, contact your administrator as soon as possible and ask them to extend your access.") +
 		divider() +
-		para("Contact your administrator to extend your access before it expires.")
-	return baseHTML("Access Expiring Soon", body)
+		para("If your VPN access is not renewed in time, don't worry &mdash; your profile will still be on your device and will work again once the administrator re-enables it.")
+	return baseHTML("VPN Access Expiring Soon", body)
 }
 
 // ── Admin-facing templates ────────────────────────────────────────────────────
+// These are intended for the technical administrator, so more detail is kept.
 
 // HTMLAdminClientCreated is sent to the admin when a new client is created.
 func HTMLAdminClientCreated(name, ip, iface, owner string) string {
-	rows := infoRow("Client name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface) + infoRow("Owner", owner)
-	body := h2("New client added") +
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface) + infoRow("Owner", owner)
+	body := h2("New client provisioned") +
 		badge("Created", "#34d399", "#064e3b") +
 		`<br><br>` +
-		para("A new WireGuard client has been provisioned on your Velar instance.") +
+		para("A new WireGuard peer has been added to your Velar instance. If the client had an email address set, they have already received a one-time download link for their config.") +
 		infoTable(rows) +
-		para("You can manage this client from the Velar dashboard.")
+		para("Manage this client from the Velar dashboard.")
 	return baseHTML("New Client Created", body)
 }
 
 // HTMLAdminClientUpdated is sent to the admin when a client is edited.
 func HTMLAdminClientUpdated(name, ip, iface string) string {
-	rows := infoRow("Client name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface)
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface)
 	body := h2("Client configuration updated") +
-		para("A WireGuard client configuration has been modified.") +
+		para("A WireGuard peer configuration has been modified on your Velar instance.") +
 		infoTable(rows)
 	return baseHTML("Client Updated", body)
 }
 
 // HTMLAdminClientExpired is sent to the admin when a peer expires automatically.
 func HTMLAdminClientExpired(name, ip, iface string) string {
-	rows := infoRow("Client name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface)
-	body := h2("Client peer expired and was disabled") +
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface)
+	body := h2("Peer expired &mdash; access automatically disabled") +
 		badge("Expired", "#f87171", "#450a0a") +
 		`<br><br>` +
-		para("A WireGuard peer has reached its expiry date and has been automatically disabled.") +
+		para("A WireGuard peer has reached its configured expiry date and has been automatically disabled. The peer has been removed from the active interface and can no longer connect.") +
 		infoTable(rows) +
 		divider() +
-		para("You can re-enable or permanently delete this client from the Velar dashboard.")
+		para("You can re-enable (and extend the expiry) or permanently delete this client from the Velar dashboard.")
 	return baseHTML("Client Expired", body)
 }
 
 // HTMLAdminIPChanged is sent to the admin when the public IP changes.
 func HTMLAdminIPChanged(oldIP, newIP string) string {
 	rows := infoRow("Previous IP", oldIP) + infoRow("New IP", newIP)
-	body := h2("&#x1F310; Public IP address changed") +
+	body := h2("&#x1F310;&nbsp; Public IP address changed") +
 		badge("IP Updated", "#60a5fa", "#1e3a5f") +
 		`<br><br>` +
-		para("The server's public IP address has changed. All clients whose VPN configuration hardcodes this IP have been notified by email and provided with a new one-time download link.") +
+		para("The server&rsquo;s public IP address has changed. The in-memory <code style=\"color:#a78bfa;\">WGHost</code> value has been updated so that any new client configs generated from now on will use the correct IP.") +
 		infoTable(rows) +
-		para("WireGuard interfaces remain up. Existing connected peers will reconnect automatically once they update their configuration.")
+		para("All enabled clients that had an email address have been notified automatically and sent a new one-time download link so they can re-import their config with the updated endpoint.") +
+		divider() +
+		para("&#x26A0;&#xFE0F;&nbsp; Clients without an email address still have the old IP in their config and will need to be updated manually. WireGuard interfaces remain up &mdash; currently connected peers will drop and need to reconnect.")
 	return baseHTML("Public IP Changed", body)
 }
 
 // HTMLAdminClientExpiringSoon is sent to the admin for peers expiring within 24h.
 func HTMLAdminClientExpiringSoon(name, ip, iface, expiresAt string) string {
-	rows := infoRow("Client name", name) + infoRow("VPN IP", ip) + infoRow("Interface", iface) + infoRow("Expires at (UTC)", expiresAt)
-	body := h2("&#x23F0; Client expiring in less than 24 hours") +
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface) + infoRow("Expires at (UTC)", expiresAt)
+	body := h2("&#x23F0;&nbsp; Peer expiring in less than 24 hours") +
 		badge("Expiring Soon", "#fbbf24", "#451a03") +
 		`<br><br>` +
-		para("A WireGuard peer will reach its expiry date within the next 24 hours and will be automatically disabled.") +
+		para("A WireGuard peer will reach its expiry date within the next 24 hours and will be automatically disabled by the expiry job.") +
 		infoTable(rows) +
 		divider() +
-		para("Extend its expiry or delete it from the Velar dashboard before it expires.")
+		para("If this client still needs access, extend their expiry date from the Velar dashboard before the deadline.")
 	return baseHTML("Client Expiring Soon", body)
 }
