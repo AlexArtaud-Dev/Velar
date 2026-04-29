@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"io"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
@@ -222,6 +224,37 @@ func ChangePassword() gin.HandlerFunc {
 	}
 }
 
+// TOTPDisable verifies the current TOTP code then disables 2FA.
+func TOTPDisable() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req struct {
+			Code string `json:"code" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		adminID := c.GetUint("admin_id")
+		var admin models.Admin
+		if err := database.DB.First(&admin, adminID).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "admin not found"})
+			return
+		}
+
+		if !auth.ValidateTOTP(admin.TOTPSecret, req.Code) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid TOTP code"})
+			return
+		}
+
+		database.DB.Model(&admin).Updates(map[string]interface{}{
+			"totp_enabled": false,
+			"totp_secret":  "",
+		})
+		c.JSON(http.StatusOK, gin.H{"message": "TOTP disabled"})
+	}
+}
+
 // BackupDB streams the SQLite file as a download.
 func BackupDB() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -229,6 +262,58 @@ func BackupDB() gin.HandlerFunc {
 		c.Header("Content-Disposition", "attachment; filename=velar_backup.db")
 		c.Header("Content-Type", "application/octet-stream")
 		c.File(dbPath)
+	}
+}
+
+// RestoreDB replaces the current SQLite database with the uploaded file.
+func RestoreDB() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		file, err := c.FormFile("file")
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "no file provided"})
+			return
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open uploaded file"})
+			return
+		}
+		defer src.Close()
+
+		// Write to a temp file first to avoid corrupting the DB on partial write
+		tmpPath := config.C.DBPath + ".restore_tmp"
+		dst, err := os.Create(tmpPath)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "cannot create temp file"})
+			return
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			dst.Close()
+			os.Remove(tmpPath)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "write failed"})
+			return
+		}
+		dst.Close()
+
+		// Close the current DB connection before replacing the file
+		sqlDB, err := database.DB.DB()
+		if err == nil {
+			sqlDB.Close()
+		}
+
+		if err := os.Rename(tmpPath, config.C.DBPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not replace database: " + err.Error()})
+			return
+		}
+
+		// Re-open the database
+		if err := database.Init(config.C.DBPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "restored but failed to reopen DB: " + err.Error()})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "database restored successfully"})
 	}
 }
 

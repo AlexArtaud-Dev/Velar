@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,8 +11,8 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  listClients, createClient, deleteClient, enableClient, disableClient,
-  getClientQR, getClientConfigText, createDownloadLink, type CreateClientPayload,
+  listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
+  getClientQR, getClientConfigText, createDownloadLink, type CreateClientPayload, type Client,
 } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -86,6 +86,7 @@ export default function Clients() {
                     <ConfigButton clientId={client.id} name={client.name} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
+                    <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -262,6 +263,77 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
               Click to download directly →
             </a>
           </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ name: '', owner_label: '', allowed_ips: '', expires_at: '' })
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setForm({
+      name: client.name,
+      owner_label: client.owner_label ?? '',
+      allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
+      expires_at: client.expires_at ? client.expires_at.slice(0, 10) : '',
+    })
+    setError('')
+    setOpen(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      name: form.name || undefined,
+      owner_label: form.owner_label || undefined,
+      allowed_ips: form.allowed_ips || undefined,
+      expires_at: form.expires_at ? new Date(form.expires_at).toISOString() : null,
+    }),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Edit" onClick={openDialog}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit client — {client.name}</DialogTitle>
+            <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-owner">Owner label</Label>
+              <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-ips">Allowed IPs</Label>
+              <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-expiry">Expiry date <span className="text-muted-foreground text-xs">(leave empty = no expiry)</span></Label>
+              <Input id="edit-expiry" type="date" value={form.expires_at} onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))} />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
+              {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

@@ -55,6 +55,7 @@ func NewRouter(
 		authGroup.PUT("/password", middleware.JWT(), handlers.ChangePassword())
 		authGroup.GET("/totp/setup", middleware.JWT(), handlers.TOTPSetup())
 		authGroup.POST("/totp/activate", middleware.JWT(), handlers.TOTPActivate())
+		authGroup.POST("/totp/disable", middleware.JWT(), handlers.TOTPDisable())
 	}
 
 	// Protected API
@@ -99,10 +100,12 @@ func NewRouter(
 		{
 			settings.GET("/public-ip", settingsHandler.GetPublicIP)
 			settings.GET("/adguard", settingsHandler.GetAdguardStatus)
+			settings.GET("/notifications", settingsHandler.GetNotificationStatus)
 		}
 
-		// Admin backup
+		// Admin backup / restore
 		api.GET("/admin/backup", handlers.BackupDB())
+		api.POST("/admin/restore", handlers.RestoreDB())
 	}
 
 	return r

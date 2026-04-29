@@ -20,3 +20,6 @@ export const totpSetup = () => api.get('/auth/totp/setup').then((r) => r.data)
 
 export const totpActivate = (code: string) =>
   api.post('/auth/totp/activate', { code }).then((r) => r.data)
+
+export const totpDisable = (code: string) =>
+  api.post('/auth/totp/disable', { code }).then((r) => r.data)

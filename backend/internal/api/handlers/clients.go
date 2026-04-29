@@ -13,6 +13,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
@@ -113,6 +114,12 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		return
 	}
 	h.syncConf(iface)
+
+	// Notify admin (best-effort, non-blocking)
+	mailer.Send(
+		fmt.Sprintf("New client added: %s", client.Name),
+		fmt.Sprintf("A new WireGuard client has been created.\n\nName:      %s\nInterface: %s\nIP:        %s\nOwner:     %s\n\nView it in the Velar dashboard.", client.Name, iface.Name, client.AssignedIP, client.OwnerLabel),
+	)
 
 	c.JSON(http.StatusCreated, client)
 }

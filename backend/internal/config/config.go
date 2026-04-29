@@ -7,17 +7,24 @@ import (
 )
 
 type Config struct {
-	AppSecret  string
-	AppPort    string
-	AppEnv     string
-	DBPath     string
+	AppSecret   string
+	AppPort     string
+	AppEnv      string
+	DBPath      string
 	WGConfigDir string
-	WGHost     string
-	WGMock     bool
+	WGHost      string
+	WGMock      bool
 	AdguardURL  string
 	AdguardUser string
 	AdguardPass string
 	CORSOrigin  string
+	// SMTP / notifications
+	SMTPHost    string
+	SMTPPort    string
+	SMTPUser    string
+	SMTPPass    string
+	SMTPFrom    string
+	AdminEmail  string
 }
 
 var C Config
@@ -35,6 +42,12 @@ func Load() {
 		AdguardUser: getEnv("ADGUARD_USER", "admin"),
 		AdguardPass: getEnv("ADGUARD_PASSWORD", ""),
 		CORSOrigin:  getEnv("CORS_ORIGIN", "http://localhost:5173"),
+		SMTPHost:    getEnv("SMTP_HOST", ""),
+		SMTPPort:    getEnv("SMTP_PORT", "587"),
+		SMTPUser:    getEnv("SMTP_USER", ""),
+		SMTPPass:    getEnv("SMTP_PASSWORD", ""),
+		SMTPFrom:    getEnv("SMTP_FROM", ""),
+		AdminEmail:  getEnv("ADMIN_EMAIL", ""),
 	}
 
 	if len(C.AppSecret) < 32 {

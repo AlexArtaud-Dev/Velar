@@ -36,6 +36,16 @@ export const getClient = (id: number) =>
 export const createClient = (payload: CreateClientPayload) =>
   api.post<Client>('/clients', payload).then((r) => r.data)
 
+export interface UpdateClientPayload {
+  name?: string
+  owner_label?: string
+  allowed_ips?: string
+  expires_at?: string | null
+}
+
+export const updateClient = (id: number, payload: UpdateClientPayload) =>
+  api.put<Client>(`/clients/${id}`, payload).then((r) => r.data)
+
 export const deleteClient = (id: number) => api.delete(`/clients/${id}`)
 
 export const enableClient = (id: number) =>
