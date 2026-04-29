@@ -296,6 +296,13 @@ func RestoreDB() gin.HandlerFunc {
 		}
 		dst.Close()
 
+		// Validate that the uploaded file is a real SQLite database before replacing
+		if err := database.ValidateSQLite(tmpPath); err != nil {
+			os.Remove(tmpPath)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid SQLite file: " + err.Error()})
+			return
+		}
+
 		// Close the current DB connection before replacing the file
 		sqlDB, err := database.DB.DB()
 		if err == nil {
