@@ -56,6 +56,7 @@ func main() {
 		wg = wgsvc.NewMockService()
 	} else {
 		wg = wgsvc.NewService(config.C.WGConfigDir)
+		restoreInterfaces(wg)
 	}
 
 	ag := adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
@@ -86,6 +87,56 @@ func main() {
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
+	}
+}
+
+// restoreInterfaces brings up all enabled interfaces from the DB after a reboot.
+// It rebuilds each conf file (with all its peers) before calling wg-quick up.
+func restoreInterfaces(wg wgsvc.Service) {
+	var ifaces []models.Interface
+	if err := database.DB.Where("enabled = true").Find(&ifaces).Error; err != nil {
+		slog.Error("restoreInterfaces: query failed", "err", err)
+		return
+	}
+
+	for _, iface := range ifaces {
+		privKey, err := auth.Decrypt(iface.PrivateKey, config.C.AppSecret)
+		if err != nil {
+			slog.Warn("restoreInterfaces: decrypt key", "iface", iface.Name, "err", err)
+			continue
+		}
+
+		var clients []models.Client
+		database.DB.Where("interface_id = ? AND enabled = true", iface.ID).Find(&clients)
+
+		peers := make([]wgsvc.PeerEntry, 0, len(clients))
+		for _, cl := range clients {
+			psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
+			peers = append(peers, wgsvc.PeerEntry{
+				Comment:    cl.Name,
+				PublicKey:  cl.PublicKey,
+				PSK:        psk,
+				AllowedIPs: cl.AssignedIP + "/32",
+			})
+		}
+
+		if err := wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, peers); err != nil {
+			slog.Warn("restoreInterfaces: write conf", "iface", iface.Name, "err", err)
+			continue
+		}
+
+		// Only bring up if not already running
+		status, _ := wg.GetInterfaceStatus(iface.Name)
+		if status.Up {
+			slog.Info("restoreInterfaces: already up", "iface", iface.Name)
+			continue
+		}
+
+		if err := wg.BringUp(iface.Name); err != nil {
+			slog.Warn("restoreInterfaces: bring up", "iface", iface.Name, "err", err)
+		} else {
+			slog.Info("restoreInterfaces: brought up", "iface", iface.Name, "peers", len(peers))
+		}
 	}
 }
 

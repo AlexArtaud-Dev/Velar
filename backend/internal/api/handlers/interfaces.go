@@ -13,6 +13,8 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
+	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
 )
@@ -174,10 +176,13 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 
 	needsRestart := false
 	subnetChanged := false
+	dnsChanged := false
 	oldSubnet := iface.Subnet
+	oldDNS := iface.DNSServer
 	updates := map[string]interface{}{}
 	if req.DNSServer != "" && req.DNSServer != iface.DNSServer {
 		updates["dns_server"] = req.DNSServer
+		dnsChanged = true
 	}
 	if req.PostUp != "" && req.PostUp != iface.PostUp {
 		updates["post_up"] = req.PostUp
@@ -251,6 +256,32 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 		if err := h.wg.BringUp(iface.Name); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "wg-quick up failed: " + err.Error()})
 			return
+		}
+	}
+
+	// Notify all clients with an email address when their config is affected
+	if subnetChanged || dnsChanged {
+		var changes []string
+		if subnetChanged {
+			changes = append(changes, fmt.Sprintf("Subnet: %s &rarr; %s", oldSubnet, iface.Subnet))
+		}
+		if dnsChanged {
+			changes = append(changes, fmt.Sprintf("DNS server: %s &rarr; %s", oldDNS, iface.DNSServer))
+		}
+
+		var notifyClients []models.Client
+		database.DB.Where("interface_id = ? AND email != '' AND enabled = true", iface.ID).Find(&notifyClients)
+		for _, cl := range notifyClients {
+			rawToken, _, err := tokensvc.Generate(cl.ID)
+			if err != nil {
+				slog.Warn("interface update: token gen for client email", "client", cl.Name, "err", err)
+				continue
+			}
+			mailer.SendHTMLTo(
+				cl.Email,
+				fmt.Sprintf("Your VPN config needs updating — %s", cl.Name),
+				mailer.HTMLClientInterfaceUpdated(cl.Name, cl.AssignedIP, changes, buildDownloadURL(rawToken)),
+			)
 		}
 	}
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Shield, Globe, Server, Key, Lock } from 'lucide-react'
+import { Shield, Globe, Key, Lock, Bell } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,14 +9,15 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { getPublicIP, getAdguardStatus } from '@/api/settings'
-import { totpSetup, totpActivate, changePassword } from '@/api/auth'
+import { getPublicIP, getAdguardStatus, getNotificationStatus } from '@/api/settings'
+import { totpSetup, totpActivate, totpDisable, changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
 export default function Settings() {
   const { admin } = useAuthStore()
   const { data: ipData, refetch: refetchIP } = useQuery({ queryKey: ['public-ip'], queryFn: getPublicIP })
   const { data: adguard } = useQuery({ queryKey: ['adguard'], queryFn: getAdguardStatus, retry: false })
+  const { data: notif } = useQuery({ queryKey: ['notifications'], queryFn: getNotificationStatus, retry: false })
 
   return (
     <div className="p-6 space-y-6 max-w-2xl">
@@ -89,28 +90,35 @@ export default function Settings() {
           <Badge variant={admin?.totp_enabled ? 'success' : 'secondary'}>
             {admin?.totp_enabled ? 'Enabled' : 'Disabled'}
           </Badge>
-          {!admin?.totp_enabled && <SetupTOTPDialog />}
+          {admin?.totp_enabled ? <DisableTOTPDialog /> : <SetupTOTPDialog />}
         </CardContent>
       </Card>
 
-      {/* Backup */}
+      {/* Notifications */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Server className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-base">Database backup</CardTitle>
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-base">Email notifications</CardTitle>
           </div>
-          <CardDescription>Download a copy of the SQLite database</CardDescription>
+          <CardDescription>
+            Admin alerts for new clients and expiring peers. Configure via <code className="text-xs">SMTP_HOST</code>, <code className="text-xs">SMTP_FROM</code> and <code className="text-xs">ADMIN_EMAIL</code> in your <code className="text-xs">.env</code>.
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          <Button
-            variant="outline"
-            onClick={() => { window.location.href = '/api/v1/admin/backup' }}
-          >
-            Download backup
-          </Button>
+        <CardContent className="space-y-2">
+          <div className="flex items-center gap-3">
+            <Badge variant={notif?.enabled ? 'success' : 'secondary'}>
+              {notif?.enabled ? 'Configured' : 'Not configured'}
+            </Badge>
+          </div>
+          {notif?.enabled && (
+            <p className="text-xs text-muted-foreground font-mono">
+              {notif.smtp_from} → {notif.admin_email} via {notif.smtp_host}
+            </p>
+          )}
         </CardContent>
       </Card>
+
     </div>
   )
 }
@@ -251,3 +259,58 @@ function SetupTOTPDialog() {
     </Dialog>
   )
 }
+
+function DisableTOTPDialog() {
+  const [open, setOpen] = useState(false)
+  const [code, setCode] = useState('')
+  const [error, setError] = useState('')
+  const { setAuth, admin, accessToken } = useAuthStore()
+
+  const mut = useMutation({
+    mutationFn: () => totpDisable(code),
+    onSuccess: () => {
+      if (admin && accessToken) setAuth(accessToken, { ...admin, totp_enabled: false })
+      setOpen(false)
+      setCode('')
+    },
+    onError: () => setError('Invalid code, try again.'),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { setOpen(v); setCode(''); setError('') }}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="destructive">Disable 2FA</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Disable two-factor authentication</DialogTitle>
+          <DialogDescription>Enter your current authenticator code to confirm.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-3 py-2">
+          <Label htmlFor="totp-disable">Verification code</Label>
+          <Input
+            id="totp-disable"
+            autoFocus
+            placeholder="000000"
+            maxLength={6}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && code.length === 6 && mut.mutate()}
+          />
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button
+            variant="destructive"
+            onClick={() => mut.mutate()}
+            disabled={mut.isPending || code.length < 6}
+          >
+            {mut.isPending ? 'Disabling…' : 'Disable 2FA'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

@@ -6,12 +6,14 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
@@ -30,8 +32,18 @@ type createClientRequest struct {
 	InterfaceID uint       `json:"interface_id" binding:"required"`
 	Name        string     `json:"name" binding:"required"`
 	OwnerLabel  string     `json:"owner_label"`
+	Email       string     `json:"email"`
 	AllowedIPs  string     `json:"allowed_ips"`
 	ExpiresAt   *time.Time `json:"expires_at"`
+}
+
+// buildDownloadURL constructs a full download URL from a raw token.
+// Falls back to the path-only form if APP_URL is not configured.
+func buildDownloadURL(rawToken string) string {
+	if base := config.C.AppURL; base != "" {
+		return strings.TrimRight(base, "/") + "/dl/" + rawToken
+	}
+	return "/dl/" + rawToken
 }
 
 func (h *ClientHandler) List(c *gin.Context) {
@@ -95,6 +107,7 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		InterfaceID:  iface.ID,
 		Name:         req.Name,
 		OwnerLabel:   req.OwnerLabel,
+		Email:        req.Email,
 		PublicKey:    pubKey,
 		PrivateKey:   encPriv,
 		PresharedKey: encPSK,
@@ -114,6 +127,34 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 	h.syncConf(iface)
 
+	// --- Email: admin notification ---
+	owner := client.OwnerLabel
+	if owner == "" {
+		owner = "—"
+	}
+	mailer.SendHTML(
+		fmt.Sprintf("New client added: %s", client.Name),
+		mailer.HTMLAdminClientCreated(client.Name, client.AssignedIP, iface.Name, owner),
+	)
+
+	// --- Email: send one-time download link to client ---
+	if client.Email != "" {
+		rawToken, _, err := tokensvc.Generate(client.ID)
+		if err == nil {
+			expiry := "No expiry"
+			if client.ExpiresAt != nil {
+				expiry = client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+			}
+			mailer.SendHTMLTo(
+				client.Email,
+				fmt.Sprintf("Your VPN access is ready: %s", client.Name),
+				mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+			)
+		} else {
+			slog.Warn("create client: failed to generate download token for email", "client", client.Name, "err", err)
+		}
+	}
+
 	c.JSON(http.StatusCreated, client)
 }
 
@@ -130,15 +171,19 @@ func (h *ClientHandler) Get(c *gin.Context) {
 func (h *ClientHandler) Update(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var client models.Client
-	if err := database.DB.First(&client, id).Error; err != nil {
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 	var req struct {
-		Name       string     `json:"name"`
-		OwnerLabel string     `json:"owner_label"`
-		AllowedIPs string     `json:"allowed_ips"`
-		ExpiresAt  *time.Time `json:"expires_at"`
+		Name           string     `json:"name"`
+		OwnerLabel     string     `json:"owner_label"`
+		Email          string     `json:"email"`
+		AllowedIPs     string     `json:"allowed_ips"`
+		ExpiresAt      *time.Time `json:"expires_at"`
+		// ClearExpiresAt explicitly removes the expiry date.
+		// Needed because *time.Time cannot distinguish JSON null from "field omitted".
+		ClearExpiresAt bool `json:"clear_expires_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -151,13 +196,31 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	if req.OwnerLabel != "" {
 		updates["owner_label"] = req.OwnerLabel
 	}
+	// Allow clearing email by sending empty string explicitly
+	updates["email"] = req.Email
 	if req.AllowedIPs != "" {
 		updates["allowed_ips"] = req.AllowedIPs
 	}
-	if req.ExpiresAt != nil {
+	if req.ClearExpiresAt {
+		updates["expires_at"] = nil
+	} else if req.ExpiresAt != nil {
 		updates["expires_at"] = req.ExpiresAt
 	}
 	database.DB.Model(&client).Updates(updates)
+	database.DB.Preload("Interface").First(&client, id)
+
+	// Notify client of changes
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("Your VPN config was updated: %s", client.Name),
+		mailer.HTMLClientUpdated(client.Name, client.AssignedIP),
+	)
+	// Notify admin
+	mailer.SendHTML(
+		fmt.Sprintf("Client updated: %s", client.Name),
+		mailer.HTMLAdminClientUpdated(client.Name, client.AssignedIP, client.Interface.Name),
+	)
+
 	c.JSON(http.StatusOK, client)
 }
 
@@ -173,6 +236,14 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 		slog.Warn("remove peer wg", "iface", client.Interface.Name, "err", err)
 	}
 	h.syncConf(client.Interface)
+
+	// Notify client before deleting
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("VPN access revoked: %s", client.Name),
+		mailer.HTMLClientDeleted(client.Name, client.AssignedIP),
+	)
+
 	database.DB.Delete(&client)
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
@@ -201,6 +272,21 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	}
 	database.DB.Model(&client).Update("enabled", enabled)
 	h.syncConf(client.Interface)
+
+	// Notify client
+	if enabled {
+		mailer.SendHTMLTo(
+			client.Email,
+			fmt.Sprintf("VPN access re-enabled: %s", client.Name),
+			mailer.HTMLClientEnabled(client.Name, client.AssignedIP),
+		)
+	} else {
+		mailer.SendHTMLTo(
+			client.Email,
+			fmt.Sprintf("VPN access disabled: %s", client.Name),
+			mailer.HTMLClientDisabled(client.Name, client.AssignedIP),
+		)
+	}
 	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
 }
 
@@ -226,6 +312,44 @@ func (h *ClientHandler) GetQR(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"qr_code": base64.StdEncoding.EncodeToString(png)})
+}
+
+// SendConfig generates a fresh one-time download link and emails it to the
+// client. Can be triggered manually from the dashboard at any time.
+func (h *ClientHandler) SendConfig(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var client models.Client
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if client.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this client has no email address"})
+		return
+	}
+	if !mailer.SMTPEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP is not configured on this server"})
+		return
+	}
+
+	rawToken, _, err := tokensvc.Generate(client.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate download link"})
+		return
+	}
+
+	expiry := "No expiry"
+	if client.ExpiresAt != nil {
+		expiry = client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("Your VPN profile: %s", client.Name),
+		mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
 }
 
 func (h *ClientHandler) CreateDownloadLink(c *gin.Context) {
@@ -270,6 +394,13 @@ func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client,
 		client.AllowedIPs,
 	)
 	return conf, &client, nil
+}
+
+// buildConfString constructs the WireGuard client config text from raw keys.
+// Used when we have the plain (unencrypted) keys in hand.
+func buildConfString(client models.Client, iface models.Interface, privKey, psk string) string {
+	endpoint := fmt.Sprintf("%s:%d", config.C.WGHost, iface.Port)
+	return wgsvc.BuildClientConf(privKey, client.AssignedIP, iface.DNSServer, iface.PublicKey, psk, endpoint, client.AllowedIPs)
 }
 
 func (h *ClientHandler) syncConf(iface models.Interface) {

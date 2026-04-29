@@ -5,6 +5,7 @@ export interface Client {
   interface_id: number
   name: string
   owner_label: string
+  email: string
   public_key: string
   allowed_ips: string
   assigned_ip: string
@@ -21,6 +22,7 @@ export interface CreateClientPayload {
   interface_id: number
   name: string
   owner_label?: string
+  email?: string
   allowed_ips?: string
   expires_at?: string
 }
@@ -35,6 +37,18 @@ export const getClient = (id: number) =>
 
 export const createClient = (payload: CreateClientPayload) =>
   api.post<Client>('/clients', payload).then((r) => r.data)
+
+export interface UpdateClientPayload {
+  name?: string
+  owner_label?: string
+  email?: string
+  allowed_ips?: string
+  expires_at?: string
+  clear_expires_at?: boolean
+}
+
+export const updateClient = (id: number, payload: UpdateClientPayload) =>
+  api.put<Client>(`/clients/${id}`, payload).then((r) => r.data)
 
 export const deleteClient = (id: number) => api.delete(`/clients/${id}`)
 
@@ -55,3 +69,6 @@ export const getClientQR = (id: number) =>
 
 export const createDownloadLink = (id: number) =>
   api.post<{ token: string; url: string }>(`/clients/${id}/download-link`).then((r) => r.data)
+
+export const sendConfigEmail = (id: number) =>
+  api.post<{ message: string }>(`/clients/${id}/send-config`).then((r) => r.data)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,8 +11,9 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
-  listClients, createClient, deleteClient, enableClient, disableClient,
-  getClientQR, getClientConfigText, createDownloadLink, type CreateClientPayload,
+  listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
+  getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
+  type CreateClientPayload, type Client,
 } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -84,8 +85,10 @@ export default function Clients() {
                   </div>
                   <div className="flex items-center gap-1">
                     <ConfigButton clientId={client.id} name={client.name} />
+                    <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
+                    <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -113,6 +116,7 @@ export default function Clients() {
                   <span>↓ {formatBytes(peer?.bytes_rx ?? client.bytes_rx)}</span>
                   <span>↑ {formatBytes(peer?.bytes_tx ?? client.bytes_tx)}</span>
                   <span>Last seen: {peer?.last_handshake ? timeAgo(peer.last_handshake) : '—'}</span>
+                  {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
               </CardContent>
             </Card>
@@ -186,6 +190,37 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function SendConfigButton({ clientId, email }: { clientId: number; email?: string }) {
+  const [sent, setSent] = useState(false)
+
+  const mut = useMutation({
+    mutationFn: () => sendConfigEmail(clientId),
+    onSuccess: () => {
+      setSent(true)
+      setTimeout(() => setSent(false), 3000)
+    },
+  })
+
+  const hasEmail = !!email
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      title={hasEmail ? `Send config to ${email}` : 'No email set on this client'}
+      disabled={!hasEmail || mut.isPending}
+      onClick={() => mut.mutate()}
+      className={sent ? 'text-green-500' : ''}
+    >
+      {sent
+        ? <Check className="h-4 w-4 text-green-500" />
+        : mut.isPending
+          ? <Mail className="h-4 w-4 animate-pulse" />
+          : <Mail className={`h-4 w-4 ${!hasEmail ? 'opacity-30' : ''}`} />}
+    </Button>
   )
 }
 
@@ -268,6 +303,108 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
   )
 }
 
+function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setForm({
+      name: client.name,
+      owner_label: client.owner_label ?? '',
+      email: client.email ?? '',
+      allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
+      // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
+      expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
+    })
+    setError('')
+    setOpen(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      name: form.name || undefined,
+      owner_label: form.owner_label || undefined,
+      email: form.email,
+      allowed_ips: form.allowed_ips || undefined,
+      // If expires_at is empty, send clear_expires_at: true so the backend
+      // explicitly nullifies the column (plain null is indistinguishable from
+      // "field omitted" on a *time.Time pointer in Go).
+      ...(form.expires_at
+        ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
+        : { clear_expires_at: true }),
+    }),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Edit" onClick={openDialog}>
+        <Pencil className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit client — {client.name}</DialogTitle>
+            <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-owner">Owner label</Label>
+              <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
+              <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-ips">Allowed IPs</Label>
+              <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
+              <div className="flex gap-2">
+                <Input
+                  id="edit-expiry"
+                  type="datetime-local"
+                  value={form.expires_at}
+                  onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
+                  className="flex-1"
+                />
+                {form.expires_at && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title="Remove expiry"
+                    onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
+              {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
 function CreateClientDialog({
   interfaces,
   defaultInterfaceId,
@@ -278,24 +415,39 @@ function CreateClientDialog({
   onCreated: () => void
 }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState<CreateClientPayload>({
+  const [form, setForm] = useState({
     interface_id: defaultInterfaceId ?? interfaces[0]?.id ?? 0,
     name: '',
     owner_label: '',
+    email: '',
     allowed_ips: '0.0.0.0/0, ::/0',
+    expires_at: '',
   })
   const [error, setError] = useState('')
 
   const mutation = useMutation({
-    mutationFn: createClient,
+    mutationFn: (payload: CreateClientPayload) => createClient(payload),
     onSuccess: () => { setOpen(false); onCreated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
-  function setField<K extends keyof CreateClientPayload>(key: K, value: CreateClientPayload[K]) {
+  function setField<K extends keyof typeof form>(key: K, value: (typeof form)[K]) {
     setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  function submit() {
+    const payload: CreateClientPayload = {
+      interface_id: form.interface_id,
+      name: form.name,
+      owner_label: form.owner_label || undefined,
+      email: form.email || undefined,
+      allowed_ips: form.allowed_ips || undefined,
+      // datetime-local gives "YYYY-MM-DDTHH:MM" — append seconds + Z so Date parses as UTC
+      expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : undefined,
+    }
+    mutation.mutate(payload)
   }
 
   return (
@@ -330,17 +482,34 @@ function CreateClientDialog({
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="owner">Owner label</Label>
-            <Input id="owner" value={form.owner_label ?? ''} onChange={(e) => setField('owner_label', e.target.value)} placeholder="alice" />
+            <Input id="owner" value={form.owner_label} onChange={(e) => setField('owner_label', e.target.value)} placeholder="alice" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="email">
+              Client email <span className="text-muted-foreground text-xs">(optional — receives one-time download link)</span>
+            </Label>
+            <Input id="email" type="email" value={form.email} onChange={(e) => setField('email', e.target.value)} placeholder="alice@example.com" />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="allowed">Allowed IPs</Label>
-            <Input id="allowed" value={form.allowed_ips ?? ''} onChange={(e) => setField('allowed_ips', e.target.value)} placeholder="0.0.0.0/0, ::/0" />
+            <Input id="allowed" value={form.allowed_ips} onChange={(e) => setField('allowed_ips', e.target.value)} placeholder="0.0.0.0/0, ::/0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="create-expiry">
+              Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span>
+            </Label>
+            <Input
+              id="create-expiry"
+              type="datetime-local"
+              value={form.expires_at}
+              onChange={(e) => setField('expires_at', e.target.value)}
+            />
           </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending || !form.name || !form.interface_id}>
+          <Button onClick={submit} disabled={mutation.isPending || !form.name || !form.interface_id}>
             {mutation.isPending ? 'Adding…' : 'Add client'}
           </Button>
         </DialogFooter>

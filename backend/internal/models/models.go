@@ -40,23 +40,24 @@ type Interface struct {
 }
 
 type Client struct {
-	ID           uint       `gorm:"primaryKey" json:"id"`
-	InterfaceID  uint       `gorm:"not null;index" json:"interface_id"`
-	Name         string     `gorm:"not null" json:"name"`
-	OwnerLabel   string     `json:"owner_label"`
-	PublicKey    string     `gorm:"uniqueIndex;not null" json:"public_key"`
-	PrivateKey   string     `gorm:"not null" json:"-"`
-	PresharedKey string     `gorm:"not null" json:"-"`
-	AllowedIPs   string     `gorm:"not null" json:"allowed_ips"`
-	AssignedIP   string     `gorm:"not null" json:"assigned_ip"`
-	Enabled      bool       `gorm:"default:true" json:"enabled"`
-	ExpiresAt    *time.Time `json:"expires_at"`
+	ID            uint       `gorm:"primaryKey" json:"id"`
+	InterfaceID   uint       `gorm:"not null;index" json:"interface_id"`
+	Name          string     `gorm:"not null" json:"name"`
+	OwnerLabel    string     `json:"owner_label"`
+	Email         string     `gorm:"default:''" json:"email"`
+	PublicKey     string     `gorm:"uniqueIndex;not null" json:"public_key"`
+	PrivateKey    string     `gorm:"not null" json:"-"`
+	PresharedKey  string     `gorm:"not null" json:"-"`
+	AllowedIPs    string     `gorm:"not null" json:"allowed_ips"`
+	AssignedIP    string     `gorm:"not null" json:"assigned_ip"`
+	Enabled       bool       `gorm:"default:true" json:"enabled"`
+	ExpiresAt     *time.Time `json:"expires_at"`
 	LastHandshake *time.Time `json:"last_handshake"`
-	BytesRx      int64      `gorm:"default:0" json:"bytes_rx"`
-	BytesTx      int64      `gorm:"default:0" json:"bytes_tx"`
-	CreatedAt    time.Time  `json:"created_at"`
-	UpdatedAt    time.Time  `json:"updated_at"`
-	Interface    Interface  `gorm:"foreignKey:InterfaceID" json:"-"`
+	BytesRx       int64      `gorm:"default:0" json:"bytes_rx"`
+	BytesTx       int64      `gorm:"default:0" json:"bytes_tx"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	Interface     Interface  `gorm:"foreignKey:InterfaceID" json:"-"`
 }
 
 type DownloadToken struct {
