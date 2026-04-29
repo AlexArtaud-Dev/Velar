@@ -176,11 +176,14 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name       string     `json:"name"`
-		OwnerLabel string     `json:"owner_label"`
-		Email      string     `json:"email"`
-		AllowedIPs string     `json:"allowed_ips"`
-		ExpiresAt  *time.Time `json:"expires_at"`
+		Name           string     `json:"name"`
+		OwnerLabel     string     `json:"owner_label"`
+		Email          string     `json:"email"`
+		AllowedIPs     string     `json:"allowed_ips"`
+		ExpiresAt      *time.Time `json:"expires_at"`
+		// ClearExpiresAt explicitly removes the expiry date.
+		// Needed because *time.Time cannot distinguish JSON null from "field omitted".
+		ClearExpiresAt bool `json:"clear_expires_at"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -198,7 +201,9 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	if req.AllowedIPs != "" {
 		updates["allowed_ips"] = req.AllowedIPs
 	}
-	if req.ExpiresAt != nil {
+	if req.ClearExpiresAt {
+		updates["expires_at"] = nil
+	} else if req.ExpiresAt != nil {
 		updates["expires_at"] = req.ExpiresAt
 	}
 	database.DB.Model(&client).Updates(updates)

@@ -43,7 +43,8 @@ export interface UpdateClientPayload {
   owner_label?: string
   email?: string
   allowed_ips?: string
-  expires_at?: string | null
+  expires_at?: string
+  clear_expires_at?: boolean
 }
 
 export const updateClient = (id: number, payload: UpdateClientPayload) =>

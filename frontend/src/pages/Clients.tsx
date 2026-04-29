@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -327,8 +327,12 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       owner_label: form.owner_label || undefined,
       email: form.email,
       allowed_ips: form.allowed_ips || undefined,
-      // append ":00Z" so Date parses the datetime-local value as UTC
-      expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : null,
+      // If expires_at is empty, send clear_expires_at: true so the backend
+      // explicitly nullifies the column (plain null is indistinguishable from
+      // "field omitted" on a *time.Time pointer in Go).
+      ...(form.expires_at
+        ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
+        : { clear_expires_at: true }),
     }),
     onSuccess: () => { setOpen(false); onUpdated() },
     onError: (e: unknown) => {
@@ -366,7 +370,26 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
-              <Input id="edit-expiry" type="datetime-local" value={form.expires_at} onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))} />
+              <div className="flex gap-2">
+                <Input
+                  id="edit-expiry"
+                  type="datetime-local"
+                  value={form.expires_at}
+                  onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
+                  className="flex-1"
+                />
+                {form.expires_at && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    title="Remove expiry"
+                    onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
+                  >
+                    <X className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                )}
+              </div>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
