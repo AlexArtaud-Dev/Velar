@@ -92,6 +92,7 @@ func NewRouter(
 			clients.GET("/:id/config", clientHandler.GetConfig)
 			clients.GET("/:id/qr", clientHandler.GetQR)
 			clients.POST("/:id/download-link", clientHandler.CreateDownloadLink)
+			clients.POST("/:id/send-config", clientHandler.SendConfig)
 		}
 
 		// Settings

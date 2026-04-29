@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,7 +12,8 @@ import {
 } from '@/components/ui/dialog'
 import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
-  getClientQR, getClientConfigText, createDownloadLink, type CreateClientPayload, type Client,
+  getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
+  type CreateClientPayload, type Client,
 } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
@@ -84,6 +85,7 @@ export default function Clients() {
                   </div>
                   <div className="flex items-center gap-1">
                     <ConfigButton clientId={client.id} name={client.name} />
+                    <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
                     <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
@@ -188,6 +190,37 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function SendConfigButton({ clientId, email }: { clientId: number; email?: string }) {
+  const [sent, setSent] = useState(false)
+
+  const mut = useMutation({
+    mutationFn: () => sendConfigEmail(clientId),
+    onSuccess: () => {
+      setSent(true)
+      setTimeout(() => setSent(false), 3000)
+    },
+  })
+
+  const hasEmail = !!email
+
+  return (
+    <Button
+      variant="ghost"
+      size="icon"
+      title={hasEmail ? `Send config to ${email}` : 'No email set on this client'}
+      disabled={!hasEmail || mut.isPending}
+      onClick={() => mut.mutate()}
+      className={sent ? 'text-green-500' : ''}
+    >
+      {sent
+        ? <Check className="h-4 w-4 text-green-500" />
+        : mut.isPending
+          ? <Mail className="h-4 w-4 animate-pulse" />
+          : <Mail className={`h-4 w-4 ${!hasEmail ? 'opacity-30' : ''}`} />}
+    </Button>
   )
 }
 

@@ -309,6 +309,44 @@ func (h *ClientHandler) GetQR(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"qr_code": base64.StdEncoding.EncodeToString(png)})
 }
 
+// SendConfig generates a fresh one-time download link and emails it to the
+// client. Can be triggered manually from the dashboard at any time.
+func (h *ClientHandler) SendConfig(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var client models.Client
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+	if client.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this client has no email address"})
+		return
+	}
+	if !mailer.SMTPEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP is not configured on this server"})
+		return
+	}
+
+	rawToken, _, err := tokensvc.Generate(client.ID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not generate download link"})
+		return
+	}
+
+	expiry := "No expiry"
+	if client.ExpiresAt != nil {
+		expiry = client.ExpiresAt.UTC().Format("2006-01-02 15:04 UTC")
+	}
+
+	mailer.SendHTMLTo(
+		client.Email,
+		fmt.Sprintf("Your VPN profile: %s", client.Name),
+		mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
+}
+
 func (h *ClientHandler) CreateDownloadLink(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var client models.Client

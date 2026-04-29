@@ -68,3 +68,6 @@ export const getClientQR = (id: number) =>
 
 export const createDownloadLink = (id: number) =>
   api.post<{ token: string; url: string }>(`/clients/${id}/download-link`).then((r) => r.data)
+
+export const sendConfigEmail = (id: number) =>
+  api.post<{ message: string }>(`/clients/${id}/send-config`).then((r) => r.data)
