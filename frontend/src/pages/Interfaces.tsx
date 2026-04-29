@@ -52,8 +52,8 @@ export default function Interfaces() {
   if (isLoading) return <PageSkeleton />
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Interfaces</h1>
           <p className="text-muted-foreground text-sm mt-1">Manage WireGuard network interfaces</p>
@@ -65,12 +65,12 @@ export default function Interfaces() {
         {ifaces.map((iface) => (
           <Card key={iface.id}>
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <Badge variant={iface.up ? 'success' : 'destructive'}>{iface.up ? 'UP' : 'DOWN'}</Badge>
                   <CardTitle className="text-lg font-mono">{iface.name}</CardTitle>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <Button
                     variant="outline"
                     size="sm"

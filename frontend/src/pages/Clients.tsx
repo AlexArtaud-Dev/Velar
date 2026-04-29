@@ -45,8 +45,8 @@ export default function Clients() {
   const title = ifaceId ? interfaces.find((i) => i.id === ifaceId)?.name ?? `Interface ${ifaceId}` : 'All clients'
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="p-4 sm:p-6 space-y-6">
+      <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Clients</h1>
           <p className="text-muted-foreground text-sm mt-1">{title}</p>
@@ -64,10 +64,10 @@ export default function Clients() {
           return (
             <Card key={client.id}>
               <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <span
-                      className={`h-2.5 w-2.5 rounded-full ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
+                      className={`h-2.5 w-2.5 rounded-full shrink-0 ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
                     />
                     <CardTitle className="text-base">{client.name}</CardTitle>
                     {client.owner_label && (
@@ -83,7 +83,7 @@ export default function Clients() {
                       </Badge>
                     )}
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex flex-wrap items-center gap-1">
                     <ConfigButton clientId={client.id} name={client.name} />
                     <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />

@@ -53,7 +53,7 @@ export default function Dashboard() {
   const upInterfaces = ifaces.filter((i) => i.up).length
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Dashboard</h1>
         <p className="text-muted-foreground text-sm mt-1">Overview of your WireGuard server</p>
@@ -131,10 +131,10 @@ export default function Dashboard() {
                       <span className="font-medium">{p.name}</span>
                       <span className="text-muted-foreground font-mono text-xs">{iface.name}</span>
                     </div>
-                    <div className="flex items-center gap-4 text-muted-foreground text-xs">
+                    <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-muted-foreground text-xs">
                       <span>↓ {formatBytes(p.bytes_rx)}</span>
                       <span>↑ {formatBytes(p.bytes_tx)}</span>
-                      <span>{timeAgo(p.last_handshake)}</span>
+                      <span className="hidden sm:inline">{timeAgo(p.last_handshake)}</span>
                     </div>
                   </div>
                 )),
