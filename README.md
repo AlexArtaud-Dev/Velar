@@ -110,4 +110,4 @@ See the full **[Installation Guide](./docs/INSTALLATION.md)** for step-by-step i
 This project is **proprietary software**. Source code is available for viewing and personal self-hosting only.  
 Copying, redistribution, or commercial use **requires explicit written permission** from the author.
 
-See [LICENSE](./LICENSE) for full terms — to request permission: alexandre.artaud.dev@gmail.com
+See [LICENSE](./LICENSE) for full terms — to request permission: smlartaudalexandre@gmail.com

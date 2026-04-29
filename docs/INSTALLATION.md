@@ -309,4 +309,4 @@ docker compose logs api | grep -i password
 
 ---
 
-*For issues or questions, open a GitHub issue or contact alexandre.artaud.dev@gmail.com*
+*For issues or questions, open a GitHub issue or contact smlartaudalexandre@gmail.com*
