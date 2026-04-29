@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2 } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -104,7 +104,15 @@ export default function Interfaces() {
                   </Button>
                 </div>
               </div>
-              <CardDescription className="font-mono text-xs">{iface.subnet} • :{iface.port} • DNS {iface.dns_server}</CardDescription>
+              <CardDescription className="font-mono text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{iface.subnet} • :{iface.port} • DNS {iface.dns_server}</span>
+                {iface.lan_access && (
+                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400 not-italic font-sans">
+                    <Wifi className="h-3 w-3" />
+                    LAN {iface.lan_subnet && <span className="font-mono">({iface.lan_subnet})</span>}
+                  </span>
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-xs text-muted-foreground font-mono break-all">
@@ -187,6 +195,7 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
     port: 51820,
     subnet: '10.0.0.0/24',
     dns_server: '1.1.1.1',
+    lan_access: false,
   })
   const [error, setError] = useState('')
 
@@ -271,6 +280,21 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
               placeholder="Custom DNS (e.g. 1.1.1.1)"
             />
           </div>
+          {/* LAN access */}
+          <div
+            className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
+            onClick={() => setForm((f) => ({ ...f, lan_access: !f.lan_access }))}
+          >
+            <div>
+              <p className="text-sm font-medium">Local network access</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Clients can reach LAN devices (e.g. 192.168.1.x) — split tunnel, auto-detected subnet
+              </p>
+            </div>
+            <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
+              <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
+            </div>
+          </div>
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
@@ -305,6 +329,7 @@ function EditInterfaceDialog({ iface, onUpdated }: { iface: WGInterface; onUpdat
       subnet: iface.subnet,
       post_up: iface.post_up,
       post_down: iface.post_down,
+      lan_access: iface.lan_access,
     })
     setError('')
     setOpen(true)
@@ -415,6 +440,23 @@ function EditInterfaceDialog({ iface, onUpdated }: { iface: WGInterface; onUpdat
             <div className="space-y-1.5">
               <Label>PostDown</Label>
               <Input value={form.post_down ?? ''} onChange={(e) => setForm((f) => ({ ...f, post_down: e.target.value }))} />
+            </div>
+            {/* LAN access */}
+            <div
+              className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
+              onClick={() => setForm((f) => ({ ...f, lan_access: !f.lan_access }))}
+            >
+              <div>
+                <p className="text-sm font-medium">Local network access</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {iface.lan_access && iface.lan_subnet
+                    ? `Currently routing ${iface.lan_subnet} — toggle to disable`
+                    : 'Clients can reach LAN devices — split tunnel, subnet auto-detected'}
+                </p>
+              </div>
+              <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
             </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>

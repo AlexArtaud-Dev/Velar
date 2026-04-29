@@ -174,6 +174,28 @@ func DetectMainInterface() string {
 	return "eth0"
 }
 
+// DetectLANSubnet returns the CIDR subnet of the default network interface
+// (e.g. "192.168.1.0/24"). Returns an empty string on failure.
+func DetectLANSubnet() string {
+	iface := DetectMainInterface()
+	out, err := exec.Command("ip", "-o", "-f", "inet", "addr", "show", iface).Output()
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		for i, f := range fields {
+			if f == "inet" && i+1 < len(fields) {
+				_, ipNet, err := net.ParseCIDR(fields[i+1])
+				if err == nil {
+					return ipNet.String()
+				}
+			}
+		}
+	}
+	return ""
+}
+
 func runWG(name string, args ...string) error {
 	out, err := exec.Command(name, args...).CombinedOutput()
 	if err != nil {

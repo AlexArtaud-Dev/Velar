@@ -100,7 +100,7 @@ func (h *ClientHandler) Create(c *gin.Context) {
 
 	allowedIPs := req.AllowedIPs
 	if allowedIPs == "" {
-		allowedIPs = "0.0.0.0/0, ::/0"
+		allowedIPs = defaultClientAllowedIPs(iface)
 	}
 
 	client := models.Client{

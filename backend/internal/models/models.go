@@ -33,6 +33,8 @@ type Interface struct {
 	ListenAddress string    `gorm:"default:'0.0.0.0'" json:"listen_address"`
 	PostUp        string    `json:"post_up"`
 	PostDown      string    `json:"post_down"`
+	LanAccess     bool      `gorm:"default:false" json:"lan_access"`
+	LanSubnet     string    `gorm:"default:''" json:"lan_subnet"`
 	Enabled       bool      `gorm:"default:true" json:"enabled"`
 	CreatedAt     time.Time `json:"created_at"`
 	UpdatedAt     time.Time `json:"updated_at"`
