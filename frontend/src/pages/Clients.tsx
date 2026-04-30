@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -116,6 +116,12 @@ export default function Clients() {
                   <span>↓ {formatBytes(peer?.bytes_rx ?? client.bytes_rx)}</span>
                   <span>↑ {formatBytes(peer?.bytes_tx ?? client.bytes_tx)}</span>
                   <span>Last seen: {peer?.last_handshake ? timeAgo(peer.last_handshake) : '—'}</span>
+                  {client.bandwidth_limit > 0 && (
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                      <Gauge className="h-3 w-3" />
+                      {client.bandwidth_limit} Mbps
+                    </span>
+                  )}
                   {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
               </CardContent>
@@ -305,7 +311,7 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
 
 function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
+  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '', bandwidth_limit: 0 })
   const [error, setError] = useState('')
 
   function openDialog() {
@@ -316,6 +322,7 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
       // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
       expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
+      bandwidth_limit: client.bandwidth_limit ?? 0,
     })
     setError('')
     setOpen(true)
@@ -327,6 +334,7 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       owner_label: form.owner_label || undefined,
       email: form.email,
       allowed_ips: form.allowed_ips || undefined,
+      bandwidth_limit: form.bandwidth_limit,
       // If expires_at is empty, send clear_expires_at: true so the backend
       // explicitly nullifies the column (plain null is indistinguishable from
       // "field omitted" on a *time.Time pointer in Go).
@@ -391,6 +399,19 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
                 )}
               </div>
             </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-bw">
+                Bandwidth limit <span className="text-muted-foreground text-xs">(Mbps — 0 = unlimited)</span>
+              </Label>
+              <Input
+                id="edit-bw"
+                type="number"
+                min={0}
+                value={form.bandwidth_limit}
+                onChange={(e) => setForm((f) => ({ ...f, bandwidth_limit: Math.max(0, Number(e.target.value)) }))}
+                placeholder="0"
+              />
+            </div>
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
@@ -422,6 +443,7 @@ function CreateClientDialog({
     email: '',
     allowed_ips: '0.0.0.0/0, ::/0',
     expires_at: '',
+    bandwidth_limit: 0,
   })
   const [error, setError] = useState('')
 
@@ -444,6 +466,7 @@ function CreateClientDialog({
       owner_label: form.owner_label || undefined,
       email: form.email || undefined,
       allowed_ips: form.allowed_ips || undefined,
+      bandwidth_limit: form.bandwidth_limit > 0 ? form.bandwidth_limit : undefined,
       // datetime-local gives "YYYY-MM-DDTHH:MM" — append seconds + Z so Date parses as UTC
       expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : undefined,
     }

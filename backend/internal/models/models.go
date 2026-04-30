@@ -50,9 +50,10 @@ type Client struct {
 	PublicKey     string     `gorm:"uniqueIndex;not null" json:"public_key"`
 	PrivateKey    string     `gorm:"not null" json:"-"`
 	PresharedKey  string     `gorm:"not null" json:"-"`
-	AllowedIPs    string     `gorm:"not null" json:"allowed_ips"`
-	AssignedIP    string     `gorm:"not null" json:"assigned_ip"`
-	Enabled       bool       `gorm:"default:true" json:"enabled"`
+	AllowedIPs      string     `gorm:"not null" json:"allowed_ips"`
+	AssignedIP      string     `gorm:"not null" json:"assigned_ip"`
+	BandwidthLimit  int        `gorm:"default:0" json:"bandwidth_limit"` // Mbps, 0 = unlimited
+	Enabled         bool       `gorm:"default:true" json:"enabled"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	LastHandshake *time.Time `json:"last_handshake"`
 	BytesRx       int64      `gorm:"default:0" json:"bytes_rx"`
