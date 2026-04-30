@@ -68,5 +68,6 @@ func AutoMigrate() error {
 		&models.Client{},
 		&models.DownloadToken{},
 		&models.ConnectionEvent{},
+		&models.PeerSnapshot{},
 	)
 }

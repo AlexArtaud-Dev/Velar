@@ -82,3 +82,15 @@ type ConnectionEvent struct {
 	Timestamp time.Time `gorm:"not null" json:"timestamp"`
 	Client    Client    `gorm:"foreignKey:ClientID" json:"-"`
 }
+
+// PeerSnapshot stores per-client bandwidth deltas sampled every minute.
+// BytesRx/BytesTx are deltas (not cumulative) — bytes transferred since the
+// previous snapshot. Rows older than 7 days are purged automatically.
+type PeerSnapshot struct {
+	ID        uint      `gorm:"primaryKey" json:"id"`
+	ClientID  uint      `gorm:"not null;index" json:"client_id"`
+	Timestamp time.Time `gorm:"not null;index" json:"timestamp"`
+	BytesRx   int64     `gorm:"default:0" json:"bytes_rx"` // delta since last snapshot
+	BytesTx   int64     `gorm:"default:0" json:"bytes_tx"` // delta since last snapshot
+	Client    Client    `gorm:"foreignKey:ClientID" json:"-"`
+}

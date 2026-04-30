@@ -78,3 +78,23 @@ export const createDownloadLink = (id: number) =>
 
 export const sendConfigEmail = (id: number) =>
   api.post<{ message: string }>(`/clients/${id}/send-config`).then((r) => r.data)
+
+export interface SnapshotPoint {
+  timestamp: string
+  bytes_rx: number
+  bytes_tx: number
+}
+
+export interface ConnectionEvent {
+  id: number
+  client_id: number
+  event_type: 'connected' | 'disconnected'
+  source_ip: string
+  timestamp: string
+}
+
+export const getClientSnapshots = (id: number, range: '1h' | '24h' | '7d' = '24h') =>
+  api.get<SnapshotPoint[]>(`/clients/${id}/snapshots`, { params: { range } }).then((r) => r.data)
+
+export const getClientEvents = (id: number) =>
+  api.get<ConnectionEvent[]>(`/clients/${id}/events`).then((r) => r.data)
