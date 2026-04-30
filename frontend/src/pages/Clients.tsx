@@ -739,7 +739,7 @@ function QuotaDialog({ client, onUpdated }: { client: Client; onUpdated: () => v
                 id="quota-gb"
                 type="number"
                 min={0}
-                step={0.1}
+                step={0.01}
                 value={quotaGb}
                 onChange={(e) => setQuotaGb(Math.max(0, Number(e.target.value)))}
                 placeholder="0"
