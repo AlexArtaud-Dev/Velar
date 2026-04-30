@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { Network, Users, Activity, Globe, ArrowDown, ArrowUp, Wifi, WifiOff } from 'lucide-react'
+import { Network, Users, ArrowDown, ArrowUp, Wifi, WifiOff } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { listInterfaces } from '@/api/interfaces'
@@ -21,7 +21,7 @@ interface LiveBandwidthPoint {
 
 export default function Dashboard() {
   const { data: interfaces } = useQuery({ queryKey: ['interfaces'], queryFn: listInterfaces })
-  const { data: ipData } = useQuery({ queryKey: ['public-ip'], queryFn: getPublicIP, refetchInterval: 60_000 })
+  useQuery({ queryKey: ['public-ip'], queryFn: getPublicIP, refetchInterval: 60_000 })
   const { data: dashStats } = useQuery({
     queryKey: ['dashboard-stats'],
     queryFn: getDashboardStats,
@@ -262,7 +262,7 @@ export default function Dashboard() {
                     {e.source_ip && (
                       <span className="font-mono text-muted-foreground shrink-0 hidden sm:inline">{e.source_ip}</span>
                     )}
-                    <span className="text-muted-foreground shrink-0">{timeAgo(e.timestamp)}</span>
+                    <span className="text-muted-foreground shrink-0">{timeAgo(new Date(e.timestamp).getTime())}</span>
                   </div>
                 ))}
               </div>
