@@ -9,6 +9,8 @@ export interface Client {
   public_key: string
   allowed_ips: string
   assigned_ip: string
+  bandwidth_limit_down: number // Mbps, 0 = unlimited
+  bandwidth_limit_up: number   // Mbps, 0 = unlimited
   enabled: boolean
   expires_at: string | null
   last_handshake: string | null
@@ -25,6 +27,8 @@ export interface CreateClientPayload {
   email?: string
   allowed_ips?: string
   expires_at?: string
+  bandwidth_limit_down?: number // Mbps, 0 = unlimited
+  bandwidth_limit_up?: number   // Mbps, 0 = unlimited
 }
 
 export const listClients = (interfaceId?: number) =>
@@ -45,6 +49,8 @@ export interface UpdateClientPayload {
   allowed_ips?: string
   expires_at?: string
   clear_expires_at?: boolean
+  bandwidth_limit_down?: number // Mbps, 0 = unlimited
+  bandwidth_limit_up?: number   // Mbps, 0 = unlimited
 }
 
 export const updateClient = (id: number, payload: UpdateClientPayload) =>

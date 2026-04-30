@@ -266,46 +266,7 @@ Your data (SQLite database, WireGuard configs) is stored in Docker named volumes
 
 ## 11. Troubleshooting
 
-### Interface is DOWN after server reboot
-
-WireGuard interfaces are brought up by Velar at startup. Make sure Docker is set to start on boot:
-
-```bash
-systemctl enable docker
-```
-
-And that containers have `restart: unless-stopped` (already set in `docker-compose.yml`).
-
-### Clients can connect but have no internet
-
-- Check that `net.ipv4.ip_forward=1` is active: `sysctl net.ipv4.ip_forward`
-- Check iptables NAT rules: `iptables -t nat -L POSTROUTING -nv`
-- Make sure the PostUp/PostDown rules reference the correct network interface (Velar auto-detects this via `ip route show default`)
-
-### `wg-quick: /etc/wireguard/wgX.conf does not exist`
-
-The WireGuard config volume may have been recreated. Restart the API container — it will regenerate all configs from the database:
-
-```bash
-docker compose restart api
-```
-
-### Cannot scan QR code
-
-Make sure you're using the WireGuard mobile app (not a generic QR scanner). The config QR codes encode WireGuard-specific syntax.
-
-### Forgot admin password
-
-Reset the database and start fresh:
-
-```bash
-docker compose down
-docker volume rm velar_sqlite_data
-docker compose up -d
-docker compose logs api | grep -i password
-```
-
-> ⚠️ This deletes **all** interfaces, clients, and configuration.
+See the full **[Troubleshooting Guide](./TROUBLESHOOTING.md)** for common issues including stale peers, delete failures, interface down after reboot, bandwidth limits not applying, and more.
 
 ---
 

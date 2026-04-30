@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,6 +88,7 @@ export default function Clients() {
                     <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
+                    <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
                       variant="ghost"
@@ -116,6 +117,19 @@ export default function Clients() {
                   <span>↓ {formatBytes(peer?.bytes_rx ?? client.bytes_rx)}</span>
                   <span>↑ {formatBytes(peer?.bytes_tx ?? client.bytes_tx)}</span>
                   <span>Last seen: {peer?.last_handshake ? timeAgo(peer.last_handshake) : '—'}</span>
+                  {(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) && (
+                    <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                      <Gauge className="h-3 w-3" />
+                      {client.bandwidth_limit_down > 0 && (
+                        <span className="flex items-center gap-0.5"><ArrowDown className="h-2.5 w-2.5" />{client.bandwidth_limit_down}</span>
+                      )}
+                      {client.bandwidth_limit_down > 0 && client.bandwidth_limit_up > 0 && <span>/</span>}
+                      {client.bandwidth_limit_up > 0 && (
+                        <span className="flex items-center gap-0.5"><ArrowUp className="h-2.5 w-2.5" />{client.bandwidth_limit_up}</span>
+                      )}
+                      <span>Mbps</span>
+                    </span>
+                  )}
                   {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
               </CardContent>
@@ -397,6 +411,86 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
               {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [down, setDown] = useState(0)
+  const [up, setUp] = useState(0)
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setDown(client.bandwidth_limit_down ?? 0)
+    setUp(client.bandwidth_limit_up ?? 0)
+    setError('')
+    setOpen(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      bandwidth_limit_down: down,
+      bandwidth_limit_up: up,
+    }),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Bandwidth limit" onClick={openDialog}>
+        <Gauge className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Bandwidth — {client.name}</DialogTitle>
+            <DialogDescription>
+              Set per-direction caps via Linux tc. 0 = unlimited.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="bw-down" className="flex items-center gap-1.5">
+                <ArrowDown className="h-3.5 w-3.5 text-blue-500" />
+                Download limit <span className="text-muted-foreground text-xs">(server → client, Mbps)</span>
+              </Label>
+              <Input
+                id="bw-down"
+                type="number"
+                min={0}
+                value={down}
+                onChange={(e) => setDown(Math.max(0, Number(e.target.value)))}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bw-up" className="flex items-center gap-1.5">
+                <ArrowUp className="h-3.5 w-3.5 text-green-500" />
+                Upload limit <span className="text-muted-foreground text-xs">(client → server, Mbps)</span>
+              </Label>
+              <Input
+                id="bw-up"
+                type="number"
+                min={0}
+                value={up}
+                onChange={(e) => setUp(Math.max(0, Number(e.target.value)))}
+                placeholder="0"
+              />
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+              {mutation.isPending ? 'Applying…' : 'Apply'}
             </Button>
           </DialogFooter>
         </DialogContent>

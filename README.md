@@ -1,113 +1,140 @@
 <div align="center">
 
-# Velar
+# 🛡️ Velar
 
-**A modern, self-hosted WireGuard management dashboard**
+**The self-hosted WireGuard dashboard you actually want to use.**
 
-Manage multiple WireGuard VPN interfaces, peers, and DNS filtering — all from a clean web UI. No CLI required.
+Manage multiple VPN interfaces, control every peer, monitor live traffic, and enforce bandwidth policies — all from a single beautiful web UI. No CLI. No config files. No bullshit.
 
 [![License: Proprietary](https://img.shields.io/badge/license-Proprietary-red.svg)](./LICENSE)
-[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go)](https://golang.org)
-[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)](https://react.dev)
-[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker)](./docs/INSTALLATION.md)
+[![Go](https://img.shields.io/badge/Go-1.22-00ADD8?logo=go&logoColor=white)](https://golang.org)
+[![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)](./docs/INSTALLATION.md)
+[![WireGuard](https://img.shields.io/badge/WireGuard-powered-88171A?logo=wireguard&logoColor=white)](https://www.wireguard.com)
 
 </div>
 
 ---
 
-## What is Velar?
+## ✨ Why Velar?
 
-Velar is a fully self-hosted VPN management platform built on top of WireGuard. It gives you a single, beautiful dashboard to create and manage multiple VPN interfaces, add and revoke peers, monitor live traffic, and optionally route DNS through an integrated AdGuard Home instance — without ever touching the command line.
+Most WireGuard UIs are glorified config file editors. Velar is a full management platform — built for people who run real infrastructure and want a proper interface to go with it.
 
-Designed for homelabs, small teams, and privacy-conscious individuals who want full control over their network without relying on third-party VPN providers.
+- **Multi-interface** — run separate VPN networks on the same server, isolated
+- **Production-grade security** — JWT in memory, httpOnly cookies, AES-256 key encryption, TOTP
+- **Batteries included** — AdGuard Home, bandwidth limiting, LAN access, email notifications, one-time config links
+- **Zero dependencies** — SQLite, Docker, done
 
 ---
 
-## Features
+## 🚀 Features
 
-### WireGuard Management
-- Create and manage **multiple WireGuard interfaces** with independent ports, subnets and keys
-- Add, remove, enable and disable **peers (clients)** in real time
-- Automatic **keypair generation** (server + client) — no manual `wg genkey` needed
-- **Live traffic stats** per peer via WebSocket (bytes in/out, last handshake, connection status)
-- Automatic **iptables NAT rules** with smart network interface detection
+### 🔌 Multi-Interface WireGuard Management
+Create and manage **multiple WireGuard interfaces** independently — each with its own port, subnet, DNS, keys, and peer list. Bring interfaces up/down with one click. Velar writes and syncs `.conf` files automatically.
 
-### Client Management
-- Per-client **QR code** for instant mobile setup
-- **Raw config viewer** — see the full `.conf` in the UI and copy it instantly
-- **One-time download links** — share a single-use, time-limited URL to distribute configs without login
-- Client **enable/disable** without deletion
-- Optional **expiry dates** per client
-- Owner labels to track who owns each peer
+### 👥 Full Peer Lifecycle
+Add, edit, disable, or delete **VPN clients** in seconds. No key management by hand — Velar generates keypairs, preshared keys, and assigns IPs automatically. Every change is live.
 
-### Security
-- **bcrypt** password hashing
-- **JWT** access tokens (15 min) + **httpOnly refresh cookies** (7 days)
-- **TOTP two-factor authentication** (Google Authenticator, Aegis, etc.)
-- Forced password change on first login
-- WireGuard private keys encrypted at rest with **AES-256-GCM**
+### 📊 Real-Time Traffic Monitoring
+**Live stats per peer** via WebSocket — bytes transferred, last handshake time, connection status dot. The dashboard updates continuously without page refresh.
+
+### ⚡ Per-Client Bandwidth Limiting
+Cap **download and upload independently** per peer using Linux `tc` (traffic control). Set a 10 Mbps download limit on one client while leaving another unlimited. Limits survive interface restarts and are enforced at the kernel level.
+
+- `↓ Download` — shapes egress via HTB qdisc (server → client)
+- `↑ Upload` — polices ingress (client → server) with packet drop on excess
+- Configurable per client from the dashboard, applied instantly
+
+### 🏠 LAN Access Toggle
+Enable **local network access** per interface with one click. Velar detects your host's LAN subnet automatically and switches all clients to split-tunnel mode (`VPN subnet + LAN subnet` instead of `0.0.0.0/0`). Connect to your VPN from anywhere and still reach `192.168.1.x` devices.
+
+### 📱 Instant Client Onboarding
+- **QR code** — scan with the WireGuard app, connected in 10 seconds
+- **Config viewer** — read the full `.conf` in the UI and copy it with one click
+- **One-time download links** — share a single-use, time-limited URL that delivers the config without requiring login
+- **Email delivery** — send the config or a download link directly to the client's inbox
+
+### 🛡️ Security First
+- **TOTP two-factor authentication** (Google Authenticator, Aegis, any TOTP app)
+- WireGuard private keys **encrypted at rest** with AES-256-GCM
+- JWT access tokens kept in **memory only** — never written to `localStorage`
+- **httpOnly refresh cookies** — immune to XSS token theft
+- bcrypt password hashing + forced password change on first login
 - Rate limiting on the login endpoint
 
-### DNS & Networking
-- Built-in **AdGuard Home** integration for network-wide ad/tracker blocking
-- DNS preset selector (Cloudflare, Google, Quad9, AdGuard auto-detected)
-- **DDNS support** — automatic public IP tracking
-- **Connectivity checker** per interface — verifies the interface is UP and UDP port is bound
+### 🌐 DNS & Network
+- Integrated **AdGuard Home** for network-wide ad and tracker blocking
+- DNS preset selector — Cloudflare, Google, Quad9, or your own
+- **DDNS support** — auto-tracks your public IP
+- Per-interface **connectivity checker** — verifies the interface is UP and the UDP port is bound
 
-### Operations
-- **SQLite** database — zero external dependencies, single file
-- One-click **database backup** download
-- **Public IP auto-detection** with manual refresh
-- Subnet editing with automatic **client IP re-allocation**
-- Full **dark theme** UI out of the box
+### 🎨 Beautiful, Responsive UI
+- **Dark mode by default**, switchable to light — preference persisted, no flash on reload
+- Fully **mobile-responsive** — bottom nav bar on small screens, sidebar on desktop
+- Thin themed scrollbar, smooth transitions, shadcn/ui component system
+- Live connection indicator in the nav
+
+### 🗄️ Ops-Friendly
+- **SQLite** — single file, zero infrastructure, easy backup
+- One-click **database backup** download from the UI
+- Subnet editing with automatic **client IP re-allocation** (preserves host offset)
+- `WG_MOCK=true` mode for development without root/WireGuard
 
 ---
 
-## Architecture
+## ⚡ Quick Start
 
-```
-+-------------------------------------+
-|           Browser (HTTPS)           |
-+----------------+--------------------+
-                 |
-+----------------v--------------------+
-|     Velar UI  (Nginx + React)       |  :80
-|     proxies /api to backend         |
-+----------------+--------------------+
-                 |
-+----------------v--------------------+
-|   Velar API  (Go + Gin)             |  :8080
-|   JWT . TOTP . GORM . SQLite        |
-|   wg / wg-quick / iptables          |
-+----------------+--------------------+
-                 |
-+----------------v--------------------+
-|   AdGuard Home                      |  :3000 (web) / :53 (DNS)
-+-------------------------------------+
+```bash
+git clone https://github.com/AlexArtaud-Dev/Velar.git && cd Velar
+cp .env.example .env
+# Set WG_HOST (your public IP) and APP_SECRET (openssl rand -hex 32)
+nano .env
+docker compose up -d
 ```
 
-**Stack:** Go 1.22 · Gin · GORM · SQLite · React 18 · TypeScript · Vite · Tailwind CSS · shadcn/ui · Docker
+Open `http://your-server-ip` → login with `admin` + the temporary password from:
+
+```bash
+docker compose logs api | grep -i password
+```
+
+You'll be forced to change it on first login.
+
+> For full setup instructions including WireGuard kernel setup, port forwarding, DDNS, and reverse proxy configuration, see the **[Installation Guide →](./docs/INSTALLATION.md)**
 
 ---
 
-## Quick Start
+## 🧱 Stack
 
-See the full **[Installation Guide](./docs/INSTALLATION.md)** for step-by-step instructions including server prerequisites, WireGuard kernel setup, Docker installation, environment configuration, port forwarding, and first login.
-
-> **TL;DR** for experienced users:
-> ```bash
-> git clone https://github.com/AlexArtaud-Dev/Velar.git && cd Velar
-> cp .env.example .env          # edit WG_HOST and APP_SECRET at minimum
-> docker compose up -d
-> # open http://your-server-ip  ->  login: admin / see logs for temp password
-> docker compose logs api | grep -i password
-> ```
+| Layer | Technology |
+|---|---|
+| Backend | Go 1.22, Gin, GORM, SQLite |
+| Frontend | React 18, TypeScript, Vite, Tailwind CSS, shadcn/ui |
+| Auth | bcrypt, JWT, httpOnly cookies, TOTP |
+| VPN | WireGuard, wg-quick |
+| Bandwidth | Linux tc (HTB + ingress police) |
+| DNS | AdGuard Home |
+| Runtime | Docker, Docker Compose |
 
 ---
 
-## License
+## 📚 Documentation
 
-This project is **proprietary software**. Source code is available for viewing and personal self-hosting only.  
-Copying, redistribution, or commercial use **requires explicit written permission** from the author.
+| Document | Description |
+|---|---|
+| [Installation Guide](./docs/INSTALLATION.md) | Server setup, Docker, first login, port forwarding |
+| [Configuration Reference](./docs/CONFIGURATION.md) | All environment variables explained |
+| [Architecture](./docs/ARCHITECTURE.md) | How Velar works internally, request flow, services |
+| [Bandwidth Limiting](./docs/BANDWIDTH.md) | How tc-based shaping works, limits and caveats |
+| [LAN Access](./docs/LAN-ACCESS.md) | Split-tunnel setup, subnet detection, requirements |
+| [Reverse Proxy](./docs/REVERSE-PROXY.md) | Nginx, Caddy, SWAG + Authelia examples |
+| [Troubleshooting](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
 
-See [LICENSE](./LICENSE) for full terms — to request permission: smlartaudalexandre@gmail.com
+---
+
+## 📄 License
+
+Proprietary software — source available for personal self-hosting only.
+Redistribution or commercial use requires written permission.
+See [LICENSE](./LICENSE) · Contact: smlartaudalexandre@gmail.com

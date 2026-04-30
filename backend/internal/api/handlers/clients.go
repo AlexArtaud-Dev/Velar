@@ -13,6 +13,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	bwsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/bandwidth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
@@ -29,12 +30,14 @@ func NewClientHandler(wg wgsvc.Service) *ClientHandler {
 }
 
 type createClientRequest struct {
-	InterfaceID uint       `json:"interface_id" binding:"required"`
-	Name        string     `json:"name" binding:"required"`
-	OwnerLabel  string     `json:"owner_label"`
-	Email       string     `json:"email"`
-	AllowedIPs  string     `json:"allowed_ips"`
-	ExpiresAt   *time.Time `json:"expires_at"`
+	InterfaceID    uint       `json:"interface_id" binding:"required"`
+	Name           string     `json:"name" binding:"required"`
+	OwnerLabel     string     `json:"owner_label"`
+	Email          string     `json:"email"`
+	AllowedIPs     string     `json:"allowed_ips"`
+	ExpiresAt      *time.Time `json:"expires_at"`
+	BandwidthLimitDown int    `json:"bandwidth_limit_down"` // Mbps, 0 = unlimited
+	BandwidthLimitUp   int    `json:"bandwidth_limit_up"`   // Mbps, 0 = unlimited
 }
 
 // buildDownloadURL constructs a full download URL from a raw token.
@@ -104,17 +107,19 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 
 	client := models.Client{
-		InterfaceID:  iface.ID,
-		Name:         req.Name,
-		OwnerLabel:   req.OwnerLabel,
-		Email:        req.Email,
-		PublicKey:    pubKey,
-		PrivateKey:   encPriv,
-		PresharedKey: encPSK,
-		AllowedIPs:   allowedIPs,
-		AssignedIP:   assignedIP,
-		Enabled:      true,
-		ExpiresAt:    req.ExpiresAt,
+		InterfaceID:    iface.ID,
+		Name:           req.Name,
+		OwnerLabel:     req.OwnerLabel,
+		Email:          req.Email,
+		PublicKey:      pubKey,
+		PrivateKey:     encPriv,
+		PresharedKey:   encPSK,
+		AllowedIPs:     allowedIPs,
+		AssignedIP:     assignedIP,
+		BandwidthLimitDown: req.BandwidthLimitDown,
+		BandwidthLimitUp:   req.BandwidthLimitUp,
+		Enabled:        true,
+		ExpiresAt:      req.ExpiresAt,
 	}
 	if err := database.DB.Create(&client).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -126,6 +131,12 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		return
 	}
 	h.syncConf(iface)
+
+	if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
+		if err := bwsvc.Apply(iface.Name, assignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
+			slog.Warn("create client: apply bandwidth limit", "client", client.Name, "err", err)
+		}
+	}
 
 	// --- Email: admin notification ---
 	owner := client.OwnerLabel
@@ -183,7 +194,9 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		ExpiresAt      *time.Time `json:"expires_at"`
 		// ClearExpiresAt explicitly removes the expiry date.
 		// Needed because *time.Time cannot distinguish JSON null from "field omitted".
-		ClearExpiresAt bool `json:"clear_expires_at"`
+		ClearExpiresAt     bool `json:"clear_expires_at"`
+		BandwidthLimitDown *int `json:"bandwidth_limit_down"` // Mbps; nil = no change, 0 = unlimited
+		BandwidthLimitUp   *int `json:"bandwidth_limit_up"`   // Mbps; nil = no change, 0 = unlimited
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -206,8 +219,22 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	} else if req.ExpiresAt != nil {
 		updates["expires_at"] = req.ExpiresAt
 	}
+	if req.BandwidthLimitDown != nil {
+		updates["bandwidth_limit_down"] = *req.BandwidthLimitDown
+	}
+	if req.BandwidthLimitUp != nil {
+		updates["bandwidth_limit_up"] = *req.BandwidthLimitUp
+	}
 	database.DB.Model(&client).Updates(updates)
 	database.DB.Preload("Interface").First(&client, id)
+
+	// Apply / remove bandwidth limit after DB update
+	bwChanged := req.BandwidthLimitDown != nil || req.BandwidthLimitUp != nil
+	if bwChanged && !config.C.WGMock && client.Enabled {
+		if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
+			slog.Warn("update client: apply bandwidth limit", "client", client.Name, "err", err)
+		}
+	}
 
 	// Notify client of changes
 	mailer.SendHTMLTo(
@@ -231,20 +258,40 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	// Best-effort — don't block DB cleanup on WG errors
-	if err := h.wg.RemovePeer(client.Interface.Name, client.PublicKey); err != nil {
-		slog.Warn("remove peer wg", "iface", client.Interface.Name, "err", err)
-	}
-	h.syncConf(client.Interface)
 
-	// Notify client before deleting
+	// Notify before touching anything
 	mailer.SendHTMLTo(
 		client.Email,
 		fmt.Sprintf("VPN access revoked: %s", client.Name),
 		mailer.HTMLClientDeleted(client.Name, client.AssignedIP),
 	)
 
-	database.DB.Delete(&client)
+	// Cascade-delete child records first — PRAGMA foreign_keys=ON would otherwise
+	// block the client DELETE with a constraint violation (silent 200 with no effect).
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.DownloadToken{})
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.ConnectionEvent{})
+
+	// Delete from DB BEFORE syncConf — syncConf rebuilds the conf from the DB, so
+	// deleting first ensures the peer is excluded from the generated config and
+	// wg syncconf doesn't re-add it after RemovePeer.
+	if err := database.DB.Delete(&client).Error; err != nil {
+		slog.Error("delete client: db", "client", client.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error: " + err.Error()})
+		return
+	}
+
+	// Remove from running wg state (best-effort — if the interface is down this will
+	// error, but the conf rebuild below will handle it on next bring-up)
+	if err := h.wg.RemovePeer(client.Interface.Name, client.PublicKey); err != nil {
+		slog.Warn("delete client: remove peer wg", "iface", client.Interface.Name, "err", err)
+	}
+	if !config.C.WGMock {
+		bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
+	}
+
+	// Sync conf — now generated without the deleted client
+	h.syncConf(client.Interface)
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -267,8 +314,16 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	if enabled {
 		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
 		h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32")
+		if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
+			if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
+				slog.Warn("enable client: apply bandwidth limit", "client", client.Name, "err", err)
+			}
+		}
 	} else {
 		h.wg.RemovePeer(client.Interface.Name, client.PublicKey)
+		if !config.C.WGMock {
+			bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
+		}
 	}
 	database.DB.Model(&client).Update("enabled", enabled)
 	h.syncConf(client.Interface)

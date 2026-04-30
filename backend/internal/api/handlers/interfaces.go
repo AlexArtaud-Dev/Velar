@@ -13,6 +13,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	bwsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/bandwidth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
@@ -329,13 +330,36 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Best-effort — don't block DB cleanup on WG errors
+	// Cascade-delete all child records before touching clients.
+	// PRAGMA foreign_keys=ON will block client/interface DELETEs if tokens or
+	// events still reference them — errors are silent without this cascade.
+	var clients []models.Client
+	database.DB.Where("interface_id = ?", iface.ID).Find(&clients)
+	for _, cl := range clients {
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.DownloadToken{})
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.ConnectionEvent{})
+	}
+
+	if err := database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{}).Error; err != nil {
+		slog.Error("delete interface: cascade clients", "iface", iface.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cascade delete clients: " + err.Error()})
+		return
+	}
+
+	// Bring down and delete wg conf (best-effort — don't block DB cleanup)
 	if err := h.wg.DeleteInterface(iface.Name); err != nil {
 		slog.Warn("delete interface wg", "name", iface.Name, "err", err)
 	}
+	if !config.C.WGMock {
+		bwsvc.RemoveAll(iface.Name)
+	}
 
-	database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{})
-	database.DB.Delete(&iface)
+	if err := database.DB.Delete(&iface).Error; err != nil {
+		slog.Error("delete interface: db", "iface", iface.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 
@@ -351,6 +375,18 @@ func (h *InterfaceHandler) BringUp(c *gin.Context) {
 		return
 	}
 	database.DB.Model(&iface).Update("enabled", true)
+
+	// Reapply bandwidth limits — tc rules are lost when the interface goes down.
+	if !config.C.WGMock {
+		var clients []models.Client
+		database.DB.Where("interface_id = ? AND enabled = true AND (bandwidth_limit_down > 0 OR bandwidth_limit_up > 0)", iface.ID).Find(&clients)
+		for _, cl := range clients {
+			if err := bwsvc.Apply(iface.Name, cl.AssignedIP, cl.BandwidthLimitDown, cl.BandwidthLimitUp); err != nil {
+				slog.Warn("bringup: reapply bandwidth", "client", cl.Name, "err", err)
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "up"})
 }
 
