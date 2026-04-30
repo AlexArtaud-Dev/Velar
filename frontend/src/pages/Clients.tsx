@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff, DatabaseZap } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff, DatabaseZap, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,10 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
   getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
@@ -127,15 +131,11 @@ export default function Clients() {
                       </Badge>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <ConfigButton clientId={client.id} name={client.name} />
-                    <SendConfigButton clientId={client.id} email={client.email} />
-                    <QRButton clientId={client.id} name={client.name} />
-                    <DownloadLinkButton clientId={client.id} />
-                    <ClientHistoryDialog client={client} />
-                    <QuotaDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
-                    <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
-                    <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
+                  <div className="flex items-center gap-1">
+                    <ClientActionsMenu
+                      client={client}
+                      onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -239,6 +239,86 @@ export default function Clients() {
   )
 }
 
+// ── Client actions dropdown menu ──────────────────────────────────────────────
+
+function ClientActionsMenu({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  // Each dialog is controlled independently via open state lifted here
+  const [configOpen, setConfigOpen] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [quotaOpen, setQuotaOpen] = useState(false)
+  const [bwOpen, setBwOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" title="Actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Config</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => setConfigOpen(true)}>
+            <FileText className="h-3.5 w-3.5" /> View config
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setQrOpen(true)}>
+            <QrCode className="h-3.5 w-3.5" /> QR code
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLinkOpen(true)}>
+            <Link2 className="h-3.5 w-3.5" /> Download link
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setSendOpen(true)}
+            disabled={!client.email}
+            className={!client.email ? 'opacity-40' : ''}
+          >
+            <Mail className="h-3.5 w-3.5" /> Send by email
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Analytics & Limits</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+            <History className="h-3.5 w-3.5" /> History
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setQuotaOpen(true)}>
+            <DatabaseZap className={`h-3.5 w-3.5 ${client.data_quota_bytes > 0 ? 'text-purple-500' : ''}`} />
+            Data quota {client.data_quota_bytes > 0 && <span className="ml-auto text-xs text-muted-foreground">{formatBytes(client.data_quota_bytes)}</span>}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setBwOpen(true)}>
+            <Gauge className={`h-3.5 w-3.5 ${(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) ? 'text-amber-500' : ''}`} />
+            Bandwidth {(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                {client.bandwidth_limit_down > 0 ? `↓${client.bandwidth_limit_down}` : ''}
+                {client.bandwidth_limit_down > 0 && client.bandwidth_limit_up > 0 ? '/' : ''}
+                {client.bandwidth_limit_up > 0 ? `↑${client.bandwidth_limit_up}` : ''} Mbps
+              </span>
+            )}
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Dialogs — rendered outside the dropdown so they survive its unmount */}
+      <ConfigButton clientId={client.id} name={client.name} open={configOpen} onOpenChange={setConfigOpen} />
+      <SendConfigButton clientId={client.id} email={client.email} open={sendOpen} onOpenChange={setSendOpen} />
+      <QRButton clientId={client.id} name={client.name} open={qrOpen} onOpenChange={setQrOpen} />
+      <DownloadLinkButton clientId={client.id} open={linkOpen} onOpenChange={setLinkOpen} />
+      <ClientHistoryDialog client={client} open={historyOpen} onOpenChange={setHistoryOpen} />
+      <QuotaDialog client={client} open={quotaOpen} onOpenChange={setQuotaOpen} onUpdated={onUpdated} />
+      <BandwidthDialog client={client} open={bwOpen} onOpenChange={setBwOpen} onUpdated={onUpdated} />
+      <EditClientDialog client={client} open={editOpen} onOpenChange={setEditOpen} onUpdated={onUpdated} />
+    </>
+  )
+}
+
 /** Works on both HTTP and HTTPS by falling back to execCommand */
 function copyToClipboard(text: string) {
   if (navigator.clipboard) {
@@ -255,8 +335,7 @@ function copyToClipboard(text: string) {
   }
 }
 
-function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
-  const [open, setOpen] = useState(false)
+function ConfigButton({ clientId, name, open, onOpenChange }: { clientId: number; name: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [copied, setCopied] = useState(false)
   const { data, isFetching } = useQuery({
     queryKey: ['client-config-text', clientId],
@@ -272,12 +351,7 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="View config">
-          <FileText className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Config — {name}</DialogTitle>
@@ -300,51 +374,41 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
   )
 }
 
-function SendConfigButton({ clientId, email }: { clientId: number; email?: string }) {
-  const [sent, setSent] = useState(false)
-
+function SendConfigButton({ clientId, email, open, onOpenChange }: { clientId: number; email?: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const mut = useMutation({
     mutationFn: () => sendConfigEmail(clientId),
-    onSuccess: () => {
-      setSent(true)
-      setTimeout(() => setSent(false), 3000)
-    },
+    onSuccess: () => { onOpenChange(false) },
   })
 
-  const hasEmail = !!email
-
+  // Use dialog as confirmation step
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      title={hasEmail ? `Send config to ${email}` : 'No email set on this client'}
-      disabled={!hasEmail || mut.isPending}
-      onClick={() => mut.mutate()}
-      className={sent ? 'text-green-500' : ''}
-    >
-      {sent
-        ? <Check className="h-4 w-4 text-green-500" />
-        : mut.isPending
-          ? <Mail className="h-4 w-4 animate-pulse" />
-          : <Mail className={`h-4 w-4 ${!hasEmail ? 'opacity-30' : ''}`} />}
-    </Button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Send config by email</DialogTitle>
+          <DialogDescription>
+            A one-time download link will be sent to <span className="font-mono text-foreground">{email}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? 'Sending…' : mut.isSuccess ? <><Check className="h-3.5 w-3.5 mr-1" /> Sent!</> : 'Send'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function QRButton({ clientId, name }: { clientId: number; name: string }) {
-  const [open, setOpen] = useState(false)
+function QRButton({ clientId, name, open, onOpenChange }: { clientId: number; name: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { data, isFetching } = useQuery({
     queryKey: ['client-qr', clientId],
     queryFn: () => getClientQR(clientId),
     enabled: open,
   })
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="QR code">
-          <QrCode className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg text-center">
         <DialogHeader>
           <DialogTitle>QR — {name}</DialogTitle>
@@ -366,67 +430,73 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
   )
 }
 
-function DownloadLinkButton({ clientId }: { clientId: number }) {
+function DownloadLinkButton({ clientId, open, onOpenChange }: { clientId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null)
   const mut = useMutation({
     mutationFn: () => createDownloadLink(clientId),
     onSuccess: (data) => setUrl(`${window.location.origin}${data.url}`),
   })
+
+  function handleOpen(v: boolean) {
+    onOpenChange(v)
+    if (v && !url) mut.mutate()
+    if (!v) setUrl(null)
+  }
+
   return (
-    <>
-      <Button variant="ghost" size="icon" title="One-time download link" onClick={() => mut.mutate()}>
-        <Link2 className="h-4 w-4" />
-      </Button>
-      <Dialog open={!!url} onOpenChange={() => setUrl(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>One-time download link</DialogTitle>
-            <DialogDescription>Valid for 1 hour, single use. Share this link to allow config download without login.</DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={handleOpen}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>One-time download link</DialogTitle>
+          <DialogDescription>Valid for 1 hour, single use. Share this link to allow config download without login.</DialogDescription>
+        </DialogHeader>
+        {mut.isPending || !url ? (
+          <div className="h-16 flex items-center justify-center text-muted-foreground text-sm">Generating…</div>
+        ) : (
           <div className="space-y-3">
             <div className="flex gap-2">
               <input
                 readOnly
-                value={url ?? ''}
+                value={url}
                 className="flex-1 rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono"
               />
-              <Button size="sm" onClick={() => { copyToClipboard(url ?? ''); setUrl(null) }}>
+              <Button size="sm" onClick={() => { copyToClipboard(url); onOpenChange(false) }}>
                 Copy
               </Button>
             </div>
             <a
-              href={url ?? '#'}
+              href={url}
               target="_blank"
               rel="noopener noreferrer"
               className="block text-xs text-primary underline break-all"
-              onClick={() => setTimeout(() => setUrl(null), 500)}
+              onClick={() => setTimeout(() => onOpenChange(false), 500)}
             >
               Click to download directly →
             </a>
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false)
+function EditClientDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
   const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
   const [error, setError] = useState('')
 
-  function openDialog() {
-    setForm({
-      name: client.name,
-      owner_label: client.owner_label ?? '',
-      email: client.email ?? '',
-      allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
-      // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
-      expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
-    })
-    setError('')
-    setOpen(true)
-  }
+  useEffect(() => {
+    if (open) {
+      setForm({
+        name: client.name,
+        owner_label: client.owner_label ?? '',
+        email: client.email ?? '',
+        allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
+        expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
+      })
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const mutation = useMutation({
     mutationFn: () => updateClient(client.id, {
@@ -441,79 +511,73 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
         ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
         : { clear_expires_at: true }),
     }),
-    onSuccess: () => { setOpen(false); onUpdated() },
+    onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
   return (
-    <>
-      <Button variant="ghost" size="icon" title="Edit" onClick={openDialog}>
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit client — {client.name}</DialogTitle>
-            <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-owner">Owner label</Label>
-              <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
-              <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-ips">Allowed IPs</Label>
-              <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
-              <div className="flex gap-2">
-                <Input
-                  id="edit-expiry"
-                  type="datetime-local"
-                  value={form.expires_at}
-                  onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
-                  className="flex-1"
-                />
-                {form.expires_at && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Remove expiry"
-                    onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
-              </div>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit client — {client.name}</DialogTitle>
+          <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-name">Name</Label>
+            <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-owner">Owner label</Label>
+            <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
+            <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-ips">Allowed IPs</Label>
+            <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
+            <div className="flex gap-2">
+              <Input
+                id="edit-expiry"
+                type="datetime-local"
+                value={form.expires_at}
+                onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
+                className="flex-1"
+              />
+              {form.expires_at && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Remove expiry"
+                  onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              )}
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function ClientHistoryDialog({ client }: { client: Client }) {
-  const [open, setOpen] = useState(false)
+function ClientHistoryDialog({ client, open, onOpenChange }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
 
   const { data: snapshots = [], isFetching: loadingSnaps } = useQuery({
@@ -538,10 +602,7 @@ function ClientHistoryDialog({ client }: { client: Client }) {
 
   return (
     <>
-      <Button variant="ghost" size="icon" title="Connection history" onClick={() => setOpen(true)}>
-        <History className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>History — {client.name}</DialogTitle>
@@ -695,37 +756,34 @@ function QuotaBar({ client }: { client: Client }) {
 
 // ── Quota dialog ──────────────────────────────────────────────────────────────
 
-function QuotaDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false)
+function QuotaDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
   const [quotaGb, setQuotaGb] = useState(0)
   const [period, setPeriod] = useState<'monthly' | 'weekly' | 'total'>('monthly')
   const [error, setError] = useState('')
 
-  function openDialog() {
-    setQuotaGb(client.data_quota_bytes > 0 ? Math.round(client.data_quota_bytes / 1e9 * 100) / 100 : 0)
-    setPeriod(client.quota_period ?? 'monthly')
-    setError('')
-    setOpen(true)
-  }
+  useEffect(() => {
+    if (open) {
+      setQuotaGb(client.data_quota_bytes > 0 ? Math.round(client.data_quota_bytes / 1e9 * 100) / 100 : 0)
+      setPeriod(client.quota_period ?? 'monthly')
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const mutation = useMutation({
     mutationFn: () => updateClient(client.id, {
       data_quota_bytes: Math.round(quotaGb * 1e9),
       quota_period: period,
     }),
-    onSuccess: () => { setOpen(false); onUpdated() },
+    onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
   return (
-    <>
-      <Button variant="ghost" size="icon" title="Data quota" onClick={openDialog}>
-        <DatabaseZap className={`h-4 w-4 ${client.data_quota_bytes > 0 ? 'text-purple-500' : ''}`} />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Data quota — {client.name}</DialogTitle>
             <DialogDescription>
@@ -762,48 +820,44 @@ function QuotaDialog({ client, onUpdated }: { client: Client; onUpdated: () => v
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
               {mutation.isPending ? 'Applying…' : 'Apply'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   )
 }
 
-function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false)
+function BandwidthDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
   const [down, setDown] = useState(0)
   const [up, setUp] = useState(0)
   const [error, setError] = useState('')
 
-  function openDialog() {
-    setDown(client.bandwidth_limit_down ?? 0)
-    setUp(client.bandwidth_limit_up ?? 0)
-    setError('')
-    setOpen(true)
-  }
+  useEffect(() => {
+    if (open) {
+      setDown(client.bandwidth_limit_down ?? 0)
+      setUp(client.bandwidth_limit_up ?? 0)
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const mutation = useMutation({
     mutationFn: () => updateClient(client.id, {
       bandwidth_limit_down: down,
       bandwidth_limit_up: up,
     }),
-    onSuccess: () => { setOpen(false); onUpdated() },
+    onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
   return (
-    <>
-      <Button variant="ghost" size="icon" title="Bandwidth limit" onClick={openDialog}>
-        <Gauge className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Bandwidth — {client.name}</DialogTitle>
             <DialogDescription>
@@ -842,14 +896,13 @@ function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () 
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
               {mutation.isPending ? 'Applying…' : 'Apply'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   )
 }
 
