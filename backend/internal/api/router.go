@@ -104,6 +104,13 @@ func NewRouter(
 			settings.GET("/notifications", settingsHandler.GetNotificationStatus)
 		}
 
+		// Admin operations
+		adminHandler := handlers.NewAdminHandler(wg)
+		admin := api.Group("/admin")
+		{
+			admin.POST("/sync", adminHandler.SyncState)
+		}
+
 	}
 
 	return r

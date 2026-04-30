@@ -330,7 +330,23 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 		return
 	}
 
-	// Best-effort — don't block DB cleanup on WG errors
+	// Cascade-delete all child records before touching clients.
+	// PRAGMA foreign_keys=ON will block client/interface DELETEs if tokens or
+	// events still reference them — errors are silent without this cascade.
+	var clients []models.Client
+	database.DB.Where("interface_id = ?", iface.ID).Find(&clients)
+	for _, cl := range clients {
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.DownloadToken{})
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.ConnectionEvent{})
+	}
+
+	if err := database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{}).Error; err != nil {
+		slog.Error("delete interface: cascade clients", "iface", iface.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "cascade delete clients: " + err.Error()})
+		return
+	}
+
+	// Bring down and delete wg conf (best-effort — don't block DB cleanup)
 	if err := h.wg.DeleteInterface(iface.Name); err != nil {
 		slog.Warn("delete interface wg", "name", iface.Name, "err", err)
 	}
@@ -338,8 +354,12 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 		bwsvc.RemoveAll(iface.Name)
 	}
 
-	database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{})
-	database.DB.Delete(&iface)
+	if err := database.DB.Delete(&iface).Error; err != nil {
+		slog.Error("delete interface: db", "iface", iface.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error: " + err.Error()})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
-import { Shield, Globe, Key, Lock, Bell } from 'lucide-react'
+import { Shield, Globe, Key, Lock, Bell, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { getPublicIP, getAdguardStatus, getNotificationStatus } from '@/api/settings'
+import { getPublicIP, getAdguardStatus, getNotificationStatus, syncWireGuardState, type SyncResult } from '@/api/settings'
 import { totpSetup, totpActivate, totpDisable, changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
@@ -119,7 +119,94 @@ export default function Settings() {
         </CardContent>
       </Card>
 
+      {/* WireGuard state sync */}
+      <SyncCard />
+
     </div>
+  )
+}
+
+function SyncCard() {
+  const [result, setResult] = useState<SyncResult | null>(null)
+
+  const mut = useMutation({
+    mutationFn: syncWireGuardState,
+    onSuccess: (data) => setResult(data),
+  })
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">WireGuard state sync</CardTitle>
+        </div>
+        <CardDescription>
+          Reconciles the running WireGuard state against the database. Removes stale peers,
+          re-adds missing ones, rewrites all conf files and reapplies bandwidth limits.
+          Use this after a server reboot, manual wg changes, or an application upgrade.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => { setResult(null); mut.mutate() }}
+          disabled={mut.isPending}
+          className="gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${mut.isPending ? 'animate-spin' : ''}`} />
+          {mut.isPending ? 'Syncing…' : 'Run sync'}
+        </Button>
+
+        {result && (
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-3 text-sm">
+              <span className="text-muted-foreground">
+                {result.interfaces_synced} interface{result.interfaces_synced !== 1 ? 's' : ''} synced
+              </span>
+              {result.peers_removed > 0 && (
+                <Badge variant="warning" className="gap-1">
+                  −{result.peers_removed} stale peer{result.peers_removed !== 1 ? 's' : ''} removed
+                </Badge>
+              )}
+              {result.peers_added > 0 && (
+                <Badge variant="success" className="gap-1">
+                  +{result.peers_added} peer{result.peers_added !== 1 ? 's' : ''} re-added
+                </Badge>
+              )}
+              {result.peers_removed === 0 && result.peers_added === 0 && (
+                <Badge variant="secondary">Already in sync</Badge>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {result.report.map((r) => (
+                <div key={r.interface} className="rounded-md border border-border bg-muted/40 px-3 py-2 text-xs space-y-1">
+                  <div className="flex items-center gap-2 font-medium">
+                    {(r.errors?.length ?? 0) > 0
+                      ? <AlertCircle className="h-3.5 w-3.5 text-destructive" />
+                      : <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />}
+                    <span className="font-mono">{r.interface}</span>
+                    {r.conf_synced && <span className="text-muted-foreground">conf synced</span>}
+                  </div>
+                  {(r.peers_removed > 0 || r.peers_added > 0) && (
+                    <p className="text-muted-foreground">
+                      {r.peers_removed > 0 && `−${r.peers_removed} removed`}
+                      {r.peers_removed > 0 && r.peers_added > 0 && ' · '}
+                      {r.peers_added > 0 && `+${r.peers_added} added`}
+                    </p>
+                  )}
+                  {r.errors?.map((e, i) => (
+                    <p key={i} className="text-destructive">{e}</p>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

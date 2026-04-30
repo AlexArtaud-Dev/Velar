@@ -258,23 +258,40 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	// Best-effort — don't block DB cleanup on WG errors
-	if err := h.wg.RemovePeer(client.Interface.Name, client.PublicKey); err != nil {
-		slog.Warn("remove peer wg", "iface", client.Interface.Name, "err", err)
-	}
-	if !config.C.WGMock {
-		bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
-	}
-	h.syncConf(client.Interface)
 
-	// Notify client before deleting
+	// Notify before touching anything
 	mailer.SendHTMLTo(
 		client.Email,
 		fmt.Sprintf("VPN access revoked: %s", client.Name),
 		mailer.HTMLClientDeleted(client.Name, client.AssignedIP),
 	)
 
-	database.DB.Delete(&client)
+	// Cascade-delete child records first — PRAGMA foreign_keys=ON would otherwise
+	// block the client DELETE with a constraint violation (silent 200 with no effect).
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.DownloadToken{})
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.ConnectionEvent{})
+
+	// Delete from DB BEFORE syncConf — syncConf rebuilds the conf from the DB, so
+	// deleting first ensures the peer is excluded from the generated config and
+	// wg syncconf doesn't re-add it after RemovePeer.
+	if err := database.DB.Delete(&client).Error; err != nil {
+		slog.Error("delete client: db", "client", client.Name, "err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error: " + err.Error()})
+		return
+	}
+
+	// Remove from running wg state (best-effort — if the interface is down this will
+	// error, but the conf rebuild below will handle it on next bring-up)
+	if err := h.wg.RemovePeer(client.Interface.Name, client.PublicKey); err != nil {
+		slog.Warn("delete client: remove peer wg", "iface", client.Interface.Name, "err", err)
+	}
+	if !config.C.WGMock {
+		bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
+	}
+
+	// Sync conf — now generated without the deleted client
+	h.syncConf(client.Interface)
+
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
 

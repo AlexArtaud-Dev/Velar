@@ -16,3 +16,21 @@ export interface NotificationStatus {
 export const getNotificationStatus = () =>
   api.get<NotificationStatus>('/settings/notifications').then((r) => r.data)
 
+export interface SyncReport {
+  interface: string
+  peers_removed: number
+  peers_added: number
+  conf_synced: boolean
+  errors?: string[]
+}
+
+export interface SyncResult {
+  interfaces_synced: number
+  peers_removed: number
+  peers_added: number
+  report: SyncReport[]
+}
+
+export const syncWireGuardState = () =>
+  api.post<SyncResult>('/admin/sync').then((r) => r.data)
+
