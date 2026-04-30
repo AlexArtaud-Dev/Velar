@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
@@ -15,6 +16,31 @@ import (
 	tokensvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/robfig/cron/v3"
+)
+
+const disconnectThreshold = 3 * time.Minute
+const snapshotRetention = 7 * 24 * time.Hour
+const eventRetention = 30 * 24 * time.Hour
+
+// ── Connection event tracking ─────────────────────────────────────────────────
+
+type connState struct {
+	connected     bool
+	lastHandshake time.Time
+}
+
+var (
+	connMu          sync.Mutex
+	connStateMap    = make(map[uint]*connState) // clientID → state
+	connInitialized bool
+)
+
+// ── Bandwidth snapshot tracking ───────────────────────────────────────────────
+
+var (
+	snapMu     sync.Mutex
+	snapLastRx = make(map[uint]int64) // clientID → last cumulative bytes_rx from wg
+	snapLastTx = make(map[uint]int64) // clientID → last cumulative bytes_tx from wg
 )
 
 func Start(wg wgsvc.Service, ddnsSvc *ddns.Service) {
@@ -31,6 +57,15 @@ func Start(wg wgsvc.Service, ddnsSvc *ddns.Service) {
 
 	// DDNS refresh every 5 minutes
 	c.AddFunc("@every 5m", func() { refreshDDNS(ddnsSvc) })
+
+	// Connection event detection every 15 seconds
+	c.AddFunc("@every 15s", func() { pollConnectionEvents(wg) })
+
+	// Bandwidth snapshots every minute
+	c.AddFunc("@every 1m", func() { snapshotBandwidth(wg) })
+
+	// Purge old snapshots and events every hour
+	c.AddFunc("@every 1h", purgeOldData)
 
 	c.Start()
 	slog.Info("background jobs started")
@@ -171,4 +206,213 @@ func jobsBuildDownloadURL(rawToken string) string {
 		return strings.TrimRight(base, "/") + "/dl/" + rawToken
 	}
 	return "/dl/" + rawToken
+}
+
+// pollConnectionEvents detects WireGuard peer connect/disconnect transitions by
+// comparing live last_handshake timestamps against the previous poll state.
+// On the first run it only records the baseline state — no events are emitted.
+func pollConnectionEvents(wg wgsvc.Service) {
+	var ifaces []models.Interface
+	if err := database.DB.Where("enabled = true").Find(&ifaces).Error; err != nil {
+		return
+	}
+
+	// Index all enabled clients by public key
+	var clients []models.Client
+	database.DB.Where("enabled = true").Find(&clients)
+	pubToClient := make(map[string]*models.Client, len(clients))
+	for i := range clients {
+		pubToClient[clients[i].PublicKey] = &clients[i]
+	}
+
+	now := time.Now()
+
+	// Gather live handshake state across all interfaces
+	type liveState struct {
+		handshake time.Time
+		endpoint  string
+	}
+	livePeers := make(map[uint]liveState)
+	for _, iface := range ifaces {
+		stats, err := wg.GetStats(iface.Name)
+		if err != nil {
+			continue
+		}
+		for _, s := range stats {
+			cl, ok := pubToClient[s.PublicKey]
+			if !ok || s.LastHandshake == 0 {
+				continue
+			}
+			livePeers[cl.ID] = liveState{
+				handshake: time.Unix(s.LastHandshake, 0),
+				endpoint:  s.Endpoint,
+			}
+		}
+	}
+
+	connMu.Lock()
+	defer connMu.Unlock()
+
+	if !connInitialized {
+		// First run: record baseline without emitting events
+		for clientID, live := range livePeers {
+			connStateMap[clientID] = &connState{
+				connected:     now.Sub(live.handshake) < disconnectThreshold,
+				lastHandshake: live.handshake,
+			}
+		}
+		for _, cl := range clients {
+			if _, inLive := livePeers[cl.ID]; !inLive {
+				connStateMap[cl.ID] = &connState{connected: false}
+			}
+		}
+		connInitialized = true
+		return
+	}
+
+	// Subsequent runs: compare and emit events
+	for clientID, live := range livePeers {
+		isConnected := now.Sub(live.handshake) < disconnectThreshold
+		prev := connStateMap[clientID]
+		if prev == nil {
+			connStateMap[clientID] = &connState{connected: isConnected, lastHandshake: live.handshake}
+			if isConnected {
+				emitConnectionEvent(clientID, "connected", live.endpoint)
+			}
+			continue
+		}
+		if !prev.connected && isConnected {
+			emitConnectionEvent(clientID, "connected", live.endpoint)
+		} else if prev.connected && !isConnected {
+			emitConnectionEvent(clientID, "disconnected", "")
+		}
+		prev.connected = isConnected
+		prev.lastHandshake = live.handshake
+	}
+
+	// Clients absent from live stats → disconnected
+	for _, cl := range clients {
+		if _, inLive := livePeers[cl.ID]; !inLive {
+			if prev := connStateMap[cl.ID]; prev != nil && prev.connected {
+				emitConnectionEvent(cl.ID, "disconnected", "")
+				prev.connected = false
+			}
+		}
+	}
+}
+
+func emitConnectionEvent(clientID uint, eventType, endpoint string) {
+	event := models.ConnectionEvent{
+		ClientID:  clientID,
+		EventType: eventType,
+		SourceIP:  extractEndpointIP(endpoint),
+		Timestamp: time.Now(),
+	}
+	if err := database.DB.Create(&event).Error; err != nil {
+		slog.Error("emitConnectionEvent", "err", err)
+		return
+	}
+	slog.Info("connection event", "client_id", clientID, "type", eventType)
+}
+
+func extractEndpointIP(endpoint string) string {
+	if endpoint == "" || endpoint == "(none)" {
+		return ""
+	}
+	host, _, err := net.SplitHostPort(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	return host
+}
+
+// snapshotBandwidth polls wg stats every minute and stores per-client byte
+// deltas. Handles counter resets (peer reconnection) by treating the new
+// cumulative value as the delta for that interval.
+func snapshotBandwidth(wg wgsvc.Service) {
+	var ifaces []models.Interface
+	if err := database.DB.Where("enabled = true").Find(&ifaces).Error; err != nil {
+		return
+	}
+
+	var clients []models.Client
+	database.DB.Where("enabled = true").Find(&clients)
+	pubToID := make(map[string]uint, len(clients))
+	for _, cl := range clients {
+		pubToID[cl.PublicKey] = cl.ID
+	}
+
+	now := time.Now()
+
+	snapMu.Lock()
+	defer snapMu.Unlock()
+
+	for _, iface := range ifaces {
+		stats, err := wg.GetStats(iface.Name)
+		if err != nil {
+			continue
+		}
+		for _, s := range stats {
+			clientID, ok := pubToID[s.PublicKey]
+			if !ok {
+				continue
+			}
+
+			prevRx, hadPrev := snapLastRx[clientID]
+			prevTx := snapLastTx[clientID]
+
+			// Always update the last-known value
+			snapLastRx[clientID] = s.BytesRx
+			snapLastTx[clientID] = s.BytesTx
+
+			if !hadPrev {
+				// First observation — record baseline, no delta yet
+				continue
+			}
+
+			// Compute delta; counter resets on peer reconnect so treat new
+			// cumulative as the delta for that interval.
+			var deltaRx, deltaTx int64
+			if s.BytesRx >= prevRx {
+				deltaRx = s.BytesRx - prevRx
+			} else {
+				deltaRx = s.BytesRx
+			}
+			if s.BytesTx >= prevTx {
+				deltaTx = s.BytesTx - prevTx
+			} else {
+				deltaTx = s.BytesTx
+			}
+
+			if deltaRx == 0 && deltaTx == 0 {
+				continue // nothing to store
+			}
+
+			snap := models.PeerSnapshot{
+				ClientID:  clientID,
+				Timestamp: now,
+				BytesRx:   deltaRx,
+				BytesTx:   deltaTx,
+			}
+			if err := database.DB.Create(&snap).Error; err != nil {
+				slog.Error("snapshotBandwidth: save", "err", err)
+			}
+		}
+	}
+}
+
+// purgeOldData removes PeerSnapshot rows older than 7 days and
+// ConnectionEvent rows older than 30 days.
+func purgeOldData() {
+	snapshotCutoff := time.Now().Add(-snapshotRetention)
+	res := database.DB.Where("timestamp < ?", snapshotCutoff).Delete(&models.PeerSnapshot{})
+	if res.RowsAffected > 0 {
+		slog.Info("purged old bandwidth snapshots", "count", res.RowsAffected)
+	}
+
+	eventCutoff := time.Now().Add(-eventRetention)
+	res = database.DB.Where("timestamp < ?", eventCutoff).Delete(&models.ConnectionEvent{})
+	if res.RowsAffected > 0 {
+		slog.Info("purged old connection events", "count", res.RowsAffected)
+	}
 }

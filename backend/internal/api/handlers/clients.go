@@ -422,6 +422,35 @@ func (h *ClientHandler) CreateDownloadLink(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": rawToken, "url": "/dl/" + rawToken})
 }
 
+// GetSnapshots returns per-client bandwidth history bucketed by time.
+// Accepts ?range=1h (default 24h) | 24h | 7d.
+func (h *ClientHandler) GetSnapshots(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	since, bucketDur := parseRangeClient(c.DefaultQuery("range", "24h"))
+
+	var snapshots []models.PeerSnapshot
+	database.DB.
+		Where("client_id = ? AND timestamp > ?", id, time.Now().Add(-since)).
+		Order("timestamp ASC").
+		Find(&snapshots)
+
+	c.JSON(http.StatusOK, bucketSnapshots(snapshots, bucketDur))
+}
+
+// GetEvents returns the connection event history for a single client.
+func (h *ClientHandler) GetEvents(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var events []models.ConnectionEvent
+	database.DB.
+		Where("client_id = ?", id).
+		Order("timestamp DESC").
+		Limit(100).
+		Find(&events)
+
+	c.JSON(http.StatusOK, events)
+}
+
 func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client, error) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var client models.Client

@@ -111,6 +111,18 @@ func NewRouter(
 			admin.POST("/sync", adminHandler.SyncState)
 		}
 
+		// Dashboard
+		dashboardHandler := handlers.NewDashboardHandler()
+		dashboard := api.Group("/dashboard")
+		{
+			dashboard.GET("", dashboardHandler.Get)
+			dashboard.GET("/snapshots", dashboardHandler.GetSnapshots)
+		}
+
+		// Client history endpoints
+		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
+		clients.GET("/:id/events", clientHandler.GetEvents)
+
 	}
 
 	return r

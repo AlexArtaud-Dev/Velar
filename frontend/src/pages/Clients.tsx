@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,8 +13,12 @@ import {
 import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
   getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
+  getClientSnapshots, getClientEvents,
   type CreateClientPayload, type Client,
 } from '@/api/clients'
+import {
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
+} from 'recharts'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
@@ -88,6 +92,7 @@ export default function Clients() {
                     <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
+                    <ClientHistoryDialog client={client} />
                     <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
@@ -417,6 +422,136 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       </Dialog>
     </>
   )
+}
+
+function ClientHistoryDialog({ client }: { client: Client }) {
+  const [open, setOpen] = useState(false)
+  const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
+
+  const { data: snapshots = [], isFetching: loadingSnaps } = useQuery({
+    queryKey: ['client-snapshots', client.id, range],
+    queryFn: () => getClientSnapshots(client.id, range),
+    enabled: open,
+    refetchInterval: open ? 60_000 : false,
+  })
+
+  const { data: events = [], isFetching: loadingEvents } = useQuery({
+    queryKey: ['client-events', client.id],
+    queryFn: () => getClientEvents(client.id),
+    enabled: open,
+    refetchInterval: open ? 30_000 : false,
+  })
+
+  const chartData = snapshots.map((p) => ({
+    time: formatSnapshotTime(p.timestamp, range),
+    rx: p.bytes_rx,
+    tx: p.bytes_tx,
+  }))
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Connection history" onClick={() => setOpen(true)}>
+        <History className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>History — {client.name}</DialogTitle>
+            <DialogDescription>Bandwidth usage and connection events</DialogDescription>
+          </DialogHeader>
+
+          {/* Bandwidth chart */}
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Bandwidth</span>
+              <div className="flex gap-1">
+                {(['1h', '24h', '7d'] as const).map((r) => (
+                  <button
+                    key={r}
+                    onClick={() => setRange(r)}
+                    className={`px-2.5 py-1 rounded text-xs font-medium transition-colors ${
+                      range === r
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-muted-foreground hover:text-foreground'
+                    }`}
+                  >
+                    {r}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {loadingSnaps && snapshots.length === 0 ? (
+              <div className="h-[140px] flex items-center justify-center text-sm text-muted-foreground">
+                Loading…
+              </div>
+            ) : chartData.length === 0 ? (
+              <div className="h-[140px] flex items-center justify-center text-sm text-muted-foreground">
+                No data for this period.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={140}>
+                <AreaChart data={chartData}>
+                  <defs>
+                    <linearGradient id={`crx-${client.id}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                    </linearGradient>
+                    <linearGradient id={`ctx-${client.id}`} x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v as number)} width={72} />
+                  <Tooltip formatter={(v) => formatBytes(v as number)} />
+                  <Area type="monotone" dataKey="rx" stroke="#3b82f6" fill={`url(#crx-${client.id})`} name="↓ Download" />
+                  <Area type="monotone" dataKey="tx" stroke="#10b981" fill={`url(#ctx-${client.id})`} name="↑ Upload" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Connection events */}
+          <div className="space-y-2">
+            <span className="text-sm font-medium">Connection events</span>
+            {loadingEvents && events.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Loading…</p>
+            ) : events.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No events recorded yet.</p>
+            ) : (
+              <div className="max-h-44 overflow-y-auto space-y-1 rounded-md border border-border p-2">
+                {events.map((e) => (
+                  <div key={e.id} className="flex items-center gap-2.5 text-xs py-1 border-b border-border last:border-0">
+                    {e.event_type === 'connected'
+                      ? <Wifi className="h-3.5 w-3.5 text-green-500 shrink-0" />
+                      : <WifiOff className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                    <span className={e.event_type === 'connected' ? 'text-green-600 dark:text-green-400 font-medium' : 'text-muted-foreground'}>
+                      {e.event_type === 'connected' ? 'Connected' : 'Disconnected'}
+                    </span>
+                    {e.source_ip && (
+                      <span className="font-mono text-muted-foreground">{e.source_ip}</span>
+                    )}
+                    <span className="ml-auto text-muted-foreground shrink-0">
+                      {new Date(e.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function formatSnapshotTime(iso: string, range: '1h' | '24h' | '7d'): string {
+  const d = new Date(iso)
+  if (range === '7d') {
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' })
+  }
+  return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
 function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
