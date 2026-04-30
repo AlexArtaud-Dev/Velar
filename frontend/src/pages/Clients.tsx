@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -88,6 +88,7 @@ export default function Clients() {
                     <SendConfigButton clientId={client.id} email={client.email} />
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
+                    <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
                       variant="ghost"
@@ -116,10 +117,17 @@ export default function Clients() {
                   <span>↓ {formatBytes(peer?.bytes_rx ?? client.bytes_rx)}</span>
                   <span>↑ {formatBytes(peer?.bytes_tx ?? client.bytes_tx)}</span>
                   <span>Last seen: {peer?.last_handshake ? timeAgo(peer.last_handshake) : '—'}</span>
-                  {client.bandwidth_limit > 0 && (
+                  {(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) && (
                     <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
                       <Gauge className="h-3 w-3" />
-                      {client.bandwidth_limit} Mbps
+                      {client.bandwidth_limit_down > 0 && (
+                        <span className="flex items-center gap-0.5"><ArrowDown className="h-2.5 w-2.5" />{client.bandwidth_limit_down}</span>
+                      )}
+                      {client.bandwidth_limit_down > 0 && client.bandwidth_limit_up > 0 && <span>/</span>}
+                      {client.bandwidth_limit_up > 0 && (
+                        <span className="flex items-center gap-0.5"><ArrowUp className="h-2.5 w-2.5" />{client.bandwidth_limit_up}</span>
+                      )}
+                      <span>Mbps</span>
                     </span>
                   )}
                   {client.email && <span className="font-mono">{client.email}</span>}
@@ -311,7 +319,7 @@ function DownloadLinkButton({ clientId }: { clientId: number }) {
 
 function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
   const [open, setOpen] = useState(false)
-  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '', bandwidth_limit: 0 })
+  const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
   const [error, setError] = useState('')
 
   function openDialog() {
@@ -322,7 +330,6 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
       // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
       expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
-      bandwidth_limit: client.bandwidth_limit ?? 0,
     })
     setError('')
     setOpen(true)
@@ -334,7 +341,6 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
       owner_label: form.owner_label || undefined,
       email: form.email,
       allowed_ips: form.allowed_ips || undefined,
-      bandwidth_limit: form.bandwidth_limit,
       // If expires_at is empty, send clear_expires_at: true so the backend
       // explicitly nullifies the column (plain null is indistinguishable from
       // "field omitted" on a *time.Time pointer in Go).
@@ -399,16 +405,83 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
                 )}
               </div>
             </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
+              {mutation.isPending ? 'Saving…' : 'Save'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
+
+function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [down, setDown] = useState(0)
+  const [up, setUp] = useState(0)
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setDown(client.bandwidth_limit_down ?? 0)
+    setUp(client.bandwidth_limit_up ?? 0)
+    setError('')
+    setOpen(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      bandwidth_limit_down: down,
+      bandwidth_limit_up: up,
+    }),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Bandwidth limit" onClick={openDialog}>
+        <Gauge className="h-4 w-4" />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Bandwidth — {client.name}</DialogTitle>
+            <DialogDescription>
+              Set per-direction caps via Linux tc. 0 = unlimited.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
             <div className="space-y-1.5">
-              <Label htmlFor="edit-bw">
-                Bandwidth limit <span className="text-muted-foreground text-xs">(Mbps — 0 = unlimited)</span>
+              <Label htmlFor="bw-down" className="flex items-center gap-1.5">
+                <ArrowDown className="h-3.5 w-3.5 text-blue-500" />
+                Download limit <span className="text-muted-foreground text-xs">(server → client, Mbps)</span>
               </Label>
               <Input
-                id="edit-bw"
+                id="bw-down"
                 type="number"
                 min={0}
-                value={form.bandwidth_limit}
-                onChange={(e) => setForm((f) => ({ ...f, bandwidth_limit: Math.max(0, Number(e.target.value)) }))}
+                value={down}
+                onChange={(e) => setDown(Math.max(0, Number(e.target.value)))}
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="bw-up" className="flex items-center gap-1.5">
+                <ArrowUp className="h-3.5 w-3.5 text-green-500" />
+                Upload limit <span className="text-muted-foreground text-xs">(client → server, Mbps)</span>
+              </Label>
+              <Input
+                id="bw-up"
+                type="number"
+                min={0}
+                value={up}
+                onChange={(e) => setUp(Math.max(0, Number(e.target.value)))}
                 placeholder="0"
               />
             </div>
@@ -416,8 +489,8 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
-              {mutation.isPending ? 'Saving…' : 'Save'}
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+              {mutation.isPending ? 'Applying…' : 'Apply'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -443,7 +516,6 @@ function CreateClientDialog({
     email: '',
     allowed_ips: '0.0.0.0/0, ::/0',
     expires_at: '',
-    bandwidth_limit: 0,
   })
   const [error, setError] = useState('')
 
@@ -466,7 +538,6 @@ function CreateClientDialog({
       owner_label: form.owner_label || undefined,
       email: form.email || undefined,
       allowed_ips: form.allowed_ips || undefined,
-      bandwidth_limit: form.bandwidth_limit > 0 ? form.bandwidth_limit : undefined,
       // datetime-local gives "YYYY-MM-DDTHH:MM" — append seconds + Z so Date parses as UTC
       expires_at: form.expires_at ? new Date(form.expires_at + ':00Z').toISOString() : undefined,
     }

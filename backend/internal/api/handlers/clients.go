@@ -36,7 +36,8 @@ type createClientRequest struct {
 	Email          string     `json:"email"`
 	AllowedIPs     string     `json:"allowed_ips"`
 	ExpiresAt      *time.Time `json:"expires_at"`
-	BandwidthLimit int        `json:"bandwidth_limit"` // Mbps, 0 = unlimited
+	BandwidthLimitDown int    `json:"bandwidth_limit_down"` // Mbps, 0 = unlimited
+	BandwidthLimitUp   int    `json:"bandwidth_limit_up"`   // Mbps, 0 = unlimited
 }
 
 // buildDownloadURL constructs a full download URL from a raw token.
@@ -115,7 +116,8 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		PresharedKey:   encPSK,
 		AllowedIPs:     allowedIPs,
 		AssignedIP:     assignedIP,
-		BandwidthLimit: req.BandwidthLimit,
+		BandwidthLimitDown: req.BandwidthLimitDown,
+		BandwidthLimitUp:   req.BandwidthLimitUp,
 		Enabled:        true,
 		ExpiresAt:      req.ExpiresAt,
 	}
@@ -130,8 +132,8 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 	h.syncConf(iface)
 
-	if !config.C.WGMock && client.BandwidthLimit > 0 {
-		if err := bwsvc.Apply(iface.Name, assignedIP, client.BandwidthLimit); err != nil {
+	if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
+		if err := bwsvc.Apply(iface.Name, assignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
 			slog.Warn("create client: apply bandwidth limit", "client", client.Name, "err", err)
 		}
 	}
@@ -192,8 +194,9 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		ExpiresAt      *time.Time `json:"expires_at"`
 		// ClearExpiresAt explicitly removes the expiry date.
 		// Needed because *time.Time cannot distinguish JSON null from "field omitted".
-		ClearExpiresAt bool `json:"clear_expires_at"`
-		BandwidthLimit *int `json:"bandwidth_limit"` // Mbps; nil = no change, 0 = unlimited
+		ClearExpiresAt     bool `json:"clear_expires_at"`
+		BandwidthLimitDown *int `json:"bandwidth_limit_down"` // Mbps; nil = no change, 0 = unlimited
+		BandwidthLimitUp   *int `json:"bandwidth_limit_up"`   // Mbps; nil = no change, 0 = unlimited
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -216,15 +219,19 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	} else if req.ExpiresAt != nil {
 		updates["expires_at"] = req.ExpiresAt
 	}
-	if req.BandwidthLimit != nil {
-		updates["bandwidth_limit"] = *req.BandwidthLimit
+	if req.BandwidthLimitDown != nil {
+		updates["bandwidth_limit_down"] = *req.BandwidthLimitDown
+	}
+	if req.BandwidthLimitUp != nil {
+		updates["bandwidth_limit_up"] = *req.BandwidthLimitUp
 	}
 	database.DB.Model(&client).Updates(updates)
 	database.DB.Preload("Interface").First(&client, id)
 
 	// Apply / remove bandwidth limit after DB update
-	if req.BandwidthLimit != nil && !config.C.WGMock && client.Enabled {
-		if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, *req.BandwidthLimit); err != nil {
+	bwChanged := req.BandwidthLimitDown != nil || req.BandwidthLimitUp != nil
+	if bwChanged && !config.C.WGMock && client.Enabled {
+		if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
 			slog.Warn("update client: apply bandwidth limit", "client", client.Name, "err", err)
 		}
 	}
@@ -290,8 +297,8 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	if enabled {
 		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
 		h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32")
-		if !config.C.WGMock && client.BandwidthLimit > 0 {
-			if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimit); err != nil {
+		if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
+			if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
 				slog.Warn("enable client: apply bandwidth limit", "client", client.Name, "err", err)
 			}
 		}

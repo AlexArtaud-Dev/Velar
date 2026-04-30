@@ -359,9 +359,9 @@ func (h *InterfaceHandler) BringUp(c *gin.Context) {
 	// Reapply bandwidth limits — tc rules are lost when the interface goes down.
 	if !config.C.WGMock {
 		var clients []models.Client
-		database.DB.Where("interface_id = ? AND enabled = true AND bandwidth_limit > 0", iface.ID).Find(&clients)
+		database.DB.Where("interface_id = ? AND enabled = true AND (bandwidth_limit_down > 0 OR bandwidth_limit_up > 0)", iface.ID).Find(&clients)
 		for _, cl := range clients {
-			if err := bwsvc.Apply(iface.Name, cl.AssignedIP, cl.BandwidthLimit); err != nil {
+			if err := bwsvc.Apply(iface.Name, cl.AssignedIP, cl.BandwidthLimitDown, cl.BandwidthLimitUp); err != nil {
 				slog.Warn("bringup: reapply bandwidth", "client", cl.Name, "err", err)
 			}
 		}

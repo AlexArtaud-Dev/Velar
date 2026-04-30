@@ -19,10 +19,12 @@ import (
 	"strings"
 )
 
-// Apply enforces a symmetric bandwidth cap (upload + download) on a peer.
-// limitMbps == 0 removes any existing limit (equivalent to calling Remove).
-func Apply(ifaceName, assignedIP string, limitMbps int) error {
-	if limitMbps <= 0 {
+// Apply enforces asymmetric bandwidth caps on a peer.
+// downMbps caps egress (server→client / download); upMbps caps ingress (client→server / upload).
+// A value of 0 means no limit for that direction.
+// If both are 0, any existing rules are removed.
+func Apply(ifaceName, assignedIP string, downMbps, upMbps int) error {
+	if downMbps <= 0 && upMbps <= 0 {
 		return Remove(ifaceName, assignedIP)
 	}
 
@@ -31,48 +33,58 @@ func Apply(ifaceName, assignedIP string, limitMbps int) error {
 		return err
 	}
 
-	rate := fmt.Sprintf("%dmbit", limitMbps)
-	// Burst = 1/8 of rate in kbit, minimum 32k so tc doesn't reject tiny values.
-	burstKbit := limitMbps * 1000 / 8
-	if burstKbit < 32 {
-		burstKbit = 32
-	}
-	burst := fmt.Sprintf("%dk", burstKbit)
-
 	// Remove any stale rules first (ignore errors — may not exist yet).
 	_ = Remove(ifaceName, assignedIP)
 
 	// ── Egress (download: server → client) ──────────────────────────────────
 
-	if err := ensureRootHTB(ifaceName); err != nil {
-		return fmt.Errorf("bandwidth: ensure root HTB on %s: %w", ifaceName, err)
-	}
-	if err := runTC("tc", "class", "add", "dev", ifaceName,
-		"parent", "1:", "classid", "1:"+class,
-		"htb", "rate", rate, "burst", burst); err != nil {
-		return fmt.Errorf("bandwidth: tc class add egress: %w", err)
-	}
-	if err := runTC("tc", "filter", "add", "dev", ifaceName,
-		"parent", "1:", "prio", prio, "protocol", "ip",
-		"u32", "match", "ip", "dst", assignedIP+"/32",
-		"flowid", "1:"+class); err != nil {
-		return fmt.Errorf("bandwidth: tc filter add egress: %w", err)
+	if downMbps > 0 {
+		rate := fmt.Sprintf("%dmbit", downMbps)
+		burstKbit := downMbps * 1000 / 8
+		if burstKbit < 32 {
+			burstKbit = 32
+		}
+		burst := fmt.Sprintf("%dk", burstKbit)
+
+		if err := ensureRootHTB(ifaceName); err != nil {
+			return fmt.Errorf("bandwidth: ensure root HTB on %s: %w", ifaceName, err)
+		}
+		if err := runTC("tc", "class", "add", "dev", ifaceName,
+			"parent", "1:", "classid", "1:"+class,
+			"htb", "rate", rate, "burst", burst); err != nil {
+			return fmt.Errorf("bandwidth: tc class add egress: %w", err)
+		}
+		if err := runTC("tc", "filter", "add", "dev", ifaceName,
+			"parent", "1:", "prio", prio, "protocol", "ip",
+			"u32", "match", "ip", "dst", assignedIP+"/32",
+			"flowid", "1:"+class); err != nil {
+			return fmt.Errorf("bandwidth: tc filter add egress: %w", err)
+		}
 	}
 
 	// ── Ingress (upload: client → server) ───────────────────────────────────
 
-	if err := ensureIngress(ifaceName); err != nil {
-		return fmt.Errorf("bandwidth: ensure ingress on %s: %w", ifaceName, err)
-	}
-	if err := runTC("tc", "filter", "add", "dev", ifaceName,
-		"parent", "ffff:", "prio", prio, "protocol", "ip",
-		"u32", "match", "ip", "src", assignedIP+"/32",
-		"police", "rate", rate, "burst", burst,
-		"drop", "flowid", ":1"); err != nil {
-		return fmt.Errorf("bandwidth: tc filter add ingress: %w", err)
+	if upMbps > 0 {
+		rate := fmt.Sprintf("%dmbit", upMbps)
+		burstKbit := upMbps * 1000 / 8
+		if burstKbit < 32 {
+			burstKbit = 32
+		}
+		burst := fmt.Sprintf("%dk", burstKbit)
+
+		if err := ensureIngress(ifaceName); err != nil {
+			return fmt.Errorf("bandwidth: ensure ingress on %s: %w", ifaceName, err)
+		}
+		if err := runTC("tc", "filter", "add", "dev", ifaceName,
+			"parent", "ffff:", "prio", prio, "protocol", "ip",
+			"u32", "match", "ip", "src", assignedIP+"/32",
+			"police", "rate", rate, "burst", burst,
+			"drop", "flowid", ":1"); err != nil {
+			return fmt.Errorf("bandwidth: tc filter add ingress: %w", err)
+		}
 	}
 
-	slog.Info("bandwidth limit applied", "iface", ifaceName, "ip", assignedIP, "limit_mbps", limitMbps)
+	slog.Info("bandwidth limit applied", "iface", ifaceName, "ip", assignedIP, "down_mbps", downMbps, "up_mbps", upMbps)
 	return nil
 }
 
