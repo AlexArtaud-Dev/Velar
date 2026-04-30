@@ -11,6 +11,9 @@ export interface Client {
   assigned_ip: string
   bandwidth_limit_down: number // Mbps, 0 = unlimited
   bandwidth_limit_up: number   // Mbps, 0 = unlimited
+  data_quota_bytes: number     // bytes, 0 = unlimited
+  quota_period: 'monthly' | 'weekly' | 'total'
+  quota_warned_at: string | null
   enabled: boolean
   expires_at: string | null
   last_handshake: string | null
@@ -51,6 +54,8 @@ export interface UpdateClientPayload {
   clear_expires_at?: boolean
   bandwidth_limit_down?: number // Mbps, 0 = unlimited
   bandwidth_limit_up?: number   // Mbps, 0 = unlimited
+  data_quota_bytes?: number     // bytes, 0 = unlimited
+  quota_period?: 'monthly' | 'weekly' | 'total'
 }
 
 export const updateClient = (id: number, payload: UpdateClientPayload) =>
@@ -98,3 +103,12 @@ export const getClientSnapshots = (id: number, range: '1h' | '24h' | '7d' = '24h
 
 export const getClientEvents = (id: number) =>
   api.get<ConnectionEvent[]>(`/clients/${id}/events`).then((r) => r.data)
+
+export const bulkEnableClients = (ids: number[]) =>
+  api.post('/clients/bulk/enable', { ids }).then((r) => r.data)
+
+export const bulkDisableClients = (ids: number[]) =>
+  api.post('/clients/bulk/disable', { ids }).then((r) => r.data)
+
+export const bulkDeleteClients = (ids: number[]) =>
+  api.post('/clients/bulk/delete', { ids }).then((r) => r.data)

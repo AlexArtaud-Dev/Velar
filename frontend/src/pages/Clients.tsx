@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff, DatabaseZap } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,6 +14,7 @@ import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
   getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
   getClientSnapshots, getClientEvents,
+  bulkEnableClients, bulkDisableClients, bulkDeleteClients,
   type CreateClientPayload, type Client,
 } from '@/api/clients'
 import {
@@ -44,6 +45,26 @@ export default function Clients() {
   const enableMut = useMutation({ mutationFn: enableClient, onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) })
   const disableMut = useMutation({ mutationFn: disableClient, onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) })
 
+  // Bulk selection state
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const toggleSelect = (id: number) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const selectAll = () => setSelected(new Set(clients.map((c) => c.id)))
+  const clearSelection = () => setSelected(new Set())
+
+  const bulkEnableMut = useMutation({
+    mutationFn: () => bulkEnableClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+  const bulkDisableMut = useMutation({
+    mutationFn: () => bulkDisableClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+  const bulkDeleteMut = useMutation({
+    mutationFn: () => bulkDeleteClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+
   if (isLoading) return <div className="p-6 animate-pulse space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted rounded-lg" />)}</div>
 
   const title = ifaceId ? interfaces.find((i) => i.id === ifaceId)?.name ?? `Interface ${ifaceId}` : 'All clients'
@@ -55,21 +76,40 @@ export default function Clients() {
           <h1 className="text-2xl font-bold">Clients</h1>
           <p className="text-muted-foreground text-sm mt-1">{title}</p>
         </div>
-        <CreateClientDialog
-          interfaces={interfaces}
-          defaultInterfaceId={ifaceId}
-          onCreated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
-        />
+        <div className="flex items-center gap-2">
+          {clients.length > 0 && (
+            <Button variant="outline" size="sm" onClick={selected.size === clients.length ? clearSelection : selectAll}>
+              {selected.size === clients.length ? 'Deselect all' : 'Select all'}
+            </Button>
+          )}
+          <CreateClientDialog
+            interfaces={interfaces}
+            defaultInterfaceId={ifaceId}
+            onCreated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
+          />
+        </div>
       </div>
 
       <div className="space-y-3">
         {clients.map((client) => {
           const peer = peerMap.get(client.id)
+          const isSelected = selected.has(client.id)
+          const quotaSet = client.data_quota_bytes > 0
           return (
-            <Card key={client.id}>
+            <Card
+              key={client.id}
+              className={isSelected ? 'ring-2 ring-primary' : ''}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Checkbox */}
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleSelect(client.id)}
+                      className="h-4 w-4 rounded border-border accent-primary shrink-0 cursor-pointer"
+                    />
                     <span
                       className={`h-2.5 w-2.5 rounded-full shrink-0 ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
                     />
@@ -93,6 +133,7 @@ export default function Clients() {
                     <QRButton clientId={client.id} name={client.name} />
                     <DownloadLinkButton clientId={client.id} />
                     <ClientHistoryDialog client={client} />
+                    <QuotaDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
                     <Button
@@ -137,6 +178,10 @@ export default function Clients() {
                   )}
                   {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
+                {/* Quota progress bar */}
+                {quotaSet && (
+                  <QuotaBar client={client} />
+                )}
               </CardContent>
             </Card>
           )
@@ -147,6 +192,49 @@ export default function Clients() {
           </div>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-4 max-lg:bottom-18 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-popover border border-border rounded-xl shadow-xl px-4 py-2.5">
+          <span className="text-sm font-medium mr-2">{selected.size} selected</span>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkEnableMut.isPending}
+            onClick={() => bulkEnableMut.mutate()}
+            className="gap-1.5"
+          >
+            <ToggleRight className="h-3.5 w-3.5 text-green-500" />
+            Enable
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={bulkDisableMut.isPending}
+            onClick={() => bulkDisableMut.mutate()}
+            className="gap-1.5"
+          >
+            <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" />
+            Disable
+          </Button>
+          <Button
+            size="sm"
+            variant="destructive"
+            disabled={bulkDeleteMut.isPending}
+            onClick={() => {
+              if (confirm(`Delete ${selected.size} client(s)? This cannot be undone.`))
+                bulkDeleteMut.mutate()
+            }}
+            className="gap-1.5"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            Delete
+          </Button>
+          <Button size="sm" variant="ghost" onClick={clearSelection}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
   )
 }
@@ -552,6 +640,137 @@ function formatSnapshotTime(iso: string, range: '1h' | '24h' | '7d'): string {
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit' })
   }
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+// ── Quota bar (inline in client card) ────────────────────────────────────────
+
+function QuotaBar({ client }: { client: Client }) {
+  const { data: snapshots = [] } = useQuery({
+    queryKey: ['client-snapshots-quota', client.id],
+    queryFn: () => {
+      const period = client.quota_period ?? 'monthly'
+      const range = period === 'total' ? '7d' : period === 'weekly' ? '7d' : '24h'
+      return import('@/api/clients').then((m) => m.getClientSnapshots(client.id, range))
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  // For monthly/weekly, filter client-side to the current period start
+  const periodStart = (() => {
+    const now = new Date()
+    if (client.quota_period === 'weekly') {
+      const day = now.getDay() === 0 ? 6 : now.getDay() - 1 // Mon=0
+      const d = new Date(now); d.setDate(d.getDate() - day); d.setHours(0, 0, 0, 0)
+      return d
+    }
+    if (client.quota_period === 'total') return new Date(0)
+    // monthly
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })()
+
+  const used = snapshots
+    .filter((s) => new Date(s.timestamp) >= periodStart)
+    .reduce((acc, s) => acc + s.bytes_rx + s.bytes_tx, 0)
+
+  const quota = client.data_quota_bytes
+  const pct = Math.min(100, Math.round((used / quota) * 100))
+  const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-blue-500'
+
+  return (
+    <div className="mt-2.5 space-y-1">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <DatabaseZap className="h-3 w-3" />
+          Quota ({client.quota_period})
+        </span>
+        <span>{formatBytes(used)} / {formatBytes(quota)} ({pct}%)</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// ── Quota dialog ──────────────────────────────────────────────────────────────
+
+function QuotaDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [quotaGb, setQuotaGb] = useState(0)
+  const [period, setPeriod] = useState<'monthly' | 'weekly' | 'total'>('monthly')
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setQuotaGb(client.data_quota_bytes > 0 ? Math.round(client.data_quota_bytes / 1e9 * 100) / 100 : 0)
+    setPeriod(client.quota_period ?? 'monthly')
+    setError('')
+    setOpen(true)
+  }
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      data_quota_bytes: Math.round(quotaGb * 1e9),
+      quota_period: period,
+    }),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  return (
+    <>
+      <Button variant="ghost" size="icon" title="Data quota" onClick={openDialog}>
+        <DatabaseZap className={`h-4 w-4 ${client.data_quota_bytes > 0 ? 'text-purple-500' : ''}`} />
+      </Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Data quota — {client.name}</DialogTitle>
+            <DialogDescription>
+              Automatically suspend access when the limit is reached. 0 = unlimited.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="quota-gb">Data limit (GB)</Label>
+              <Input
+                id="quota-gb"
+                type="number"
+                min={0}
+                step={0.1}
+                value={quotaGb}
+                onChange={(e) => setQuotaGb(Math.max(0, Number(e.target.value)))}
+                placeholder="0"
+              />
+              <p className="text-xs text-muted-foreground">0 = no quota</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="quota-period">Reset period</Label>
+              <select
+                id="quota-period"
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={period}
+                onChange={(e) => setPeriod(e.target.value as typeof period)}
+              >
+                <option value="monthly">Monthly (resets 1st of month)</option>
+                <option value="weekly">Weekly (resets Monday)</option>
+                <option value="total">Total (never resets)</option>
+              </select>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+              {mutation.isPending ? 'Applying…' : 'Apply'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 }
 
 function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {

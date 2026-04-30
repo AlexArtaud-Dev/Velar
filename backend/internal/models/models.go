@@ -54,6 +54,9 @@ type Client struct {
 	AssignedIP      string     `gorm:"not null" json:"assigned_ip"`
 	BandwidthLimitDown int     `gorm:"default:0" json:"bandwidth_limit_down"` // Mbps, 0 = unlimited
 	BandwidthLimitUp   int     `gorm:"default:0" json:"bandwidth_limit_up"`   // Mbps, 0 = unlimited
+	DataQuotaBytes  int64      `gorm:"default:0" json:"data_quota_bytes"`     // bytes, 0 = unlimited
+	QuotaPeriod     string     `gorm:"default:'monthly'" json:"quota_period"` // monthly | weekly | total
+	QuotaWarnedAt   *time.Time `json:"quota_warned_at"`
 	Enabled         bool       `gorm:"default:true" json:"enabled"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	LastHandshake *time.Time `json:"last_handshake"`

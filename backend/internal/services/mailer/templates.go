@@ -303,3 +303,59 @@ func HTMLAdminClientExpiringSoon(name, ip, iface, expiresAt string) string {
 		para("If this client still needs access, extend their expiry date from the Velar dashboard before the deadline.")
 	return baseHTML("Client Expiring Soon", body)
 }
+
+// HTMLAdminQuotaWarning is sent to the admin when a client reaches 80% of their data quota.
+func HTMLAdminQuotaWarning(name, ip, iface, used, quota, period string) string {
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface) +
+		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
+	body := h2("&#x26A0;&#xFE0F;&nbsp; Data quota warning (80%)") +
+		badge("Quota Warning", "#fbbf24", "#451a03") +
+		`<br><br>` +
+		para("A WireGuard client has consumed 80% of their allocated data quota for the current period. Access will be automatically suspended when the quota is fully consumed.") +
+		infoTable(rows) +
+		divider() +
+		para("You can raise or remove the quota from the Velar dashboard at any time.")
+	return baseHTML("Data Quota Warning", body)
+}
+
+// HTMLAdminQuotaExceeded is sent to the admin when a client is suspended for exceeding their quota.
+func HTMLAdminQuotaExceeded(name, ip, iface, used, quota, period string) string {
+	rows := infoRow("Client name", name) + infoRow("Assigned IP", ip) + infoRow("Interface", iface) +
+		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
+	body := h2("&#x1F6AB;&nbsp; Data quota exceeded — access suspended") +
+		badge("Quota Exceeded", "#f87171", "#450a0a") +
+		`<br><br>` +
+		para("A WireGuard client has exceeded their allocated data quota and has been automatically suspended for the current period.") +
+		infoTable(rows) +
+		divider() +
+		para("To restore access, raise or remove the quota from the Velar dashboard.")
+	return baseHTML("Data Quota Exceeded", body)
+}
+
+// HTMLClientQuotaWarning is sent to the client when they reach 80% of their quota.
+func HTMLClientQuotaWarning(name, ip, used, quota, period string) string {
+	rows := infoRow("Account", name) + infoRow("Assigned IP", ip) +
+		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
+	body := h2("&#x26A0;&#xFE0F;&nbsp; You have used 80% of your data quota") +
+		badge("Quota Warning", "#fbbf24", "#451a03") +
+		`<br><br>` +
+		para("You are approaching your VPN data limit for the current period. Your access will be automatically suspended when the quota is fully consumed.") +
+		infoTable(rows) +
+		divider() +
+		para("Contact your administrator if you need more data.")
+	return baseHTML("Data Quota Warning", body)
+}
+
+// HTMLClientQuotaExceeded is sent to the client when their access is suspended due to quota.
+func HTMLClientQuotaExceeded(name, ip, used, quota, period string) string {
+	rows := infoRow("Account", name) + infoRow("Assigned IP", ip) +
+		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
+	body := h2("&#x1F6AB;&nbsp; Data quota exceeded — VPN access suspended") +
+		badge("Quota Exceeded", "#f87171", "#450a0a") +
+		`<br><br>` +
+		para("Your VPN access has been automatically suspended because you have exceeded your data quota for the current period.") +
+		infoTable(rows) +
+		divider() +
+		para("Please contact your administrator to restore access or increase your quota.")
+	return baseHTML("Data Quota Exceeded", body)
+}
