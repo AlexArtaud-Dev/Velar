@@ -73,14 +73,17 @@ func checkQuotas(wg wgsvc.Service, nft nftquota.Service) {
 			slog.Info("quota period rolled over", "client", cl.Name, "period", cl.QuotaPeriod)
 		}
 
-		// ── Enforcement via nftables ──────────────────────────────────────────
-		// The kernel drops packets the moment the budget is exhausted; we just
-		// need to detect that it happened and update the DB + send emails.
+		// ── Enforcement ───────────────────────────────────────────────────────
+		// Primary: nftables drops packets instantly at kernel level; we just
+		// detect the exceeded state and update DB + send emails.
+		// Fallback: if nft is unavailable or the rule is missing, compare DB
+		// usage directly (old behaviour — up to ~15 s overshoot).
 		if !cl.QuotaSuspended {
-			_, exceeded, nftErr := nft.GetUsage(cl.AssignedIP)
-			if nftErr == nil && exceeded {
-				// Compute used bytes for the email body (DB + live delta).
-				used := dbPlusLiveUsed(cl, periodStart, ifaceLive)
+			used := dbPlusLiveUsed(cl, periodStart, ifaceLive)
+			_, nftExceeded, nftErr := nft.GetUsage(cl.AssignedIP)
+			exceeded := (nftErr == nil && nftExceeded) || (nftErr != nil && used >= cl.DataQuotaBytes)
+
+			if exceeded {
 				usedStr := formatQuotaBytes(used)
 				quotaStr := formatQuotaBytes(cl.DataQuotaBytes)
 
