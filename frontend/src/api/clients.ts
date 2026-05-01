@@ -16,6 +16,7 @@ export interface Client {
   quota_warned_at: string | null
   quota_reset_at: string | null
   quota_suspended: boolean
+  view_token: string
   enabled: boolean
   expires_at: string | null
   last_handshake: string | null

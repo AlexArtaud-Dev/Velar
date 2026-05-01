@@ -6,7 +6,8 @@ package mailer
 
 // HTMLClientWelcome is sent on client creation (or restore) with a one-time
 // download link. The link expires in 1 hour and is single-use.
-func HTMLClientWelcome(name, ip, expiry, downloadURL string) string {
+// portalURL is the permanent read-only status page for this client.
+func HTMLClientWelcome(name, ip, expiry, downloadURL, portalURL string) string {
 	rows := infoRow("Your name", name) + infoRow("Your VPN address", ip) + infoRow("Access expires on", expiry)
 	body := h2("Welcome! Your VPN access is ready &#x1F389;") +
 		para("Your VPN access has been set up. To start using it, you need to download your personal VPN profile and load it into the <strong style=\"color:#f1f5f9;\">WireGuard</strong> app on your device.") +
@@ -26,7 +27,8 @@ func HTMLClientWelcome(name, ip, expiry, downloadURL string) string {
 			"Click <strong style=\"color:#f1f5f9;\">&ldquo;Import tunnel(s) from file&rdquo;</strong>.",
 			"Select the file you just downloaded. Your VPN is ready to use.",
 		}) +
-		note("&#x1F512;&nbsp; Your VPN profile is personal — like a password. Never share this file or this link with anyone.")
+		note("&#x1F512;&nbsp; Your VPN profile is personal — like a password. Never share this file or this link with anyone.") +
+		portalSection(portalURL)
 	return baseHTML("Your VPN Access", body)
 }
 
@@ -135,7 +137,7 @@ func HTMLClientExpiringSoon(name, ip, iface, expiresAt string) string {
 }
 
 // HTMLClientQuotaWarning is sent when a client reaches 80% of their data quota.
-func HTMLClientQuotaWarning(name, ip, used, quota, period string) string {
+func HTMLClientQuotaWarning(name, ip, used, quota, period, portalURL string) string {
 	rows := infoRow("Account", name) + infoRow("Assigned IP", ip) +
 		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
 	body := h2("&#x26A0;&#xFE0F;&nbsp; You have used 80% of your data quota") +
@@ -144,13 +146,14 @@ func HTMLClientQuotaWarning(name, ip, used, quota, period string) string {
 		para("You are approaching your VPN data limit for the current period. Your access will be automatically suspended when the quota is fully consumed.") +
 		infoTable(rows) +
 		divider() +
-		para("Contact your administrator if you need more data.")
+		para("Contact your administrator if you need more data.") +
+		portalSection(portalURL)
 	return baseHTML("Data Quota Warning", body)
 }
 
 // HTMLClientQuotaExceeded is sent when a client's access is suspended for exceeding
 // their data quota.
-func HTMLClientQuotaExceeded(name, ip, used, quota, period string) string {
+func HTMLClientQuotaExceeded(name, ip, used, quota, period, portalURL string) string {
 	rows := infoRow("Account", name) + infoRow("Assigned IP", ip) +
 		infoRow("Used", used) + infoRow("Quota", quota) + infoRow("Period", period)
 	body := h2("&#x1F6AB;&nbsp; Data quota exceeded — VPN access suspended") +
@@ -159,6 +162,7 @@ func HTMLClientQuotaExceeded(name, ip, used, quota, period string) string {
 		para("Your VPN access has been automatically suspended because you have exceeded your data quota for the current period.") +
 		infoTable(rows) +
 		divider() +
-		para("Please contact your administrator to restore access or increase your quota.")
+		para("Please contact your administrator to restore access or increase your quota.") +
+		portalSection(portalURL)
 	return baseHTML("Data Quota Exceeded", body)
 }

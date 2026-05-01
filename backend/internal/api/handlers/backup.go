@@ -290,7 +290,7 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 					mailer.SendHTMLTo(
 						client.Email,
 						fmt.Sprintf("Your VPN access has been restored: %s", client.Name),
-						mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+						mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken), buildPortalURL(client.ViewToken)),
 					)
 				}
 			}

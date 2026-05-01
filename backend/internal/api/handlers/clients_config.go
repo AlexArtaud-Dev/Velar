@@ -76,7 +76,7 @@ func (h *ClientHandler) SendConfig(c *gin.Context) {
 	mailer.SendHTMLTo(
 		client.Email,
 		fmt.Sprintf("Your VPN profile: %s", client.Name),
-		mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+		mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken), buildPortalURL(client.ViewToken)),
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})

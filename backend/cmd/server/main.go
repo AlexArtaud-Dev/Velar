@@ -2,7 +2,7 @@ package main
 
 import (
 	"log/slog"
-	"math/rand"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"os/exec"
@@ -209,6 +209,7 @@ func quotaRestorePeriodStart(period string) time.Time {
 	}
 }
 
+
 func setupSystem() {
 	iface := wgsvc.DetectMainInterface()
 	slog.Info("system setup", "main_iface", iface)
@@ -264,7 +265,7 @@ func seedAdmin() {
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$"
 
 func randomPassword(n int) string {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rng := mrand.New(mrand.NewSource(time.Now().UnixNano()))
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = charset[rng.Intn(len(charset))]
