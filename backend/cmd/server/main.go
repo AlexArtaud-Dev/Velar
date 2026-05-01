@@ -1,15 +1,14 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
-	"math/rand"
+	mrand "math/rand"
 	"net/http"
 	"os"
 	"os/exec"
 	"time"
-
-	"crypto/rand"
-	"encoding/hex"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/api"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/api/handlers"
@@ -286,7 +285,7 @@ func seedAdmin() {
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$"
 
 func randomPassword(n int) string {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+	rng := mrand.New(mrand.NewSource(time.Now().UnixNano()))
 	b := make([]byte, n)
 	for i := range b {
 		b[i] = charset[rng.Intn(len(charset))]
