@@ -48,7 +48,7 @@ func checkQuotas(wg wgsvc.Service) {
 			if err := wg.RemovePeer(cl.Interface.Name, cl.PublicKey); err != nil {
 				slog.Error("checkQuotas: remove peer", "client", cl.Name, "err", err)
 			}
-			database.DB.Model(&cl).Update("enabled", false)
+			database.DB.Model(&cl).Updates(map[string]interface{}{"enabled": false, "quota_suspended": true})
 			slog.Info("client suspended: quota exceeded",
 				"client", cl.Name, "used", used, "quota", cl.DataQuotaBytes)
 

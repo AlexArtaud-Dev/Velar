@@ -28,12 +28,13 @@ func (h *ClientHandler) QuotaReset(c *gin.Context) {
 
 	now := time.Now()
 	updates := map[string]interface{}{
-		"quota_reset_at":  &now,
-		"quota_warned_at": nil,
+		"quota_reset_at":   &now,
+		"quota_warned_at":  nil,
+		"quota_suspended":  false,
 	}
 
-	// Re-enable the client if it is currently disabled (likely suspended by quota).
-	wasDisabled := !client.Enabled
+	// Re-enable the client if it was auto-suspended by the quota job.
+	wasDisabled := client.QuotaSuspended
 	if wasDisabled {
 		updates["enabled"] = true
 	}

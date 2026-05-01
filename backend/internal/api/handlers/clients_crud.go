@@ -198,6 +198,9 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		return
 	}
 
+	// Remember quota-suspension state before building the update map.
+	wasQuotaSuspended := client.QuotaSuspended
+
 	updates := map[string]interface{}{}
 	if req.Name != "" {
 		updates["name"] = req.Name
@@ -225,6 +228,12 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		updates["data_quota_bytes"] = *req.DataQuotaBytes
 		// Reset warning flag so the new threshold triggers a fresh warning.
 		updates["quota_warned_at"] = nil
+		// If the client was auto-suspended by the quota job, re-enable it now
+		// that the admin has raised (or cleared) the quota.
+		if wasQuotaSuspended {
+			updates["enabled"] = true
+			updates["quota_suspended"] = false
+		}
 	}
 	if req.QuotaPeriod != "" {
 		updates["quota_period"] = req.QuotaPeriod
@@ -233,6 +242,16 @@ func (h *ClientHandler) Update(c *gin.Context) {
 
 	database.DB.Model(&client).Updates(updates)
 	database.DB.Preload("Interface").First(&client, id)
+
+	// If the quota update re-enabled a previously suspended client, re-add the
+	// peer to the running WireGuard interface so it can connect immediately.
+	if req.DataQuotaBytes != nil && wasQuotaSuspended {
+		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
+		if err := h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32"); err != nil {
+			slog.Warn("update client: re-add quota-suspended peer", "client", client.Name, "err", err)
+		}
+		h.syncConf(client.Interface)
+	}
 
 	// Apply / clear bandwidth shaping after the DB update.
 	if (req.BandwidthLimitDown != nil || req.BandwidthLimitUp != nil) && !config.C.WGMock && client.Enabled {
