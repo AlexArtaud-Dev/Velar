@@ -20,11 +20,10 @@ import (
 
 // ── Backup format ─────────────────────────────────────────────────────────────
 
-const backupVersion = "1"
+const backupVersion = "2" // bumped: keys no longer exported
 
 // BackupFile is the top-level structure of a Velar backup.
-// Keys are stored encrypted (as-is from the DB) — APP_SECRET must be
-// identical on the restoring instance.
+// WireGuard keys are NOT included — fresh keys are generated on restore.
 type BackupFile struct {
 	Version    string            `json:"version"`
 	ExportedAt time.Time         `json:"exported_at"`
@@ -35,8 +34,6 @@ type BackupInterface struct {
 	Name          string         `json:"name"`
 	Port          int            `json:"port"`
 	Subnet        string         `json:"subnet"`
-	PrivateKey    string         `json:"private_key"`  // encrypted
-	PublicKey     string         `json:"public_key"`
 	DNSServer     string         `json:"dns_server"`
 	ListenAddress string         `json:"listen_address"`
 	PostUp        string         `json:"post_up"`
@@ -51,9 +48,6 @@ type BackupClient struct {
 	Name               string     `json:"name"`
 	OwnerLabel         string     `json:"owner_label"`
 	Email              string     `json:"email"`
-	PublicKey          string     `json:"public_key"`
-	PrivateKey         string     `json:"private_key"`   // encrypted
-	PresharedKey       string     `json:"preshared_key"` // encrypted
 	AllowedIPs         string     `json:"allowed_ips"`
 	AssignedIP         string     `json:"assigned_ip"`
 	BandwidthLimitDown int        `json:"bandwidth_limit_down"`
@@ -75,6 +69,7 @@ func NewBackupHandler(wg wgsvc.Service) *BackupHandler {
 }
 
 // Export builds and serves a Velar backup JSON file.
+// WireGuard keys are intentionally omitted — they will be regenerated on restore.
 func (h *BackupHandler) Export(c *gin.Context) {
 	var ifaces []models.Interface
 	if err := database.DB.Find(&ifaces).Error; err != nil {
@@ -96,8 +91,6 @@ func (h *BackupHandler) Export(c *gin.Context) {
 			Name:          iface.Name,
 			Port:          iface.Port,
 			Subnet:        iface.Subnet,
-			PrivateKey:    iface.PrivateKey,
-			PublicKey:     iface.PublicKey,
 			DNSServer:     iface.DNSServer,
 			ListenAddress: iface.ListenAddress,
 			PostUp:        iface.PostUp,
@@ -113,9 +106,6 @@ func (h *BackupHandler) Export(c *gin.Context) {
 				Name:               cl.Name,
 				OwnerLabel:         cl.OwnerLabel,
 				Email:              cl.Email,
-				PublicKey:          cl.PublicKey,
-				PrivateKey:         cl.PrivateKey,
-				PresharedKey:       cl.PresharedKey,
 				AllowedIPs:         cl.AllowedIPs,
 				AssignedIP:         cl.AssignedIP,
 				BandwidthLimitDown: cl.BandwidthLimitDown,
@@ -143,6 +133,7 @@ func (h *BackupHandler) Export(c *gin.Context) {
 }
 
 // Restore imports a Velar backup file.
+// Fresh WireGuard keys are generated for every interface and client.
 // Query param ?wipe=true drops all existing interfaces, clients and their
 // dependent records (except the admin account) before restoring.
 func (h *BackupHandler) Restore(c *gin.Context) {
@@ -167,7 +158,7 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 		return
 	}
 	if bf.Version != backupVersion {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unsupported backup version: %s", bf.Version)})
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("unsupported backup version: %s (expected %s)", bf.Version, backupVersion)})
 		return
 	}
 
@@ -188,12 +179,23 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 
 	// ── Restore interfaces and clients ────────────────────────────────────────
 	for _, bi := range bf.Interfaces {
+		// Generate a fresh keypair for the interface
+		privKey, pubKey, err := h.wg.GenerateKeyPair()
+		if err != nil {
+			msg := fmt.Sprintf("generate keys for interface %s: %v", bi.Name, err)
+			slog.Error("restore: " + msg)
+			result.Errors = append(result.Errors, msg)
+			continue
+		}
+
+		encPriv, _ := auth.Encrypt(privKey, config.C.AppSecret)
+
 		iface := models.Interface{
 			Name:          bi.Name,
 			Port:          bi.Port,
 			Subnet:        bi.Subnet,
-			PrivateKey:    bi.PrivateKey,
-			PublicKey:     bi.PublicKey,
+			PrivateKey:    encPriv,
+			PublicKey:     pubKey,
 			DNSServer:     bi.DNSServer,
 			ListenAddress: bi.ListenAddress,
 			PostUp:        bi.PostUp,
@@ -205,29 +207,46 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 
 		if err := database.DB.Create(&iface).Error; err != nil {
 			msg := fmt.Sprintf("create interface %s: %v", bi.Name, err)
-			slog.Error("restore: "+msg)
+			slog.Error("restore: " + msg)
 			result.Errors = append(result.Errors, msg)
 			continue
 		}
 		result.InterfacesCreated++
 
-		// Write conf + bring up if enabled
-		privKey, _ := auth.Decrypt(iface.PrivateKey, config.C.AppSecret)
-		peers := []wgsvc.PeerEntry{} // populated after clients are created
-		if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, peers); err != nil {
+		// Write conf + bring up
+		if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, []wgsvc.PeerEntry{}); err != nil {
 			slog.Warn("restore: ensure interface", "iface", iface.Name, "err", err)
 		}
 
 		// ── Clients ───────────────────────────────────────────────────────────
 		for _, bc := range bi.Clients {
+			// Generate fresh keypair + PSK for each client
+			cPrivKey, cPubKey, err := h.wg.GenerateKeyPair()
+			if err != nil {
+				msg := fmt.Sprintf("generate keys for client %s: %v", bc.Name, err)
+				slog.Error("restore: " + msg)
+				result.Errors = append(result.Errors, msg)
+				continue
+			}
+			psk, err := h.wg.GeneratePSK()
+			if err != nil {
+				msg := fmt.Sprintf("generate psk for client %s: %v", bc.Name, err)
+				slog.Error("restore: " + msg)
+				result.Errors = append(result.Errors, msg)
+				continue
+			}
+
+			encCPriv, _ := auth.Encrypt(cPrivKey, config.C.AppSecret)
+			encPSK, _ := auth.Encrypt(psk, config.C.AppSecret)
+
 			client := models.Client{
 				InterfaceID:        iface.ID,
 				Name:               bc.Name,
 				OwnerLabel:         bc.OwnerLabel,
 				Email:              bc.Email,
-				PublicKey:          bc.PublicKey,
-				PrivateKey:         bc.PrivateKey,
-				PresharedKey:       bc.PresharedKey,
+				PublicKey:          cPubKey,
+				PrivateKey:         encCPriv,
+				PresharedKey:       encPSK,
 				AllowedIPs:         bc.AllowedIPs,
 				AssignedIP:         bc.AssignedIP,
 				BandwidthLimitDown: bc.BandwidthLimitDown,
@@ -248,7 +267,6 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 
 			// Add peer to WireGuard kernel state
 			if client.Enabled {
-				psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
 				if err := h.wg.AddPeer(iface.Name, client.PublicKey, psk, client.AssignedIP+"/32"); err != nil {
 					slog.Warn("restore: add peer", "client", client.Name, "err", err)
 				}
@@ -261,7 +279,7 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 				}
 			}
 
-			// Send welcome email with one-time download link
+			// Send welcome email with one-time download link (new keys = new config)
 			if client.Email != "" {
 				rawToken, _, err := tokensvc.Generate(client.ID)
 				if err == nil {
@@ -291,14 +309,13 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 				AllowedIPs: cl.AssignedIP + "/32",
 			})
 		}
-		privKey, _ = auth.Decrypt(iface.PrivateKey, config.C.AppSecret)
 		if err := h.wg.EnsureInterface(iface.Name, iface.Port, privKey, iface.Subnet, iface.PostUp, iface.PostDown, peerEntries); err != nil {
 			slog.Warn("restore: final ensure interface", "iface", iface.Name, "err", err)
 		}
 
-		// Try syncconf (works only if interface is up)
+		// Try syncconf (best-effort — interface may still be down)
 		path := fmt.Sprintf("%s/%s.conf", config.C.WGConfigDir, iface.Name)
-		h.wg.SyncConf(iface.Name, path) //nolint:errcheck — best-effort, interface may be down
+		h.wg.SyncConf(iface.Name, path) //nolint:errcheck
 	}
 
 	slog.Info("restore complete",
