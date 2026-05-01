@@ -38,8 +38,13 @@ func (h *ClientHandler) BulkEnable(c *gin.Context) {
 		}
 		psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
 		h.wg.AddPeer(cl.Interface.Name, cl.PublicKey, psk, cl.AssignedIP+"/32") //nolint:errcheck
-		if !config.C.WGMock && (cl.BandwidthLimitDown > 0 || cl.BandwidthLimitUp > 0) {
-			bwsvc.Apply(cl.Interface.Name, cl.AssignedIP, cl.BandwidthLimitDown, cl.BandwidthLimitUp) //nolint:errcheck
+		if !config.C.WGMock {
+			if cl.BandwidthLimitDown > 0 || cl.BandwidthLimitUp > 0 {
+				bwsvc.Apply(cl.Interface.Name, cl.AssignedIP, cl.BandwidthLimitDown, cl.BandwidthLimitUp) //nolint:errcheck
+			}
+			if cl.DataQuotaBytes > 0 {
+				h.nft.Apply(cl.AssignedIP, quotaRemaining(cl)) //nolint:errcheck
+			}
 		}
 		database.DB.Model(&cl).Update("enabled", true)
 		ifacesSynced[cl.InterfaceID] = cl.Interface
@@ -70,6 +75,9 @@ func (h *ClientHandler) BulkDisable(c *gin.Context) {
 		h.wg.RemovePeer(cl.Interface.Name, cl.PublicKey) //nolint:errcheck
 		if !config.C.WGMock {
 			bwsvc.Remove(cl.Interface.Name, cl.AssignedIP) //nolint:errcheck
+			if cl.DataQuotaBytes > 0 {
+				h.nft.Remove(cl.AssignedIP) //nolint:errcheck
+			}
 		}
 		database.DB.Model(&cl).Update("enabled", false)
 		ifacesSynced[cl.InterfaceID] = cl.Interface
@@ -107,6 +115,9 @@ func (h *ClientHandler) BulkDelete(c *gin.Context) {
 		h.wg.RemovePeer(cl.Interface.Name, cl.PublicKey) //nolint:errcheck
 		if !config.C.WGMock {
 			bwsvc.Remove(cl.Interface.Name, cl.AssignedIP) //nolint:errcheck
+			if cl.DataQuotaBytes > 0 {
+				h.nft.Remove(cl.AssignedIP) //nolint:errcheck
+			}
 		}
 		ifacesSynced[cl.InterfaceID] = cl.Interface
 	}

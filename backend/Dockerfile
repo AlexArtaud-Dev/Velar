@@ -12,7 +12,7 @@ RUN GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o velar
 
 FROM alpine:3.19
 
-RUN apk add --no-cache ca-certificates wireguard-tools iptables
+RUN apk add --no-cache ca-certificates wireguard-tools iptables nftables
 
 WORKDIR /app
 

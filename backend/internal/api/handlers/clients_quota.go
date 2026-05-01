@@ -136,6 +136,15 @@ func (h *ClientHandler) QuotaReset(c *gin.Context) {
 		h.syncConf(client.Interface)
 	}
 
+	// Restore the full nftables quota for the new period. Because quota_reset_at
+	// is now set to `now`, the DB-based usage for the period is 0, so we give
+	// the client its full budget back.
+	if !config.C.WGMock && client.DataQuotaBytes > 0 {
+		if err := h.nft.Reset(client.AssignedIP, client.DataQuotaBytes); err != nil {
+			slog.Warn("quota reset: nft reset", "client", client.Name, "err", err)
+		}
+	}
+
 	slog.Info("quota reset", "client", client.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "quota reset", "reset_at": now})
 }

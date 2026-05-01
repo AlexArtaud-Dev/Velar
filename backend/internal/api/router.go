@@ -9,12 +9,14 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/ddns"
+	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
 )
 
 func NewRouter(
 	wg wireguard.Service,
+	nft nftquota.Service,
 	ag *adguard.Client,
 	ddnsSvc *ddns.Service,
 	hub *handlers.WSHub,
@@ -79,7 +81,7 @@ func NewRouter(
 		}
 
 		// Clients
-		clientHandler := handlers.NewClientHandler(wg)
+		clientHandler := handlers.NewClientHandler(wg, nft)
 		clients := api.Group("/clients")
 		{
 			clients.GET("", clientHandler.List)

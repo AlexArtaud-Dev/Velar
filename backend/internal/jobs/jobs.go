@@ -8,20 +8,21 @@ import (
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/ddns"
+	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/robfig/cron/v3"
 )
 
 // Retention constants control how long historical data is kept in the DB.
 const (
-	disconnectThreshold = 3 * time.Minute      // peer is considered disconnected after this gap
-	snapshotRetention   = 7 * 24 * time.Hour   // bandwidth snapshots older than 7 days are purged
-	eventRetention      = 30 * 24 * time.Hour  // connection events older than 30 days are purged
+	disconnectThreshold = 3 * time.Minute     // peer is considered disconnected after this gap
+	snapshotRetention   = 7 * 24 * time.Hour  // bandwidth snapshots older than 7 days are purged
+	eventRetention      = 30 * 24 * time.Hour // connection events older than 30 days are purged
 )
 
 // Start registers all background jobs and begins the scheduler.
 // It should be called once at application startup.
-func Start(wg wgsvc.Service, ddnsSvc *ddns.Service) {
+func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service) {
 	c := cron.New()
 
 	// Peer expiry — disable peers that have passed their expires_at date.
@@ -45,8 +46,8 @@ func Start(wg wgsvc.Service, ddnsSvc *ddns.Service) {
 	// Data purge — remove snapshots and events beyond retention window.
 	c.AddFunc("@every 1h", purgeOldData)
 
-	// Quota enforcement — suspend peers that have exceeded their data cap.
-	c.AddFunc("@every 15s", func() { checkQuotas(wg) })
+	// Quota enforcement — detect nftables-exceeded quotas, update DB, send emails.
+	c.AddFunc("@every 15s", func() { checkQuotas(wg, nft) })
 
 	c.Start()
 	slog.Info("background jobs started")

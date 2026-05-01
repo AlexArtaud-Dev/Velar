@@ -18,6 +18,36 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// quotaRemaining computes how many bytes a client has left in the current quota
+// period by summing PeerSnapshot rows since the period start. The result is
+// clamped to a minimum of 1 so that "just exceeded" clients immediately block
+// again after a re-add.
+//
+// Note: this uses only persisted snapshots (not the live WG delta) which
+// introduces a small undercount of up to one snapshot interval (~60 s), but
+// that is acceptable when setting up a fresh nftables rule.
+func quotaRemaining(client models.Client) int64 {
+	periodStart := quotaUsagePeriodStart(client.QuotaPeriod)
+	if client.QuotaResetAt != nil && client.QuotaResetAt.After(periodStart) {
+		periodStart = *client.QuotaResetAt
+	}
+
+	var result struct{ Total int64 }
+	q := database.DB.Model(&models.PeerSnapshot{}).
+		Select("COALESCE(SUM(bytes_rx + bytes_tx), 0) as total").
+		Where("client_id = ?", client.ID)
+	if !periodStart.IsZero() {
+		q = q.Where("timestamp >= ?", periodStart)
+	}
+	q.Scan(&result)
+
+	remaining := client.DataQuotaBytes - result.Total
+	if remaining < 1 {
+		remaining = 1
+	}
+	return remaining
+}
+
 // createClientRequest is the JSON body for POST /clients.
 type createClientRequest struct {
 	InterfaceID        uint       `json:"interface_id" binding:"required"`
@@ -135,6 +165,8 @@ func (h *ClientHandler) Create(c *gin.Context) {
 	}
 
 	// Notify admin.
+	// Note: quota is intentionally NOT set at creation time — it is configured
+	// later via the Update endpoint, which calls nft.Apply at that point.
 	owner := client.OwnerLabel
 	if owner == "" {
 		owner = "—"
@@ -243,12 +275,32 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	database.DB.Model(&client).Updates(updates)
 	database.DB.Preload("Interface").First(&client, id)
 
+	// Handle nftables quota rules whenever the quota value changes.
+	if req.DataQuotaBytes != nil && !config.C.WGMock {
+		if *req.DataQuotaBytes == 0 {
+			// Quota removed — tear down any existing nft rule.
+			h.nft.Remove(client.AssignedIP) //nolint:errcheck
+		} else if client.Enabled {
+			// Quota set or changed while client is active — reset the kernel
+			// counter to the current remaining budget.
+			if err := h.nft.Reset(client.AssignedIP, quotaRemaining(client)); err != nil {
+				slog.Warn("update client: nft reset quota", "client", client.Name, "err", err)
+			}
+		}
+	}
+
 	// If the quota update re-enabled a previously suspended client, re-add the
 	// peer to the running WireGuard interface so it can connect immediately.
 	if req.DataQuotaBytes != nil && wasQuotaSuspended {
 		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
 		if err := h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32"); err != nil {
 			slog.Warn("update client: re-add quota-suspended peer", "client", client.Name, "err", err)
+		}
+		// Re-apply the nft rule now that the peer is active again.
+		if !config.C.WGMock && client.DataQuotaBytes > 0 {
+			if err := h.nft.Apply(client.AssignedIP, quotaRemaining(client)); err != nil {
+				slog.Warn("update client: nft apply after re-enable", "client", client.Name, "err", err)
+			}
 		}
 		h.syncConf(client.Interface)
 	}
@@ -312,6 +364,9 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	}
 	if !config.C.WGMock {
 		bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
+		if client.DataQuotaBytes > 0 {
+			h.nft.Remove(client.AssignedIP) //nolint:errcheck
+		}
 	}
 
 	h.syncConf(client.Interface)

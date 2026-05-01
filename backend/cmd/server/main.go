@@ -17,6 +17,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/ddns"
+	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/joho/godotenv"
 )
@@ -59,6 +60,15 @@ func main() {
 		restoreInterfaces(wg)
 	}
 
+	// nftables quota service
+	nft := nftquota.New(config.C.WGMock)
+	if !config.C.WGMock {
+		if err := nft.Setup(); err != nil {
+			slog.Warn("nftquota setup failed", "err", err)
+		}
+		restoreQuotas(nft)
+	}
+
 	ag := adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
 	ddnsSvc := ddns.NewService()
 
@@ -71,10 +81,10 @@ func main() {
 	hub := handlers.NewWSHub(wg)
 
 	// Background jobs
-	jobs.Start(wg, ddnsSvc)
+	jobs.Start(wg, nft, ddnsSvc)
 
 	// HTTP router
-	router := api.NewRouter(wg, ag, ddnsSvc, hub)
+	router := api.NewRouter(wg, nft, ag, ddnsSvc, hub)
 
 	srv := &http.Server{
 		Addr:         ":" + config.C.AppPort,
@@ -137,6 +147,65 @@ func restoreInterfaces(wg wgsvc.Service) {
 		} else {
 			slog.Info("restoreInterfaces: brought up", "iface", iface.Name, "peers", len(peers))
 		}
+	}
+}
+
+// restoreQuotas re-installs nftables quota rules after a server restart.
+// For each enabled client with a data quota it computes the bytes remaining in
+// the current period (quota − persisted snapshot usage) and calls nft.Apply so
+// the kernel picks up from where it left off rather than granting a full fresh
+// budget.
+func restoreQuotas(nft nftquota.Service) {
+	var clients []models.Client
+	if err := database.DB.Where("enabled = true AND data_quota_bytes > 0").Find(&clients).Error; err != nil {
+		slog.Error("restoreQuotas: query failed", "err", err)
+		return
+	}
+
+	for _, cl := range clients {
+		periodStart := quotaRestorePeriodStart(cl.QuotaPeriod)
+		if cl.QuotaResetAt != nil && cl.QuotaResetAt.After(periodStart) {
+			periodStart = *cl.QuotaResetAt
+		}
+
+		var result struct{ Total int64 }
+		q := database.DB.Model(&models.PeerSnapshot{}).
+			Select("COALESCE(SUM(bytes_rx + bytes_tx), 0) as total").
+			Where("client_id = ?", cl.ID)
+		if !periodStart.IsZero() {
+			q = q.Where("timestamp >= ?", periodStart)
+		}
+		q.Scan(&result)
+
+		remaining := cl.DataQuotaBytes - result.Total
+		if remaining < 1 {
+			remaining = 1 // client was at/over quota — block immediately
+		}
+
+		if err := nft.Apply(cl.AssignedIP, remaining); err != nil {
+			slog.Warn("restoreQuotas: apply", "client", cl.Name, "err", err)
+		} else {
+			slog.Info("restoreQuotas: applied", "client", cl.Name, "remaining_bytes", remaining)
+		}
+	}
+}
+
+// quotaRestorePeriodStart is a local copy of the period-start logic used by
+// the jobs package. Duplicated here to avoid a circular import.
+func quotaRestorePeriodStart(period string) time.Time {
+	now := time.Now()
+	switch period {
+	case "weekly":
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		start := now.AddDate(0, 0, -(weekday - 1))
+		return time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, now.Location())
+	case "total":
+		return time.Time{}
+	default: // monthly
+		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	}
 }
 

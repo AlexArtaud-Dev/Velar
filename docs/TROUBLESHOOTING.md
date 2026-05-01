@@ -36,6 +36,16 @@ Velar auto-detects the default interface for NAT rules via `ip route show defaul
 
 ---
 
+## Data quota not blocking traffic
+
+- Verify nftables rules are installed: `docker exec velar-api nft list table ip velar_quota`
+- If the table is empty, restart the container — `restoreQuotas()` runs on every start and re-installs rules from DB usage
+- Check `NET_ADMIN` capability is present: `docker inspect velar-api | grep -i cap`
+- Make sure `WG_MOCK` is not `true` in `.env` (nftables is skipped in mock mode)
+- If nft is unavailable, enforcement falls back to DB-based polling — quota will still be enforced within 15 s
+
+---
+
 ## Bandwidth limits not taking effect
 
 - Verify `NET_ADMIN` capability is present: `docker inspect velar-api | grep -i cap`
