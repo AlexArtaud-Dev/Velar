@@ -9,6 +9,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/jobs"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	bwsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/bandwidth"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ import (
 func (h *ClientHandler) GetQuotaUsage(c *gin.Context) {
 	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
 	var client models.Client
-	if err := database.DB.First(&client, id).Error; err != nil {
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
@@ -40,9 +41,36 @@ func (h *ClientHandler) GetQuotaUsage(c *gin.Context) {
 		q = q.Where("timestamp >= ?", periodStart)
 	}
 	q.Scan(&result)
+	used := result.Total
+
+	// Add the live unsnapshotted delta so the bar reflects traffic that has
+	// occurred since the last 1-minute snapshot — mirrors the quota job logic.
+	stats, err := h.wg.GetStats(client.Interface.Name)
+	if err == nil {
+		for _, s := range stats {
+			if s.PublicKey == client.PublicKey {
+				prevRx, prevTx, baselineSet := jobs.GetLastSnapshotBaseline(client.ID)
+				if baselineSet {
+					var deltaRx, deltaTx int64
+					if s.BytesRx >= prevRx {
+						deltaRx = s.BytesRx - prevRx
+					} else {
+						deltaRx = s.BytesRx // counter reset
+					}
+					if s.BytesTx >= prevTx {
+						deltaTx = s.BytesTx - prevTx
+					} else {
+						deltaTx = s.BytesTx // counter reset
+					}
+					used += deltaRx + deltaTx
+				}
+				break
+			}
+		}
+	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"used":         result.Total,
+		"used":         used,
 		"quota":        client.DataQuotaBytes,
 		"period":       client.QuotaPeriod,
 		"period_start": periodStart,

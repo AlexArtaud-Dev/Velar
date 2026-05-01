@@ -15,12 +15,40 @@ import (
 // checkQuotas runs every 15 seconds and enforces per-client data quotas.
 // At 80% usage it sends a single warning email per period.
 // At 100% it removes the peer from WireGuard and disables the client in the DB.
+//
+// Usage is computed as:
+//
+//	SUM(peer_snapshots) for the current period
+//	+ unsnapshotted live delta (currentWGBytes − lastSnapshotBaseline)
+//
+// Including the live delta prevents a fast client from overshooting the quota
+// by a full snapshot interval (up to 60 s) before enforcement fires.
 func checkQuotas(wg wgsvc.Service) {
 	var clients []models.Client
 	if err := database.DB.Preload("Interface").
 		Where("enabled = true AND data_quota_bytes > 0").
 		Find(&clients).Error; err != nil {
 		return
+	}
+
+	// Pre-load live WireGuard stats per interface — one GetStats call per
+	// interface rather than one per client.
+	type peerLive struct{ rx, tx int64 }
+	ifaceLive := make(map[string]map[string]peerLive) // iface → pubkey → bytes
+	seenIfaces := make(map[string]bool)
+	for _, cl := range clients {
+		seenIfaces[cl.Interface.Name] = true
+	}
+	for ifaceName := range seenIfaces {
+		stats, err := wg.GetStats(ifaceName)
+		if err != nil {
+			continue
+		}
+		m := make(map[string]peerLive, len(stats))
+		for _, s := range stats {
+			m[s.PublicKey] = peerLive{rx: s.BytesRx, tx: s.BytesTx}
+		}
+		ifaceLive[ifaceName] = m
 	}
 
 	for _, cl := range clients {
@@ -39,6 +67,28 @@ func checkQuotas(wg wgsvc.Service) {
 		}
 		q.Scan(&result)
 		used := result.Total
+
+		// Add the live unsnapshotted delta so enforcement fires promptly
+		// even between the 1-minute snapshot intervals.
+		if ifaceStats, ok := ifaceLive[cl.Interface.Name]; ok {
+			if live, ok := ifaceStats[cl.PublicKey]; ok {
+				prevRx, prevTx, baselineSet := GetLastSnapshotBaseline(cl.ID)
+				if baselineSet {
+					var deltaRx, deltaTx int64
+					if live.rx >= prevRx {
+						deltaRx = live.rx - prevRx
+					} else {
+						deltaRx = live.rx // counter reset
+					}
+					if live.tx >= prevTx {
+						deltaTx = live.tx - prevTx
+					} else {
+						deltaTx = live.tx // counter reset
+					}
+					used += deltaRx + deltaTx
+				}
+			}
+		}
 
 		usedStr := formatQuotaBytes(used)
 		quotaStr := formatQuotaBytes(cl.DataQuotaBytes)

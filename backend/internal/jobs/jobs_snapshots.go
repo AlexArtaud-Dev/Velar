@@ -16,6 +16,20 @@ var (
 	snapLastTx = make(map[uint]int64) // clientID → last cumulative bytes_tx from wg
 )
 
+// GetLastSnapshotBaseline returns the cumulative WireGuard byte counters that
+// were observed the last time snapshotBandwidth ran for the given client, plus
+// a flag indicating whether a baseline has been established at all.
+// Returns (0, 0, false) for clients not yet seen since the last server start.
+// Used by the quota job and quota-usage endpoint to compute the unsnapshotted
+// traffic delta between snapshot intervals.
+func GetLastSnapshotBaseline(clientID uint) (rx, tx int64, ok bool) {
+	snapMu.Lock()
+	defer snapMu.Unlock()
+	rx, ok = snapLastRx[clientID]
+	tx = snapLastTx[clientID]
+	return
+}
+
 // snapshotBandwidth polls wg stats every minute and stores per-client byte
 // deltas as PeerSnapshot rows. Counter resets (caused by peer reconnection)
 // are handled by treating the new cumulative value as the delta for that
