@@ -20,7 +20,11 @@ import {
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
+  const date = new Date(iso)
+  // WireGuard reports epoch (1970) for peers that have never connected.
+  // Go's zero time is year 0001. Treat anything before 2020 as "Never".
+  if (date.getFullYear() < 2020) return 'Never'
+  const diff = Date.now() - date.getTime()
   const s = Math.floor(diff / 1000)
   if (s < 60) return 'just now'
   const m = Math.floor(s / 60)
@@ -99,7 +103,11 @@ function InfoRow({ icon: Icon, label, value }: { icon: React.ElementType; label:
 function QuotaSection({ client }: { client: PortalClient }) {
   if (client.data_quota_bytes === 0) return null
 
-  const pct = Math.min(100, Math.round((client.quota_used / client.data_quota_bytes) * 100))
+  // When suspended, the bar always fills to 100% regardless of what the
+  // snapshot query returns (snapshots may not capture the final burst).
+  const pct = client.quota_suspended
+    ? 100
+    : Math.min(100, Math.round((client.quota_used / client.data_quota_bytes) * 100))
   const barColor =
     client.quota_suspended || pct >= 100
       ? 'from-red-500 to-red-600'
@@ -129,7 +137,7 @@ function QuotaSection({ client }: { client: PortalClient }) {
           />
         </div>
         <div className="flex justify-between text-xs text-slate-400">
-          <span>{formatBytes(client.quota_used)} used</span>
+          <span>{client.quota_suspended ? 'Quota exceeded' : `${formatBytes(client.quota_used)} used`}</span>
           <span className={pct >= 100 ? 'text-red-400 font-semibold' : ''}>
             {formatBytes(client.data_quota_bytes)} total ({pct}%)
           </span>
