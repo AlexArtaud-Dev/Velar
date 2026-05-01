@@ -41,6 +41,7 @@ export function ClientCard({
   const [copied, setCopied] = useState(false)
 
   function copyPortalLink() {
+    if (!client.view_token) return
     const url = `${window.location.origin}/portal/${client.view_token}`
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true)

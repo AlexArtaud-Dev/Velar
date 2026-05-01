@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import {
-  FileText, QrCode, Link2, Mail, History, DatabaseZap, Gauge, Pencil, MoreHorizontal,
+  FileText, QrCode, Link2, Mail, History, DatabaseZap, Gauge, Pencil, MoreHorizontal, ExternalLink,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
@@ -103,6 +103,13 @@ export function ClientActionsMenu({ client, onUpdated }: ClientActionsMenuProps)
           </DropdownMenuItem>
 
           <DropdownMenuSeparator />
+          {client.view_token && (
+            <DropdownMenuItem
+              onClick={() => window.open(`${window.location.origin}/portal/${client.view_token}`, '_blank')}
+            >
+              <ExternalLink className="h-3.5 w-3.5" /> Open portal
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onClick={() => setEditOpen(true)}>
             <Pencil className="h-3.5 w-3.5" /> Edit
           </DropdownMenuItem>

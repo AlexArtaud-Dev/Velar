@@ -63,22 +63,21 @@ func ValidateSQLite(path string) error {
 }
 
 func AutoMigrate() error {
-	// ── Pre-migration: ensure view_token column exists and has no blank values ──
-	// AutoMigrate will add a uniqueIndex on view_token. SQLite cannot create a
-	// unique index when multiple rows share the same value (empty string for
-	// pre-v0.9 clients). We therefore:
-	//  1. Add the column without the index if it is missing.
-	//  2. Backfill any empty/NULL values with unique random tokens.
-	// Then the full AutoMigrate (which adds the uniqueIndex) will succeed.
-	if DB.Migrator().HasColumn(&models.Client{}, "view_token") {
-		// Column exists — just backfill blanks.
-		backfillViewTokens()
-	} else {
-		// Column doesn't exist yet — add it plain (no index) so we can populate it.
-		if err := DB.Exec("ALTER TABLE clients ADD COLUMN view_token TEXT NOT NULL DEFAULT ''").Error; err != nil {
-			// Ignore "duplicate column" errors from concurrent starts.
-			slog.Warn("pre-migrate add view_token column", "err", err)
-		}
+	// ── Pre-migration: backfill view_token before the uniqueIndex is created ──
+	//
+	// AutoMigrate adds a uniqueIndex on view_token. SQLite refuses to create a
+	// unique index when multiple rows share the same value, which is the case for
+	// all pre-v0.9 clients whose view_token is the empty string default.
+	//
+	// Strategy (safe for both fresh and existing databases):
+	//  1. If the clients table exists, try to add the column without an index
+	//     (ALTER TABLE is a no-op / returns an error if the column already exists;
+	//     we intentionally ignore that error).
+	//  2. Backfill every row that still has an empty or NULL token.
+	//  3. Run full AutoMigrate — uniqueIndex creation now succeeds.
+	if DB.Migrator().HasTable("clients") {
+		// Ignore error — column may already exist from a previous (failed) migrate.
+		_ = DB.Exec("ALTER TABLE clients ADD COLUMN view_token TEXT NOT NULL DEFAULT ''").Error
 		backfillViewTokens()
 	}
 
@@ -94,20 +93,26 @@ func AutoMigrate() error {
 }
 
 // backfillViewTokens assigns a unique random token to every client row that
-// has an empty or NULL view_token. Must be called before AutoMigrate adds the
-// uniqueIndex, otherwise the constraint creation fails on duplicate empties.
+// has an empty or NULL view_token. Called before AutoMigrate creates the
+// uniqueIndex so the constraint is never violated.
 func backfillViewTokens() {
-	type row struct {
-		ID uint
+	type clientRow struct{ ID uint }
+	var rows []clientRow
+	// Raw query so we never panic if the column was just added and GORM's
+	// schema cache is stale.
+	if err := DB.Raw("SELECT id FROM clients WHERE view_token = '' OR view_token IS NULL").
+		Scan(&rows).Error; err != nil {
+		slog.Warn("backfillViewTokens: query failed", "err", err)
+		return
 	}
-	var rows []row
-	DB.Raw("SELECT id FROM clients WHERE view_token = '' OR view_token IS NULL").Scan(&rows)
 	for _, r := range rows {
 		b := make([]byte, 32)
-		_, _ = rand.Read(b)
+		if _, err := rand.Read(b); err != nil {
+			continue
+		}
 		DB.Exec("UPDATE clients SET view_token = ? WHERE id = ?", hex.EncodeToString(b), r.ID)
 	}
 	if len(rows) > 0 {
-		slog.Info("pre-migrate: backfilled view tokens", "count", len(rows))
+		slog.Info("backfilled view tokens", "count", len(rows))
 	}
 }
