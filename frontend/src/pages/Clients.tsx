@@ -81,11 +81,6 @@ export default function Clients() {
           <p className="text-muted-foreground text-sm mt-1">{title}</p>
         </div>
         <div className="flex items-center gap-2">
-          {clients.length > 0 && (
-            <Button variant="outline" size="sm" onClick={selected.size === clients.length ? clearSelection : selectAll}>
-              {selected.size === clients.length ? 'Deselect all' : 'Select all'}
-            </Button>
-          )}
           <CreateClientDialog
             interfaces={interfaces}
             defaultInterfaceId={ifaceId}
@@ -102,21 +97,44 @@ export default function Clients() {
           return (
             <Card
               key={client.id}
-              className={isSelected ? 'ring-2 ring-primary' : ''}
+              className={`group/card transition-colors ${isSelected ? 'ring-2 ring-primary bg-primary/5' : ''}`}
             >
               <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    {/* Checkbox */}
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleSelect(client.id)}
-                      className="h-4 w-4 rounded border-border accent-primary shrink-0 cursor-pointer"
-                    />
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full shrink-0 ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
-                    />
+                    {/* Dot / checkbox hybrid — hover reveals checkbox, dot shows when idle */}
+                    <button
+                      onClick={() => toggleSelect(client.id)}
+                      className="relative h-4 w-4 shrink-0 flex items-center justify-center"
+                      aria-label="Select client"
+                    >
+                      {/* Status dot — hidden on hover or when selected */}
+                      <span className={`absolute inset-0 flex items-center justify-center transition-opacity
+                        ${isSelected || selected.size > 0
+                          ? 'opacity-0'
+                          : 'opacity-100 group-hover/card:opacity-0'}`}
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                      </span>
+                      {/* Checkbox — visible on hover or when selected */}
+                      <span className={`absolute inset-0 flex items-center justify-center transition-opacity
+                        ${isSelected || selected.size > 0
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover/card:opacity-100'}`}
+                      >
+                        <span className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-colors
+                          ${isSelected
+                            ? 'bg-primary border-primary'
+                            : 'border-muted-foreground/40 bg-background'}`}
+                        >
+                          {isSelected && (
+                            <svg className="h-2.5 w-2.5 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </span>
+                      </span>
+                    </button>
                     <CardTitle className="text-base">{client.name}</CardTitle>
                     {client.owner_label && (
                       <span className="text-xs text-muted-foreground">{client.owner_label}</span>
@@ -195,42 +213,33 @@ export default function Clients() {
 
       {/* Bulk action bar */}
       {selected.size > 0 && (
-        <div className="fixed bottom-4 max-lg:bottom-18 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 bg-popover border border-border rounded-xl shadow-xl px-4 py-2.5">
-          <span className="text-sm font-medium mr-2">{selected.size} selected</span>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={bulkEnableMut.isPending}
+        <div className="fixed bottom-4 max-lg:bottom-18 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-xl shadow-2xl px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground px-1 mr-1">
+            {selected.size} / {clients.length}
+          </span>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="sm" variant="ghost" className="text-xs h-7 px-2.5"
+            onClick={selected.size === clients.length ? clearSelection : selectAll}>
+            {selected.size === clients.length ? 'Deselect all' : 'Select all'}
+          </Button>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="sm" variant="ghost" disabled={bulkEnableMut.isPending}
             onClick={() => bulkEnableMut.mutate()}
-            className="gap-1.5"
-          >
-            <ToggleRight className="h-3.5 w-3.5 text-green-500" />
-            Enable
+            className="gap-1.5 h-7 px-2.5 text-xs text-green-500 hover:text-green-400">
+            <ToggleRight className="h-3.5 w-3.5" /> Enable
           </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={bulkDisableMut.isPending}
+          <Button size="sm" variant="ghost" disabled={bulkDisableMut.isPending}
             onClick={() => bulkDisableMut.mutate()}
-            className="gap-1.5"
-          >
-            <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" />
-            Disable
+            className="gap-1.5 h-7 px-2.5 text-xs">
+            <ToggleLeft className="h-3.5 w-3.5" /> Disable
           </Button>
-          <Button
-            size="sm"
-            variant="destructive"
-            disabled={bulkDeleteMut.isPending}
-            onClick={() => {
-              if (confirm(`Delete ${selected.size} client(s)? This cannot be undone.`))
-                bulkDeleteMut.mutate()
-            }}
-            className="gap-1.5"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-            Delete
+          <Button size="sm" variant="ghost" disabled={bulkDeleteMut.isPending}
+            onClick={() => { if (confirm(`Delete ${selected.size} client(s)?`)) bulkDeleteMut.mutate() }}
+            className="gap-1.5 h-7 px-2.5 text-xs text-destructive hover:text-destructive">
+            <Trash2 className="h-3.5 w-3.5" /> Delete
           </Button>
-          <Button size="sm" variant="ghost" onClick={clearSelection}>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={clearSelection}>
             <X className="h-3.5 w-3.5" />
           </Button>
         </div>
