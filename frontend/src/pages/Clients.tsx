@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams } from 'react-router-dom'
-import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff } from 'lucide-react'
+import { Plus, Trash2, QrCode, Link2, ToggleLeft, ToggleRight, Clock, FileText, Copy, Check, Pencil, Mail, X, Gauge, ArrowDown, ArrowUp, History, Wifi, WifiOff, DatabaseZap, MoreHorizontal } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -11,9 +11,14 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
+  DropdownMenuSeparator, DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
   getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
   getClientSnapshots, getClientEvents,
+  bulkEnableClients, bulkDisableClients, bulkDeleteClients, resetClientQuota,
   type CreateClientPayload, type Client,
 } from '@/api/clients'
 import {
@@ -44,6 +49,26 @@ export default function Clients() {
   const enableMut = useMutation({ mutationFn: enableClient, onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) })
   const disableMut = useMutation({ mutationFn: disableClient, onSuccess: () => qc.invalidateQueries({ queryKey: ['clients'] }) })
 
+  // Bulk selection state
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const toggleSelect = (id: number) =>
+    setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const selectAll = () => setSelected(new Set(clients.map((c) => c.id)))
+  const clearSelection = () => setSelected(new Set())
+
+  const bulkEnableMut = useMutation({
+    mutationFn: () => bulkEnableClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+  const bulkDisableMut = useMutation({
+    mutationFn: () => bulkDisableClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+  const bulkDeleteMut = useMutation({
+    mutationFn: () => bulkDeleteClients([...selected]),
+    onSuccess: () => { clearSelection(); qc.invalidateQueries({ queryKey: ['clients'] }) },
+  })
+
   if (isLoading) return <div className="p-6 animate-pulse space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 bg-muted rounded-lg" />)}</div>
 
   const title = ifaceId ? interfaces.find((i) => i.id === ifaceId)?.name ?? `Interface ${ifaceId}` : 'All clients'
@@ -55,24 +80,61 @@ export default function Clients() {
           <h1 className="text-2xl font-bold">Clients</h1>
           <p className="text-muted-foreground text-sm mt-1">{title}</p>
         </div>
-        <CreateClientDialog
-          interfaces={interfaces}
-          defaultInterfaceId={ifaceId}
-          onCreated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
-        />
+        <div className="flex items-center gap-2">
+          <CreateClientDialog
+            interfaces={interfaces}
+            defaultInterfaceId={ifaceId}
+            onCreated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
+          />
+        </div>
       </div>
 
       <div className="space-y-3">
         {clients.map((client) => {
           const peer = peerMap.get(client.id)
+          const isSelected = selected.has(client.id)
+          const quotaSet = client.data_quota_bytes > 0
           return (
-            <Card key={client.id}>
+            <Card
+              key={client.id}
+              className={`group/card transition-colors ${isSelected ? 'ring-2 ring-primary bg-primary/5' : ''}`}
+            >
               <CardHeader className="pb-2">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span
-                      className={`h-2.5 w-2.5 rounded-full shrink-0 ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`}
-                    />
+                    {/* Dot / checkbox hybrid — hover reveals checkbox, dot shows when idle */}
+                    <button
+                      onClick={() => toggleSelect(client.id)}
+                      className="relative h-4 w-4 shrink-0 flex items-center justify-center"
+                      aria-label="Select client"
+                    >
+                      {/* Status dot — hidden on hover or when selected */}
+                      <span className={`absolute inset-0 flex items-center justify-center transition-opacity
+                        ${isSelected || selected.size > 0
+                          ? 'opacity-0'
+                          : 'opacity-100 group-hover/card:opacity-0'}`}
+                      >
+                        <span className={`h-2.5 w-2.5 rounded-full ${peer?.connected ? 'bg-green-500' : 'bg-muted-foreground/30'}`} />
+                      </span>
+                      {/* Checkbox — visible on hover or when selected */}
+                      <span className={`absolute inset-0 flex items-center justify-center transition-opacity
+                        ${isSelected || selected.size > 0
+                          ? 'opacity-100'
+                          : 'opacity-0 group-hover/card:opacity-100'}`}
+                      >
+                        <span className={`h-4 w-4 rounded border-2 flex items-center justify-center transition-colors
+                          ${isSelected
+                            ? 'bg-primary border-primary'
+                            : 'border-muted-foreground/40 bg-background'}`}
+                        >
+                          {isSelected && (
+                            <svg className="h-2.5 w-2.5 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                            </svg>
+                          )}
+                        </span>
+                      </span>
+                    </button>
                     <CardTitle className="text-base">{client.name}</CardTitle>
                     {client.owner_label && (
                       <span className="text-xs text-muted-foreground">{client.owner_label}</span>
@@ -87,14 +149,11 @@ export default function Clients() {
                       </Badge>
                     )}
                   </div>
-                  <div className="flex flex-wrap items-center gap-1">
-                    <ConfigButton clientId={client.id} name={client.name} />
-                    <SendConfigButton clientId={client.id} email={client.email} />
-                    <QRButton clientId={client.id} name={client.name} />
-                    <DownloadLinkButton clientId={client.id} />
-                    <ClientHistoryDialog client={client} />
-                    <BandwidthDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
-                    <EditClientDialog client={client} onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })} />
+                  <div className="flex items-center gap-1">
+                    <ClientActionsMenu
+                      client={client}
+                      onUpdated={() => qc.invalidateQueries({ queryKey: ['clients'] })}
+                    />
                     <Button
                       variant="ghost"
                       size="icon"
@@ -137,6 +196,10 @@ export default function Clients() {
                   )}
                   {client.email && <span className="font-mono">{client.email}</span>}
                 </div>
+                {/* Quota progress bar */}
+                {quotaSet && (
+                  <QuotaBar client={client} />
+                )}
               </CardContent>
             </Card>
           )
@@ -147,7 +210,121 @@ export default function Clients() {
           </div>
         )}
       </div>
+
+      {/* Bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-4 max-lg:bottom-18 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-card border border-border rounded-xl shadow-2xl px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground px-1 mr-1">
+            {selected.size} / {clients.length}
+          </span>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="sm" variant="ghost" className="text-xs h-7 px-2.5"
+            onClick={selected.size === clients.length ? clearSelection : selectAll}>
+            {selected.size === clients.length ? 'Deselect all' : 'Select all'}
+          </Button>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="sm" variant="ghost" disabled={bulkEnableMut.isPending}
+            onClick={() => bulkEnableMut.mutate()}
+            className="gap-1.5 h-7 px-2.5 text-xs text-green-500 hover:text-green-400">
+            <ToggleRight className="h-3.5 w-3.5" /> Enable
+          </Button>
+          <Button size="sm" variant="ghost" disabled={bulkDisableMut.isPending}
+            onClick={() => bulkDisableMut.mutate()}
+            className="gap-1.5 h-7 px-2.5 text-xs">
+            <ToggleLeft className="h-3.5 w-3.5" /> Disable
+          </Button>
+          <Button size="sm" variant="ghost" disabled={bulkDeleteMut.isPending}
+            onClick={() => { if (confirm(`Delete ${selected.size} client(s)?`)) bulkDeleteMut.mutate() }}
+            className="gap-1.5 h-7 px-2.5 text-xs text-destructive hover:text-destructive">
+            <Trash2 className="h-3.5 w-3.5" /> Delete
+          </Button>
+          <div className="h-4 w-px bg-border mx-0.5" />
+          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={clearSelection}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
     </div>
+  )
+}
+
+// ── Client actions dropdown menu ──────────────────────────────────────────────
+
+function ClientActionsMenu({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
+  // Each dialog is controlled independently via open state lifted here
+  const [configOpen, setConfigOpen] = useState(false)
+  const [sendOpen, setSendOpen] = useState(false)
+  const [qrOpen, setQrOpen] = useState(false)
+  const [linkOpen, setLinkOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const [quotaOpen, setQuotaOpen] = useState(false)
+  const [bwOpen, setBwOpen] = useState(false)
+  const [editOpen, setEditOpen] = useState(false)
+
+  return (
+    <>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button variant="ghost" size="icon" title="Actions">
+            <MoreHorizontal className="h-4 w-4" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuLabel>Config</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => setConfigOpen(true)}>
+            <FileText className="h-3.5 w-3.5" /> View config
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setQrOpen(true)}>
+            <QrCode className="h-3.5 w-3.5" /> QR code
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setLinkOpen(true)}>
+            <Link2 className="h-3.5 w-3.5" /> Download link
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => setSendOpen(true)}
+            disabled={!client.email}
+            className={!client.email ? 'opacity-40' : ''}
+          >
+            <Mail className="h-3.5 w-3.5" /> Send by email
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>Analytics & Limits</DropdownMenuLabel>
+          <DropdownMenuItem onClick={() => setHistoryOpen(true)}>
+            <History className="h-3.5 w-3.5" /> History
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setQuotaOpen(true)}>
+            <DatabaseZap className={`h-3.5 w-3.5 ${client.data_quota_bytes > 0 ? 'text-purple-500' : ''}`} />
+            Data quota {client.data_quota_bytes > 0 && <span className="ml-auto text-xs text-muted-foreground">{formatBytes(client.data_quota_bytes)}</span>}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setBwOpen(true)}>
+            <Gauge className={`h-3.5 w-3.5 ${(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) ? 'text-amber-500' : ''}`} />
+            Bandwidth {(client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0) && (
+              <span className="ml-auto text-xs text-muted-foreground">
+                {client.bandwidth_limit_down > 0 ? `↓${client.bandwidth_limit_down}` : ''}
+                {client.bandwidth_limit_down > 0 && client.bandwidth_limit_up > 0 ? '/' : ''}
+                {client.bandwidth_limit_up > 0 ? `↑${client.bandwidth_limit_up}` : ''} Mbps
+              </span>
+            )}
+          </DropdownMenuItem>
+
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={() => setEditOpen(true)}>
+            <Pencil className="h-3.5 w-3.5" /> Edit
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      {/* Dialogs — rendered outside the dropdown so they survive its unmount */}
+      <ConfigButton clientId={client.id} name={client.name} open={configOpen} onOpenChange={setConfigOpen} />
+      <SendConfigButton clientId={client.id} email={client.email} open={sendOpen} onOpenChange={setSendOpen} />
+      <QRButton clientId={client.id} name={client.name} open={qrOpen} onOpenChange={setQrOpen} />
+      <DownloadLinkButton clientId={client.id} open={linkOpen} onOpenChange={setLinkOpen} />
+      <ClientHistoryDialog client={client} open={historyOpen} onOpenChange={setHistoryOpen} />
+      <QuotaDialog client={client} open={quotaOpen} onOpenChange={setQuotaOpen} onUpdated={onUpdated} />
+      <BandwidthDialog client={client} open={bwOpen} onOpenChange={setBwOpen} onUpdated={onUpdated} />
+      <EditClientDialog client={client} open={editOpen} onOpenChange={setEditOpen} onUpdated={onUpdated} />
+    </>
   )
 }
 
@@ -167,8 +344,7 @@ function copyToClipboard(text: string) {
   }
 }
 
-function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
-  const [open, setOpen] = useState(false)
+function ConfigButton({ clientId, name, open, onOpenChange }: { clientId: number; name: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [copied, setCopied] = useState(false)
   const { data, isFetching } = useQuery({
     queryKey: ['client-config-text', clientId],
@@ -184,12 +360,7 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="View config">
-          <FileText className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle>Config — {name}</DialogTitle>
@@ -212,51 +383,41 @@ function ConfigButton({ clientId, name }: { clientId: number; name: string }) {
   )
 }
 
-function SendConfigButton({ clientId, email }: { clientId: number; email?: string }) {
-  const [sent, setSent] = useState(false)
-
+function SendConfigButton({ clientId, email, open, onOpenChange }: { clientId: number; email?: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const mut = useMutation({
     mutationFn: () => sendConfigEmail(clientId),
-    onSuccess: () => {
-      setSent(true)
-      setTimeout(() => setSent(false), 3000)
-    },
+    onSuccess: () => { onOpenChange(false) },
   })
 
-  const hasEmail = !!email
-
+  // Use dialog as confirmation step
   return (
-    <Button
-      variant="ghost"
-      size="icon"
-      title={hasEmail ? `Send config to ${email}` : 'No email set on this client'}
-      disabled={!hasEmail || mut.isPending}
-      onClick={() => mut.mutate()}
-      className={sent ? 'text-green-500' : ''}
-    >
-      {sent
-        ? <Check className="h-4 w-4 text-green-500" />
-        : mut.isPending
-          ? <Mail className="h-4 w-4 animate-pulse" />
-          : <Mail className={`h-4 w-4 ${!hasEmail ? 'opacity-30' : ''}`} />}
-    </Button>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Send config by email</DialogTitle>
+          <DialogDescription>
+            A one-time download link will be sent to <span className="font-mono text-foreground">{email}</span>.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mut.mutate()} disabled={mut.isPending}>
+            {mut.isPending ? 'Sending…' : mut.isSuccess ? <><Check className="h-3.5 w-3.5 mr-1" /> Sent!</> : 'Send'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function QRButton({ clientId, name }: { clientId: number; name: string }) {
-  const [open, setOpen] = useState(false)
+function QRButton({ clientId, name, open, onOpenChange }: { clientId: number; name: string; open: boolean; onOpenChange: (v: boolean) => void }) {
   const { data, isFetching } = useQuery({
     queryKey: ['client-qr', clientId],
     queryFn: () => getClientQR(clientId),
     enabled: open,
   })
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="ghost" size="icon" title="QR code">
-          <QrCode className="h-4 w-4" />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg text-center">
         <DialogHeader>
           <DialogTitle>QR — {name}</DialogTitle>
@@ -278,67 +439,75 @@ function QRButton({ clientId, name }: { clientId: number; name: string }) {
   )
 }
 
-function DownloadLinkButton({ clientId }: { clientId: number }) {
+function DownloadLinkButton({ clientId, open, onOpenChange }: { clientId: number; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [url, setUrl] = useState<string | null>(null)
   const mut = useMutation({
     mutationFn: () => createDownloadLink(clientId),
     onSuccess: (data) => setUrl(`${window.location.origin}${data.url}`),
   })
+
+  useEffect(() => {
+    if (open) {
+      setUrl(null)
+      mut.mutate()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
   return (
-    <>
-      <Button variant="ghost" size="icon" title="One-time download link" onClick={() => mut.mutate()}>
-        <Link2 className="h-4 w-4" />
-      </Button>
-      <Dialog open={!!url} onOpenChange={() => setUrl(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>One-time download link</DialogTitle>
-            <DialogDescription>Valid for 1 hour, single use. Share this link to allow config download without login.</DialogDescription>
-          </DialogHeader>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>One-time download link</DialogTitle>
+          <DialogDescription>Valid for 1 hour, single use. Share this link to allow config download without login.</DialogDescription>
+        </DialogHeader>
+        {mut.isPending || !url ? (
+          <div className="h-16 flex items-center justify-center text-muted-foreground text-sm">Generating…</div>
+        ) : (
           <div className="space-y-3">
             <div className="flex gap-2">
               <input
                 readOnly
-                value={url ?? ''}
+                value={url}
                 className="flex-1 rounded-md border border-input bg-muted px-3 py-2 text-xs font-mono"
               />
-              <Button size="sm" onClick={() => { copyToClipboard(url ?? ''); setUrl(null) }}>
+              <Button size="sm" onClick={() => { copyToClipboard(url); onOpenChange(false) }}>
                 Copy
               </Button>
             </div>
             <a
-              href={url ?? '#'}
+              href={url}
               target="_blank"
               rel="noopener noreferrer"
               className="block text-xs text-primary underline break-all"
-              onClick={() => setTimeout(() => setUrl(null), 500)}
+              onClick={() => setTimeout(() => onOpenChange(false), 500)}
             >
               Click to download directly →
             </a>
           </div>
-        </DialogContent>
-      </Dialog>
-    </>
+        )}
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false)
+function EditClientDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
   const [form, setForm] = useState({ name: '', owner_label: '', email: '', allowed_ips: '', expires_at: '' })
   const [error, setError] = useState('')
 
-  function openDialog() {
-    setForm({
-      name: client.name,
-      owner_label: client.owner_label ?? '',
-      email: client.email ?? '',
-      allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
-      // slice to "YYYY-MM-DDTHH:MM" so datetime-local renders correctly as UTC
-      expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
-    })
-    setError('')
-    setOpen(true)
-  }
+  useEffect(() => {
+    if (open) {
+      setForm({
+        name: client.name,
+        owner_label: client.owner_label ?? '',
+        email: client.email ?? '',
+        allowed_ips: client.allowed_ips ?? '0.0.0.0/0, ::/0',
+        expires_at: client.expires_at ? client.expires_at.slice(0, 16) : '',
+      })
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const mutation = useMutation({
     mutationFn: () => updateClient(client.id, {
@@ -353,79 +522,73 @@ function EditClientDialog({ client, onUpdated }: { client: Client; onUpdated: ()
         ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
         : { clear_expires_at: true }),
     }),
-    onSuccess: () => { setOpen(false); onUpdated() },
+    onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
   return (
-    <>
-      <Button variant="ghost" size="icon" title="Edit" onClick={openDialog}>
-        <Pencil className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit client — {client.name}</DialogTitle>
-            <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-name">Name</Label>
-              <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-owner">Owner label</Label>
-              <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
-              <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-ips">Allowed IPs</Label>
-              <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
-              <div className="flex gap-2">
-                <Input
-                  id="edit-expiry"
-                  type="datetime-local"
-                  value={form.expires_at}
-                  onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
-                  className="flex-1"
-                />
-                {form.expires_at && (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    title="Remove expiry"
-                    onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
-                  >
-                    <X className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                )}
-              </div>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Edit client — {client.name}</DialogTitle>
+          <DialogDescription>Update name, label, allowed IPs or expiry.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-name">Name</Label>
+            <Input id="edit-name" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
-              {mutation.isPending ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-owner">Owner label</Label>
+            <Input id="edit-owner" value={form.owner_label} onChange={(e) => setForm((f) => ({ ...f, owner_label: e.target.value }))} placeholder="alice" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-email">Client email <span className="text-muted-foreground text-xs">(receives notifications)</span></Label>
+            <Input id="edit-email" type="email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} placeholder="alice@example.com" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-ips">Allowed IPs</Label>
+            <Input id="edit-ips" value={form.allowed_ips} onChange={(e) => setForm((f) => ({ ...f, allowed_ips: e.target.value }))} placeholder="0.0.0.0/0, ::/0" />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="edit-expiry">Expiry <span className="text-muted-foreground text-xs">(UTC — leave empty for no expiry)</span></Label>
+            <div className="flex gap-2">
+              <Input
+                id="edit-expiry"
+                type="datetime-local"
+                value={form.expires_at}
+                onChange={(e) => setForm((f) => ({ ...f, expires_at: e.target.value }))}
+                className="flex-1"
+              />
+              {form.expires_at && (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  title="Remove expiry"
+                  onClick={() => setForm((f) => ({ ...f, expires_at: '' }))}
+                >
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </Button>
+              )}
+            </div>
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending || !form.name}>
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
-function ClientHistoryDialog({ client }: { client: Client }) {
-  const [open, setOpen] = useState(false)
+function ClientHistoryDialog({ client, open, onOpenChange }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void }) {
   const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
 
   const { data: snapshots = [], isFetching: loadingSnaps } = useQuery({
@@ -450,10 +613,7 @@ function ClientHistoryDialog({ client }: { client: Client }) {
 
   return (
     <>
-      <Button variant="ghost" size="icon" title="Connection history" onClick={() => setOpen(true)}>
-        <History className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
+      <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
             <DialogTitle>History — {client.name}</DialogTitle>
@@ -554,37 +714,184 @@ function formatSnapshotTime(iso: string, range: '1h' | '24h' | '7d'): string {
   return d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
-function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () => void }) {
-  const [open, setOpen] = useState(false)
+// ── Quota bar (inline in client card) ────────────────────────────────────────
+
+function QuotaBar({ client }: { client: Client }) {
+  const { data: snapshots = [] } = useQuery({
+    queryKey: ['client-snapshots-quota', client.id],
+    queryFn: () => {
+      const period = client.quota_period ?? 'monthly'
+      const range = period === 'total' ? '7d' : period === 'weekly' ? '7d' : '24h'
+      return import('@/api/clients').then((m) => m.getClientSnapshots(client.id, range))
+    },
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  // Compute effective period start (natural start or manual reset, whichever is later)
+  const periodStart = (() => {
+    const now = new Date()
+    let natural: Date
+    if (client.quota_period === 'weekly') {
+      const day = now.getDay() === 0 ? 6 : now.getDay() - 1
+      const d = new Date(now); d.setDate(d.getDate() - day); d.setHours(0, 0, 0, 0)
+      natural = d
+    } else if (client.quota_period === 'total') {
+      natural = new Date(0)
+    } else {
+      natural = new Date(now.getFullYear(), now.getMonth(), 1)
+    }
+    if (client.quota_reset_at) {
+      const reset = new Date(client.quota_reset_at)
+      return reset > natural ? reset : natural
+    }
+    return natural
+  })()
+
+  const used = snapshots
+    .filter((s) => new Date(s.timestamp) >= periodStart)
+    .reduce((acc, s) => acc + s.bytes_rx + s.bytes_tx, 0)
+
+  const quota = client.data_quota_bytes
+  const pct = Math.min(100, Math.round((used / quota) * 100))
+  const color = pct >= 100 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-blue-500'
+
+  return (
+    <div className="mt-2.5 space-y-1">
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <DatabaseZap className="h-3 w-3" />
+          Quota ({client.quota_period})
+        </span>
+        <span>{formatBytes(used)} / {formatBytes(quota)} ({pct}%)</span>
+      </div>
+      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full transition-all ${color}`} style={{ width: `${pct}%` }} />
+      </div>
+    </div>
+  )
+}
+
+// ── Quota dialog ──────────────────────────────────────────────────────────────
+
+function QuotaDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
+  const [quotaGb, setQuotaGb] = useState(0)
+  const [period, setPeriod] = useState<'monthly' | 'weekly' | 'total'>('monthly')
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    if (open) {
+      setQuotaGb(client.data_quota_bytes > 0 ? Math.round(client.data_quota_bytes / 1e9 * 100) / 100 : 0)
+      setPeriod(client.quota_period ?? 'monthly')
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const mutation = useMutation({
+    mutationFn: () => updateClient(client.id, {
+      data_quota_bytes: Math.round(quotaGb * 1e9),
+      quota_period: period,
+    }),
+    onSuccess: () => { onOpenChange(false); onUpdated() },
+    onError: (e: unknown) => {
+      setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
+    },
+  })
+
+  const resetMut = useMutation({
+    mutationFn: () => resetClientQuota(client.id),
+    onSuccess: () => onUpdated(),
+  })
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Data quota — {client.name}</DialogTitle>
+          <DialogDescription>
+            Automatically suspend access when the limit is reached. 0 = unlimited.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="quota-gb">Data limit (GB)</Label>
+            <Input
+              id="quota-gb"
+              type="number"
+              min={0}
+              step={0.01}
+              value={quotaGb}
+              onChange={(e) => setQuotaGb(Math.max(0, Number(e.target.value)))}
+              placeholder="0"
+            />
+            <p className="text-xs text-muted-foreground">0 = no quota</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="quota-period">Reset period</Label>
+            <select
+              id="quota-period"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as typeof period)}
+            >
+              <option value="monthly">Monthly (resets 1st of month)</option>
+              <option value="weekly">Weekly (resets Monday)</option>
+              <option value="total">Total (never resets)</option>
+            </select>
+          </div>
+          {client.data_quota_bytes > 0 && (
+            <div className="rounded-md border border-border p-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Force reset usage</p>
+                <p className="text-xs text-muted-foreground">Resets counter now, re-enables client if suspended</p>
+              </div>
+              <Button size="sm" variant="outline" disabled={resetMut.isPending} onClick={() => resetMut.mutate()}>
+                {resetMut.isSuccess ? <><Check className="h-3.5 w-3.5 mr-1" />Done</> : resetMut.isPending ? 'Resetting…' : 'Reset'}
+              </Button>
+            </div>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? 'Applying…' : 'Apply'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function BandwidthDialog({ client, open, onOpenChange, onUpdated }: { client: Client; open: boolean; onOpenChange: (v: boolean) => void; onUpdated: () => void }) {
   const [down, setDown] = useState(0)
   const [up, setUp] = useState(0)
   const [error, setError] = useState('')
 
-  function openDialog() {
-    setDown(client.bandwidth_limit_down ?? 0)
-    setUp(client.bandwidth_limit_up ?? 0)
-    setError('')
-    setOpen(true)
-  }
+  useEffect(() => {
+    if (open) {
+      setDown(client.bandwidth_limit_down ?? 0)
+      setUp(client.bandwidth_limit_up ?? 0)
+      setError('')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   const mutation = useMutation({
     mutationFn: () => updateClient(client.id, {
       bandwidth_limit_down: down,
       bandwidth_limit_up: up,
     }),
-    onSuccess: () => { setOpen(false); onUpdated() },
+    onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
 
   return (
-    <>
-      <Button variant="ghost" size="icon" title="Bandwidth limit" onClick={openDialog}>
-        <Gauge className="h-4 w-4" />
-      </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-sm">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Bandwidth — {client.name}</DialogTitle>
             <DialogDescription>
@@ -623,14 +930,13 @@ function BandwidthDialog({ client, onUpdated }: { client: Client; onUpdated: () 
             {error && <p className="text-sm text-destructive">{error}</p>}
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
             <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
               {mutation.isPending ? 'Applying…' : 'Apply'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   )
 }
 

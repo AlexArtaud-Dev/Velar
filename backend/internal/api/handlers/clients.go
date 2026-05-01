@@ -194,9 +194,11 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		ExpiresAt      *time.Time `json:"expires_at"`
 		// ClearExpiresAt explicitly removes the expiry date.
 		// Needed because *time.Time cannot distinguish JSON null from "field omitted".
-		ClearExpiresAt     bool `json:"clear_expires_at"`
-		BandwidthLimitDown *int `json:"bandwidth_limit_down"` // Mbps; nil = no change, 0 = unlimited
-		BandwidthLimitUp   *int `json:"bandwidth_limit_up"`   // Mbps; nil = no change, 0 = unlimited
+		ClearExpiresAt     bool   `json:"clear_expires_at"`
+		BandwidthLimitDown *int   `json:"bandwidth_limit_down"` // Mbps; nil = no change, 0 = unlimited
+		BandwidthLimitUp   *int   `json:"bandwidth_limit_up"`   // Mbps; nil = no change, 0 = unlimited
+		DataQuotaBytes     *int64 `json:"data_quota_bytes"`     // bytes; nil = no change, 0 = unlimited
+		QuotaPeriod        string `json:"quota_period"`         // monthly | weekly | total
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -224,6 +226,15 @@ func (h *ClientHandler) Update(c *gin.Context) {
 	}
 	if req.BandwidthLimitUp != nil {
 		updates["bandwidth_limit_up"] = *req.BandwidthLimitUp
+	}
+	if req.DataQuotaBytes != nil {
+		updates["data_quota_bytes"] = *req.DataQuotaBytes
+		// Reset the warning flag when the quota changes so the new threshold triggers fresh
+		updates["quota_warned_at"] = nil
+	}
+	if req.QuotaPeriod != "" {
+		updates["quota_period"] = req.QuotaPeriod
+		updates["quota_warned_at"] = nil
 	}
 	database.DB.Model(&client).Updates(updates)
 	database.DB.Preload("Interface").First(&client, id)
@@ -270,6 +281,7 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	// block the client DELETE with a constraint violation (silent 200 with no effect).
 	database.DB.Where("client_id = ?", client.ID).Delete(&models.DownloadToken{})
 	database.DB.Where("client_id = ?", client.ID).Delete(&models.ConnectionEvent{})
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.PeerSnapshot{})
 
 	// Delete from DB BEFORE syncConf — syncConf rebuilds the conf from the DB, so
 	// deleting first ensures the peer is excluded from the generated config and
@@ -449,6 +461,142 @@ func (h *ClientHandler) GetEvents(c *gin.Context) {
 		Find(&events)
 
 	c.JSON(http.StatusOK, events)
+}
+
+// QuotaReset manually resets a client's data quota usage counter and re-enables
+// the client if it was suspended due to quota exhaustion.
+func (h *ClientHandler) QuotaReset(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	var client models.Client
+	if err := database.DB.Preload("Interface").First(&client, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
+		return
+	}
+
+	now := time.Now()
+	updates := map[string]interface{}{
+		"quota_reset_at":  &now,
+		"quota_warned_at": nil,
+	}
+
+	// Re-enable the client if it's currently disabled (likely by quota)
+	wasDisabled := !client.Enabled
+	if wasDisabled {
+		updates["enabled"] = true
+	}
+
+	if err := database.DB.Model(&client).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if wasDisabled {
+		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
+		h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32")
+		if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
+			bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp) //nolint:errcheck
+		}
+		h.syncConf(client.Interface)
+	}
+
+	slog.Info("quota reset", "client", client.Name)
+	c.JSON(http.StatusOK, gin.H{"message": "quota reset", "reset_at": now})
+}
+
+// ── Bulk operations ───────────────────────────────────────────────────────────
+
+type bulkRequest struct {
+	IDs []uint `json:"ids" binding:"required"`
+}
+
+func (h *ClientHandler) BulkEnable(c *gin.Context) {
+	var req bulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids required"})
+		return
+	}
+
+	var clients []models.Client
+	database.DB.Preload("Interface").Where("id IN ?", req.IDs).Find(&clients)
+
+	ifacesSynced := map[uint]models.Interface{}
+	for _, cl := range clients {
+		if cl.Enabled {
+			continue
+		}
+		psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
+		h.wg.AddPeer(cl.Interface.Name, cl.PublicKey, psk, cl.AssignedIP+"/32")
+		if !config.C.WGMock && (cl.BandwidthLimitDown > 0 || cl.BandwidthLimitUp > 0) {
+			bwsvc.Apply(cl.Interface.Name, cl.AssignedIP, cl.BandwidthLimitDown, cl.BandwidthLimitUp) //nolint:errcheck
+		}
+		database.DB.Model(&cl).Update("enabled", true)
+		ifacesSynced[cl.InterfaceID] = cl.Interface
+	}
+	for _, iface := range ifacesSynced {
+		h.syncConf(iface)
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
+}
+
+func (h *ClientHandler) BulkDisable(c *gin.Context) {
+	var req bulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids required"})
+		return
+	}
+
+	var clients []models.Client
+	database.DB.Preload("Interface").Where("id IN ?", req.IDs).Find(&clients)
+
+	ifacesSynced := map[uint]models.Interface{}
+	for _, cl := range clients {
+		if !cl.Enabled {
+			continue
+		}
+		h.wg.RemovePeer(cl.Interface.Name, cl.PublicKey)
+		if !config.C.WGMock {
+			bwsvc.Remove(cl.Interface.Name, cl.AssignedIP) //nolint:errcheck
+		}
+		database.DB.Model(&cl).Update("enabled", false)
+		ifacesSynced[cl.InterfaceID] = cl.Interface
+	}
+	for _, iface := range ifacesSynced {
+		h.syncConf(iface)
+	}
+	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
+}
+
+func (h *ClientHandler) BulkDelete(c *gin.Context) {
+	var req bulkRequest
+	if err := c.ShouldBindJSON(&req); err != nil || len(req.IDs) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ids required"})
+		return
+	}
+
+	var clients []models.Client
+	database.DB.Preload("Interface").Where("id IN ?", req.IDs).Find(&clients)
+
+	ifacesSynced := map[uint]models.Interface{}
+	for _, cl := range clients {
+		// Cascade-delete child records
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.DownloadToken{})
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.ConnectionEvent{})
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.PeerSnapshot{})
+
+		if err := database.DB.Delete(&cl).Error; err != nil {
+			slog.Error("bulk delete: db", "client", cl.Name, "err", err)
+			continue
+		}
+		h.wg.RemovePeer(cl.Interface.Name, cl.PublicKey)
+		if !config.C.WGMock {
+			bwsvc.Remove(cl.Interface.Name, cl.AssignedIP) //nolint:errcheck
+		}
+		ifacesSynced[cl.InterfaceID] = cl.Interface
+	}
+	for _, iface := range ifacesSynced {
+		h.syncConf(iface)
+	}
+	c.JSON(http.StatusOK, gin.H{"deleted": len(clients)})
 }
 
 func (h *ClientHandler) buildClientConf(c *gin.Context) (string, *models.Client, error) {

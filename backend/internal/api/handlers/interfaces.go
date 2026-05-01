@@ -338,6 +338,7 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 	for _, cl := range clients {
 		database.DB.Where("client_id = ?", cl.ID).Delete(&models.DownloadToken{})
 		database.DB.Where("client_id = ?", cl.ID).Delete(&models.ConnectionEvent{})
+		database.DB.Where("client_id = ?", cl.ID).Delete(&models.PeerSnapshot{})
 	}
 
 	if err := database.DB.Where("interface_id = ?", iface.ID).Delete(&models.Client{}).Error; err != nil {

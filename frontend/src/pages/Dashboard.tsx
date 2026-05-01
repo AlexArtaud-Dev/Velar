@@ -262,7 +262,7 @@ export default function Dashboard() {
                     {e.source_ip && (
                       <span className="font-mono text-muted-foreground shrink-0 hidden sm:inline">{e.source_ip}</span>
                     )}
-                    <span className="text-muted-foreground shrink-0">{timeAgo(new Date(e.timestamp).getTime())}</span>
+                    <span className="text-muted-foreground shrink-0">{timeAgo(new Date(e.timestamp).getTime() / 1000)}</span>
                   </div>
                 ))}
               </div>
