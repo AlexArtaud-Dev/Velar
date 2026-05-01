@@ -1,6 +1,8 @@
 package database
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"os"
@@ -61,6 +63,25 @@ func ValidateSQLite(path string) error {
 }
 
 func AutoMigrate() error {
+	// ── Pre-migration: ensure view_token column exists and has no blank values ──
+	// AutoMigrate will add a uniqueIndex on view_token. SQLite cannot create a
+	// unique index when multiple rows share the same value (empty string for
+	// pre-v0.9 clients). We therefore:
+	//  1. Add the column without the index if it is missing.
+	//  2. Backfill any empty/NULL values with unique random tokens.
+	// Then the full AutoMigrate (which adds the uniqueIndex) will succeed.
+	if DB.Migrator().HasColumn(&models.Client{}, "view_token") {
+		// Column exists — just backfill blanks.
+		backfillViewTokens()
+	} else {
+		// Column doesn't exist yet — add it plain (no index) so we can populate it.
+		if err := DB.Exec("ALTER TABLE clients ADD COLUMN view_token TEXT NOT NULL DEFAULT ''").Error; err != nil {
+			// Ignore "duplicate column" errors from concurrent starts.
+			slog.Warn("pre-migrate add view_token column", "err", err)
+		}
+		backfillViewTokens()
+	}
+
 	return DB.AutoMigrate(
 		&models.Admin{},
 		&models.RefreshToken{},
@@ -70,4 +91,23 @@ func AutoMigrate() error {
 		&models.ConnectionEvent{},
 		&models.PeerSnapshot{},
 	)
+}
+
+// backfillViewTokens assigns a unique random token to every client row that
+// has an empty or NULL view_token. Must be called before AutoMigrate adds the
+// uniqueIndex, otherwise the constraint creation fails on duplicate empties.
+func backfillViewTokens() {
+	type row struct {
+		ID uint
+	}
+	var rows []row
+	DB.Raw("SELECT id FROM clients WHERE view_token = '' OR view_token IS NULL").Scan(&rows)
+	for _, r := range rows {
+		b := make([]byte, 32)
+		_, _ = rand.Read(b)
+		DB.Exec("UPDATE clients SET view_token = ? WHERE id = ?", hex.EncodeToString(b), r.ID)
+	}
+	if len(rows) > 0 {
+		slog.Info("pre-migrate: backfilled view tokens", "count", len(rows))
+	}
 }
