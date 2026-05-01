@@ -281,6 +281,7 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	// block the client DELETE with a constraint violation (silent 200 with no effect).
 	database.DB.Where("client_id = ?", client.ID).Delete(&models.DownloadToken{})
 	database.DB.Where("client_id = ?", client.ID).Delete(&models.ConnectionEvent{})
+	database.DB.Where("client_id = ?", client.ID).Delete(&models.PeerSnapshot{})
 
 	// Delete from DB BEFORE syncConf — syncConf rebuilds the conf from the DB, so
 	// deleting first ensures the peer is excluded from the generated config and

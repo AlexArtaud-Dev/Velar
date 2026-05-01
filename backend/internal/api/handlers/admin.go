@@ -43,14 +43,11 @@ func (h *AdminHandler) SyncState(c *gin.Context) {
 	for _, iface := range ifaces {
 		report := ifaceSyncReport{Interface: iface.Name}
 
-		// ── 1. Gather live wg peers ──────────────────────────────────────────
+		// ── 1. Gather live wg peers (skip gracefully if interface is DOWN) ───
 		liveStats, err := h.wg.GetStats(iface.Name)
-		if err != nil {
-			msg := fmt.Sprintf("get stats: %v", err)
-			slog.Warn("sync: "+msg, "iface", iface.Name)
-			report.Errors = append(report.Errors, msg)
-			reports = append(reports, report)
-			continue
+		ifaceUp := err == nil
+		if !ifaceUp {
+			slog.Info("sync: interface is down, skipping peer reconciliation — will rewrite conf only", "iface", iface.Name)
 		}
 		livePeers := make(map[string]bool, len(liveStats))
 		for _, s := range liveStats {
@@ -65,31 +62,33 @@ func (h *AdminHandler) SyncState(c *gin.Context) {
 			dbPeers[cl.PublicKey] = cl
 		}
 
-		// ── 3. Remove peers in wg but absent from DB ─────────────────────────
-		for pubKey := range livePeers {
-			if _, inDB := dbPeers[pubKey]; !inDB {
-				if err := h.wg.RemovePeer(iface.Name, pubKey); err != nil {
-					msg := fmt.Sprintf("remove stale peer %s: %v", pubKey[:8], err)
-					slog.Warn("sync: "+msg, "iface", iface.Name)
-					report.Errors = append(report.Errors, msg)
-				} else {
-					report.PeersRemoved++
-					slog.Info("sync: removed stale peer", "iface", iface.Name, "pubkey", pubKey[:8])
+		// ── 3 & 4. Peer reconciliation — only when interface is UP ────────────
+		if ifaceUp {
+			// Remove peers in wg but absent from DB
+			for pubKey := range livePeers {
+				if _, inDB := dbPeers[pubKey]; !inDB {
+					if err := h.wg.RemovePeer(iface.Name, pubKey); err != nil {
+						msg := fmt.Sprintf("remove stale peer %s: %v", pubKey[:8], err)
+						slog.Warn("sync: "+msg, "iface", iface.Name)
+						report.Errors = append(report.Errors, msg)
+					} else {
+						report.PeersRemoved++
+						slog.Info("sync: removed stale peer", "iface", iface.Name, "pubkey", pubKey[:8])
+					}
 				}
 			}
-		}
-
-		// ── 4. Re-add DB peers missing from wg ───────────────────────────────
-		for pubKey, cl := range dbPeers {
-			if !livePeers[pubKey] {
-				psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
-				if err := h.wg.AddPeer(iface.Name, pubKey, psk, cl.AssignedIP+"/32"); err != nil {
-					msg := fmt.Sprintf("re-add missing peer %s: %v", cl.Name, err)
-					slog.Warn("sync: "+msg, "iface", iface.Name)
-					report.Errors = append(report.Errors, msg)
-				} else {
-					report.PeersAdded++
-					slog.Info("sync: re-added missing peer", "iface", iface.Name, "client", cl.Name)
+			// Re-add DB peers missing from wg
+			for pubKey, cl := range dbPeers {
+				if !livePeers[pubKey] {
+					psk, _ := auth.Decrypt(cl.PresharedKey, config.C.AppSecret)
+					if err := h.wg.AddPeer(iface.Name, pubKey, psk, cl.AssignedIP+"/32"); err != nil {
+						msg := fmt.Sprintf("re-add missing peer %s: %v", cl.Name, err)
+						slog.Warn("sync: "+msg, "iface", iface.Name)
+						report.Errors = append(report.Errors, msg)
+					} else {
+						report.PeersAdded++
+						slog.Info("sync: re-added missing peer", "iface", iface.Name, "client", cl.Name)
+					}
 				}
 			}
 		}
@@ -120,12 +119,18 @@ func (h *AdminHandler) SyncState(c *gin.Context) {
 			slog.Error("sync: "+msg, "iface", iface.Name)
 			report.Errors = append(report.Errors, msg)
 		} else {
-			path := fmt.Sprintf("%s/%s.conf", config.C.WGConfigDir, iface.Name)
-			if err := h.wg.SyncConf(iface.Name, path); err != nil {
-				msg := fmt.Sprintf("syncconf: %v", err)
-				slog.Error("sync: "+msg, "iface", iface.Name)
-				report.Errors = append(report.Errors, msg)
+			// Only call wg syncconf if the interface is actually up in the kernel
+			if ifaceUp {
+				path := fmt.Sprintf("%s/%s.conf", config.C.WGConfigDir, iface.Name)
+				if err := h.wg.SyncConf(iface.Name, path); err != nil {
+					msg := fmt.Sprintf("syncconf: %v", err)
+					slog.Error("sync: "+msg, "iface", iface.Name)
+					report.Errors = append(report.Errors, msg)
+				} else {
+					report.ConfSynced = true
+				}
 			} else {
+				// Conf file rewritten — will be applied on next wg-quick up
 				report.ConfSynced = true
 			}
 		}
