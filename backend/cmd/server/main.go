@@ -8,6 +8,9 @@ import (
 	"os/exec"
 	"time"
 
+	"crypto/rand"
+	"encoding/hex"
+
 	"github.com/AlexArtaud-Dev/velar/backend/internal/api"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/api/handlers"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
@@ -44,6 +47,9 @@ func main() {
 
 	// Seed admin if none exists
 	seedAdmin()
+
+	// Backfill view tokens for clients created before v0.9
+	backfillViewTokens()
 
 	// System setup (best effort — requires NET_ADMIN)
 	if !config.C.WGMock {
@@ -206,6 +212,22 @@ func quotaRestorePeriodStart(period string) time.Time {
 		return time.Time{}
 	default: // monthly
 		return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	}
+}
+
+// backfillViewTokens generates portal view tokens for any clients that were
+// created before v0.9 and therefore have an empty ViewToken field.
+func backfillViewTokens() {
+	var clients []models.Client
+	database.DB.Where("view_token = '' OR view_token IS NULL").Find(&clients)
+	for _, cl := range clients {
+		b := make([]byte, 32)
+		_, _ = rand.Read(b)
+		token := hex.EncodeToString(b)
+		database.DB.Model(&cl).Update("view_token", token)
+	}
+	if len(clients) > 0 {
+		slog.Info("backfilled view tokens", "count", len(clients))
 	}
 }
 

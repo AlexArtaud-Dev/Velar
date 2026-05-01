@@ -107,6 +107,17 @@ func divider() string {
 	return `<div style="height:1px;background:#334155;margin:24px 0;"></div>`
 }
 
+// portalSection renders a subtle "view your status" link for client emails.
+// When portalURL is empty the section is omitted entirely.
+func portalSection(portalURL string) string {
+	if portalURL == "" {
+		return ""
+	}
+	return fmt.Sprintf(`<p style="margin:20px 0 0;text-align:center;">
+  <a href="%s" style="color:#6366f1;font-size:13px;text-decoration:none;">&#x1F4CA;&nbsp; View your VPN status anytime &rarr;</a>
+</p>`, portalURL)
+}
+
 // stepsList renders a numbered list of instruction strings.
 func stepsList(steps []string) string {
 	rows := ""

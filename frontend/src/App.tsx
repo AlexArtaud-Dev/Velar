@@ -10,6 +10,7 @@ import Interfaces from '@/pages/Interfaces'
 import Clients from '@/pages/Clients'
 import Settings from '@/pages/Settings'
 import ForceChangePassword from '@/components/ForceChangePassword'
+import ClientPortal from '@/pages/ClientPortal'
 
 /**
  * Handles the silent token refresh on page load.
@@ -72,6 +73,7 @@ export default function App() {
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>
+          <Route path="/portal/:token" element={<ClientPortal />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         {isAuthenticated && admin?.must_change_password && <ForceChangePassword />}

@@ -1,10 +1,13 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
@@ -17,6 +20,22 @@ import (
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 	"github.com/gin-gonic/gin"
 )
+
+// generateViewToken creates a cryptographically random 32-byte hex token
+// used for the read-only client portal URL.
+func generateViewToken() string {
+	b := make([]byte, 32)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
+}
+
+// buildPortalURL constructs the public portal URL for a client view token.
+func buildPortalURL(viewToken string) string {
+	if base := config.C.AppURL; base != "" {
+		return strings.TrimRight(base, "/") + "/portal/" + viewToken
+	}
+	return "/portal/" + viewToken
+}
 
 // quotaRemaining computes how many bytes a client has left in the current quota
 // period by summing PeerSnapshot rows since the period start. The result is
@@ -146,6 +165,7 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		BandwidthLimitUp:   req.BandwidthLimitUp,
 		Enabled:            true,
 		ExpiresAt:          req.ExpiresAt,
+		ViewToken:          generateViewToken(),
 	}
 	if err := database.DB.Create(&client).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -187,7 +207,7 @@ func (h *ClientHandler) Create(c *gin.Context) {
 			mailer.SendHTMLTo(
 				client.Email,
 				fmt.Sprintf("Your VPN access is ready: %s", client.Name),
-				mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken)),
+				mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken), buildPortalURL(client.ViewToken)),
 			)
 		} else {
 			slog.Warn("create client: generate download token for email", "client", client.Name, "err", err)

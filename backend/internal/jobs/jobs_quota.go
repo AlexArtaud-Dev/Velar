@@ -4,14 +4,28 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"strings"
 	"time"
 
+	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 )
+
+// portalURL returns the public portal URL for a client, or empty string when
+// the client has no view token yet (pre-v0.9 backfill hasn't run).
+func portalURL(cl models.Client) string {
+	if cl.ViewToken == "" {
+		return ""
+	}
+	if base := config.C.AppURL; base != "" {
+		return strings.TrimRight(base, "/") + "/portal/" + cl.ViewToken
+	}
+	return ""
+}
 
 // peerLive holds the live cumulative WireGuard byte counters for a single peer.
 type peerLive struct{ rx, tx int64 }
@@ -104,7 +118,7 @@ func checkQuotas(wg wgsvc.Service, nft nftquota.Service) {
 				if cl.Email != "" {
 					mailer.SendHTMLTo(cl.Email,
 						fmt.Sprintf("VPN access suspended: data quota exceeded — %s", cl.Name),
-						mailer.HTMLClientQuotaExceeded(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod),
+						mailer.HTMLClientQuotaExceeded(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod, portalURL(cl)),
 					)
 				}
 				continue
@@ -132,7 +146,7 @@ func checkQuotas(wg wgsvc.Service, nft nftquota.Service) {
 				if cl.Email != "" {
 					mailer.SendHTMLTo(cl.Email,
 						fmt.Sprintf("VPN data quota warning — %s", cl.Name),
-						mailer.HTMLClientQuotaWarning(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod),
+						mailer.HTMLClientQuotaWarning(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod, portalURL(cl)),
 					)
 				}
 			}

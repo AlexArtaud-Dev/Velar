@@ -44,6 +44,9 @@ func NewRouter(
 	// Public download endpoint
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
 
+	// Public client portal — no auth required (token acts as the credential)
+	r.GET("/public/client/:token", handlers.GetClientPortal)
+
 	// WebSocket (JWT checked inside handler)
 	r.GET("/ws/stats", handlers.WSHandler(hub))
 
