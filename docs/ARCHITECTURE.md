@@ -45,11 +45,12 @@ backend/
 ├── cmd/server/          Main entrypoint, router setup
 ├── internal/
 │   ├── api/
-│   │   ├── handlers/    HTTP handlers (clients, interfaces, auth, settings…)
+│   │   ├── handlers/    HTTP handlers (clients, interfaces, auth, settings, backup…)
 │   │   └── middleware/  JWT auth, rate limiting
 │   ├── auth/            JWT generation/validation, AES-256-GCM encryption, bcrypt
 │   ├── config/          Environment variable loading (godotenv)
 │   ├── database/        GORM init, AutoMigrate
+│   ├── jobs/            Background jobs (quota enforcement, peer snapshots, expiry checks)
 │   ├── models/          GORM models (Interface, Client, Admin, …)
 │   └── services/
 │       ├── bandwidth/   Linux tc wrapper (HTB egress + ingress police)
@@ -121,9 +122,22 @@ SQLite with WAL journal mode and foreign key enforcement. GORM `AutoMigrate` run
 | `Admin` | Single admin account with TOTP support |
 | `RefreshToken` | Hashed refresh tokens with expiry |
 | `Interface` | WireGuard interface config |
-| `Client` | VPN peer with keys, IPs, bandwidth limits |
+| `Client` | VPN peer with keys, IPs, bandwidth limits, data quota |
 | `DownloadToken` | One-time config download tokens |
-| `ConnectionEvent` | Peer connect/disconnect history (reserved) |
+| `ConnectionEvent` | Peer connect/disconnect history |
+| `PeerSnapshot` | Periodic traffic snapshots used for quota enforcement and history charts |
+
+---
+
+## Backup & Restore
+
+`GET /api/v1/admin/backup` serializes all interfaces and clients to a versioned JSON file. WireGuard keys are **never included** in the export — they are security-sensitive and cannot be safely transported.
+
+`POST /api/v1/admin/restore` imports a backup file. For each interface and client, fresh WireGuard keypairs and preshared keys are generated, encrypted, and stored. Clients that have an email address are automatically notified with a one-time download link so they can fetch their new config.
+
+The optional `?wipe=true` query parameter deletes all existing interfaces, clients, and related records (in FK-safe order) before importing. The admin account and refresh tokens are never touched.
+
+Backup format is versioned (`"version": "2"`). Attempting to restore an older format returns a `400` with a clear error message.
 
 ---
 

@@ -75,9 +75,15 @@ Enable **local network access** per interface with one click. Velar detects your
 - Thin themed scrollbar, smooth transitions, shadcn/ui component system
 - Live connection indicator in the nav
 
+### 📦 Data Quotas
+Set a **monthly, weekly, or total data cap** per client. Velar automatically suspends the peer when the limit is hit and sends warning emails at 80% and on suspension. Force-reset usage at any time from the dashboard.
+
+### ✅ Bulk Client Operations
+Select multiple clients and **enable, disable, or delete** them in one action — no clicking through each card individually.
+
 ### 🗄️ Ops-Friendly
 - **SQLite** — single file, zero infrastructure, easy backup
-- One-click **database backup** download from the UI
+- **Backup & Restore** — export all interfaces and clients as a JSON file; restore onto any Velar instance. Keys are never exported — fresh WireGuard keypairs are generated on restore and clients are notified by email automatically.
 - Subnet editing with automatic **client IP re-allocation** (preserves host offset)
 - `WG_MOCK=true` mode for development without root/WireGuard
 
