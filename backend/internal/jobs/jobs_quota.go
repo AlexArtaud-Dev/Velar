@@ -13,6 +13,9 @@ import (
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 )
 
+// peerLive holds the live cumulative WireGuard byte counters for a single peer.
+type peerLive struct{ rx, tx int64 }
+
 // checkQuotas runs every 15 seconds and enforces per-client data quotas.
 //
 // With nftables enforcement the kernel drops packets the instant the budget is
@@ -33,7 +36,6 @@ func checkQuotas(wg wgsvc.Service, nft nftquota.Service) {
 
 	// Pre-load live WireGuard stats per interface — one GetStats call per
 	// interface rather than one per client.
-	type peerLive struct{ rx, tx int64 }
 	ifaceLive := make(map[string]map[string]peerLive) // iface → pubkey → bytes
 	seenIfaces := make(map[string]bool)
 	for _, cl := range clients {
