@@ -18,7 +18,7 @@ import {
   listClients, createClient, updateClient, deleteClient, enableClient, disableClient,
   getClientQR, getClientConfigText, createDownloadLink, sendConfigEmail,
   getClientSnapshots, getClientEvents,
-  bulkEnableClients, bulkDisableClients, bulkDeleteClients,
+  bulkEnableClients, bulkDisableClients, bulkDeleteClients, resetClientQuota,
   type CreateClientPayload, type Client,
 } from '@/api/clients'
 import {
@@ -437,14 +437,16 @@ function DownloadLinkButton({ clientId, open, onOpenChange }: { clientId: number
     onSuccess: (data) => setUrl(`${window.location.origin}${data.url}`),
   })
 
-  function handleOpen(v: boolean) {
-    onOpenChange(v)
-    if (v && !url) mut.mutate()
-    if (!v) setUrl(null)
-  }
+  useEffect(() => {
+    if (open) {
+      setUrl(null)
+      mut.mutate()
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 
   return (
-    <Dialog open={open} onOpenChange={handleOpen}>
+    <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>One-time download link</DialogTitle>
@@ -717,17 +719,24 @@ function QuotaBar({ client }: { client: Client }) {
     staleTime: 30_000,
   })
 
-  // For monthly/weekly, filter client-side to the current period start
+  // Compute effective period start (natural start or manual reset, whichever is later)
   const periodStart = (() => {
     const now = new Date()
+    let natural: Date
     if (client.quota_period === 'weekly') {
-      const day = now.getDay() === 0 ? 6 : now.getDay() - 1 // Mon=0
+      const day = now.getDay() === 0 ? 6 : now.getDay() - 1
       const d = new Date(now); d.setDate(d.getDate() - day); d.setHours(0, 0, 0, 0)
-      return d
+      natural = d
+    } else if (client.quota_period === 'total') {
+      natural = new Date(0)
+    } else {
+      natural = new Date(now.getFullYear(), now.getMonth(), 1)
     }
-    if (client.quota_period === 'total') return new Date(0)
-    // monthly
-    return new Date(now.getFullYear(), now.getMonth(), 1)
+    if (client.quota_reset_at) {
+      const reset = new Date(client.quota_reset_at)
+      return reset > natural ? reset : natural
+    }
+    return natural
   })()
 
   const used = snapshots
@@ -781,52 +790,68 @@ function QuotaDialog({ client, open, onOpenChange, onUpdated }: { client: Client
     },
   })
 
+  const resetMut = useMutation({
+    mutationFn: () => resetClientQuota(client.id),
+    onSuccess: () => onUpdated(),
+  })
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Data quota — {client.name}</DialogTitle>
-            <DialogDescription>
-              Automatically suspend access when the limit is reached. 0 = unlimited.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="quota-gb">Data limit (GB)</Label>
-              <Input
-                id="quota-gb"
-                type="number"
-                min={0}
-                step={0.01}
-                value={quotaGb}
-                onChange={(e) => setQuotaGb(Math.max(0, Number(e.target.value)))}
-                placeholder="0"
-              />
-              <p className="text-xs text-muted-foreground">0 = no quota</p>
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="quota-period">Reset period</Label>
-              <select
-                id="quota-period"
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-                value={period}
-                onChange={(e) => setPeriod(e.target.value as typeof period)}
-              >
-                <option value="monthly">Monthly (resets 1st of month)</option>
-                <option value="weekly">Weekly (resets Monday)</option>
-                <option value="total">Total (never resets)</option>
-              </select>
-            </div>
-            {error && <p className="text-sm text-destructive">{error}</p>}
+        <DialogHeader>
+          <DialogTitle>Data quota — {client.name}</DialogTitle>
+          <DialogDescription>
+            Automatically suspend access when the limit is reached. 0 = unlimited.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="quota-gb">Data limit (GB)</Label>
+            <Input
+              id="quota-gb"
+              type="number"
+              min={0}
+              step={0.01}
+              value={quotaGb}
+              onChange={(e) => setQuotaGb(Math.max(0, Number(e.target.value)))}
+              placeholder="0"
+            />
+            <p className="text-xs text-muted-foreground">0 = no quota</p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
-              {mutation.isPending ? 'Applying…' : 'Apply'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <div className="space-y-1.5">
+            <Label htmlFor="quota-period">Reset period</Label>
+            <select
+              id="quota-period"
+              className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              value={period}
+              onChange={(e) => setPeriod(e.target.value as typeof period)}
+            >
+              <option value="monthly">Monthly (resets 1st of month)</option>
+              <option value="weekly">Weekly (resets Monday)</option>
+              <option value="total">Total (never resets)</option>
+            </select>
+          </div>
+          {client.data_quota_bytes > 0 && (
+            <div className="rounded-md border border-border p-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium">Force reset usage</p>
+                <p className="text-xs text-muted-foreground">Resets counter now, re-enables client if suspended</p>
+              </div>
+              <Button size="sm" variant="outline" disabled={resetMut.isPending} onClick={() => resetMut.mutate()}>
+                {resetMut.isSuccess ? <><Check className="h-3.5 w-3.5 mr-1" />Done</> : resetMut.isPending ? 'Resetting…' : 'Reset'}
+              </Button>
+            </div>
+          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+            {mutation.isPending ? 'Applying…' : 'Apply'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

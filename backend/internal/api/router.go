@@ -93,6 +93,7 @@ func NewRouter(
 			clients.GET("/:id/qr", clientHandler.GetQR)
 			clients.POST("/:id/download-link", clientHandler.CreateDownloadLink)
 			clients.POST("/:id/send-config", clientHandler.SendConfig)
+			clients.POST("/:id/quota-reset", clientHandler.QuotaReset)
 			// Bulk operations
 			clients.POST("/bulk/enable", clientHandler.BulkEnable)
 			clients.POST("/bulk/disable", clientHandler.BulkDisable)

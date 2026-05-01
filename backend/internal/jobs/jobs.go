@@ -68,8 +68,8 @@ func Start(wg wgsvc.Service, ddnsSvc *ddns.Service) {
 	// Purge old snapshots and events every hour
 	c.AddFunc("@every 1h", purgeOldData)
 
-	// Check data quotas every minute
-	c.AddFunc("@every 1m", func() { checkQuotas(wg) })
+	// Check data quotas every 15 seconds (uses live wg stats + DB snapshots)
+	c.AddFunc("@every 15s", func() { checkQuotas(wg) })
 
 	c.Start()
 	slog.Info("background jobs started")
@@ -450,6 +450,10 @@ func checkQuotas(wg wgsvc.Service) {
 
 	for _, cl := range clients {
 		periodStart := quotaPeriodStart(cl.QuotaPeriod)
+		// A manual reset overrides the natural period start
+		if cl.QuotaResetAt != nil && cl.QuotaResetAt.After(periodStart) {
+			periodStart = *cl.QuotaResetAt
+		}
 
 		var result struct{ Total int64 }
 		q := database.DB.Model(&models.PeerSnapshot{}).

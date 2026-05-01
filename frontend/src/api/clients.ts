@@ -14,6 +14,7 @@ export interface Client {
   data_quota_bytes: number     // bytes, 0 = unlimited
   quota_period: 'monthly' | 'weekly' | 'total'
   quota_warned_at: string | null
+  quota_reset_at: string | null
   enabled: boolean
   expires_at: string | null
   last_handshake: string | null
@@ -103,6 +104,9 @@ export const getClientSnapshots = (id: number, range: '1h' | '24h' | '7d' = '24h
 
 export const getClientEvents = (id: number) =>
   api.get<ConnectionEvent[]>(`/clients/${id}/events`).then((r) => r.data)
+
+export const resetClientQuota = (id: number) =>
+  api.post(`/clients/${id}/quota-reset`).then((r) => r.data)
 
 export const bulkEnableClients = (ids: number[]) =>
   api.post('/clients/bulk/enable', { ids }).then((r) => r.data)
