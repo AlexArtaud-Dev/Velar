@@ -59,7 +59,7 @@ type Client struct {
 	QuotaWarnedAt   *time.Time `json:"quota_warned_at"`
 	QuotaResetAt    *time.Time `json:"quota_reset_at"`    // manual reset shifts effective period start
 	QuotaSuspended  bool       `gorm:"default:false" json:"quota_suspended"` // true when disabled automatically by the quota job
-	ViewToken       string     `gorm:"uniqueIndex;default:''" json:"-"`       // read-only client portal token
+	ViewToken       string     `gorm:"uniqueIndex;default:''" json:"view_token"` // read-only client portal token
 	Enabled         bool       `gorm:"default:true" json:"enabled"`
 	ExpiresAt     *time.Time `json:"expires_at"`
 	LastHandshake *time.Time `json:"last_handshake"`

@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, ToggleLeft, ToggleRight, Clock, Gauge, ArrowDown, ArrowUp } from 'lucide-react'
+import { useState } from 'react'
+import { Trash2, ToggleLeft, ToggleRight, Clock, Gauge, ArrowDown, ArrowUp, Link, Check } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -37,6 +38,15 @@ export function ClientCard({
   anySelected,
 }: ClientCardProps) {
   const qc = useQueryClient()
+  const [copied, setCopied] = useState(false)
+
+  function copyPortalLink() {
+    const url = `${window.location.origin}/portal/${client.view_token}`
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   function invalidate() {
     qc.invalidateQueries({ queryKey: ['clients'] })
@@ -127,6 +137,16 @@ export function ClientCard({
           </div>
 
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              title="Copy portal link"
+              onClick={copyPortalLink}
+            >
+              {copied
+                ? <Check className="h-4 w-4 text-green-500" />
+                : <Link className="h-4 w-4 text-muted-foreground" />}
+            </Button>
             <ClientActionsMenu client={client} onUpdated={invalidate} />
             <Button
               variant="ghost"
