@@ -34,3 +34,22 @@ export interface SyncResult {
 export const syncWireGuardState = () =>
   api.post<SyncResult>('/admin/sync').then((r) => r.data)
 
+export interface RestoreReport {
+  interfaces_created: number
+  clients_created: number
+  errors: string[]
+}
+
+export const exportBackup = (): Promise<Blob> =>
+  api.get('/admin/backup', { responseType: 'blob' }).then((r) => r.data as Blob)
+
+export const restoreBackup = (file: File, wipe: boolean): Promise<RestoreReport> => {
+  const form = new FormData()
+  form.append('backup', file)
+  return api
+    .post<RestoreReport>(`/admin/restore?wipe=${wipe}`, form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    .then((r) => r.data)
+}
+

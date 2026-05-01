@@ -1,6 +1,6 @@
-import { useState } from 'react'
-import { useQuery, useMutation } from '@tanstack/react-query'
-import { Shield, Globe, Key, Lock, Bell, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react'
+import { useState, useRef } from 'react'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Shield, Globe, Key, Lock, Bell, RefreshCw, CheckCircle2, AlertCircle, Download, Upload, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
-import { getPublicIP, getAdguardStatus, getNotificationStatus, syncWireGuardState, type SyncResult } from '@/api/settings'
+import { getPublicIP, getAdguardStatus, getNotificationStatus, syncWireGuardState, exportBackup, restoreBackup, type SyncResult, type RestoreReport } from '@/api/settings'
 import { totpSetup, totpActivate, totpDisable, changePassword } from '@/api/auth'
 import { useAuthStore } from '@/stores/auth'
 
@@ -122,7 +122,193 @@ export default function Settings() {
       {/* WireGuard state sync */}
       <SyncCard />
 
+      {/* Backup / Restore */}
+      <BackupCard />
+
     </div>
+  )
+}
+
+function BackupCard() {
+  const queryClient = useQueryClient()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [wipe, setWipe] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [pendingFile, setPendingFile] = useState<File | null>(null)
+  const [restoreResult, setRestoreResult] = useState<RestoreReport | null>(null)
+
+  const exportMut = useMutation({
+    mutationFn: exportBackup,
+    onSuccess: (blob) => {
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `velar-backup-${new Date().toISOString().slice(0, 10)}.json`
+      a.click()
+      URL.revokeObjectURL(url)
+    },
+  })
+
+  const restoreMut = useMutation({
+    mutationFn: ({ file, doWipe }: { file: File; doWipe: boolean }) => restoreBackup(file, doWipe),
+    onSuccess: (data) => {
+      setRestoreResult(data)
+      setConfirmOpen(false)
+      setPendingFile(null)
+      setWipe(false)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+      queryClient.invalidateQueries()
+    },
+  })
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPendingFile(file)
+    setRestoreResult(null)
+    setConfirmOpen(true)
+  }
+
+  function handleConfirmRestore() {
+    if (!pendingFile) return
+    restoreMut.mutate({ file: pendingFile, doWipe: wipe })
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Download className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-base">Backup &amp; Restore</CardTitle>
+        </div>
+        <CardDescription>
+          Export all interfaces and clients as an encrypted JSON file. Restore on any Velar instance
+          with the same <code className="text-xs">APP_SECRET</code>.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Export */}
+        <div className="flex items-center gap-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => exportMut.mutate()}
+            disabled={exportMut.isPending}
+          >
+            <Download className="h-4 w-4" />
+            {exportMut.isPending ? 'Exporting…' : 'Export backup'}
+          </Button>
+          {exportMut.isSuccess && (
+            <span className="text-xs text-green-500 flex items-center gap-1">
+              <CheckCircle2 className="h-3.5 w-3.5" /> Downloaded
+            </span>
+          )}
+          {exportMut.isError && (
+            <span className="text-xs text-destructive">Export failed</span>
+          )}
+        </div>
+
+        <div className="border-t border-border pt-4 space-y-3">
+          <p className="text-sm font-medium">Restore from backup</p>
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Upload className="h-4 w-4" />
+            Choose backup file…
+          </Button>
+
+          {/* Confirm restore dialog */}
+          <Dialog open={confirmOpen} onOpenChange={(v) => { setConfirmOpen(v); if (!v) { setPendingFile(null); if (fileInputRef.current) fileInputRef.current.value = '' } }}>
+            <DialogContent className="max-w-sm">
+              <DialogHeader>
+                <DialogTitle>Restore backup</DialogTitle>
+                <DialogDescription>
+                  {pendingFile && (
+                    <span>File: <span className="font-mono text-foreground">{pendingFile.name}</span></span>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4 py-1">
+                <div className="flex items-start gap-3 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+                  <input
+                    id="wipe-check"
+                    type="checkbox"
+                    checked={wipe}
+                    onChange={(e) => setWipe(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 cursor-pointer accent-destructive"
+                  />
+                  <label htmlFor="wipe-check" className="text-sm cursor-pointer space-y-0.5">
+                    <div className="flex items-center gap-1.5 font-medium text-destructive">
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Wipe existing data before restore
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Deletes all current interfaces and clients (except admin account) before importing.
+                    </p>
+                  </label>
+                </div>
+
+                {restoreMut.isError && (
+                  <p className="text-sm text-destructive">
+                    Restore failed:{' '}
+                    {(restoreMut.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Unknown error'}
+                  </p>
+                )}
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setConfirmOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={handleConfirmRestore}
+                  disabled={restoreMut.isPending}
+                  variant={wipe ? 'destructive' : 'default'}
+                >
+                  {restoreMut.isPending ? 'Restoring…' : wipe ? 'Wipe & Restore' : 'Restore'}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Restore result */}
+          {restoreResult && (
+            <div className="rounded-md border border-border bg-muted/40 px-3 py-2.5 text-xs space-y-1.5">
+              <div className="flex items-center gap-2 font-medium">
+                {restoreResult.errors.length === 0
+                  ? <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+                  : <AlertCircle className="h-3.5 w-3.5 text-yellow-500" />}
+                Restore complete
+              </div>
+              <p className="text-muted-foreground">
+                {restoreResult.interfaces_created} interface{restoreResult.interfaces_created !== 1 ? 's' : ''} ·{' '}
+                {restoreResult.clients_created} client{restoreResult.clients_created !== 1 ? 's' : ''} imported
+              </p>
+              {restoreResult.errors.length > 0 && (
+                <div className="space-y-0.5">
+                  {restoreResult.errors.map((e, i) => (
+                    <p key={i} className="text-destructive">{e}</p>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

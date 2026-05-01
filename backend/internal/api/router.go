@@ -111,9 +111,12 @@ func NewRouter(
 
 		// Admin operations
 		adminHandler := handlers.NewAdminHandler(wg)
+		backupHandler := handlers.NewBackupHandler(wg)
 		admin := api.Group("/admin")
 		{
 			admin.POST("/sync", adminHandler.SyncState)
+			admin.GET("/backup", backupHandler.Export)
+			admin.POST("/restore", backupHandler.Restore)
 		}
 
 		// Dashboard
