@@ -15,6 +15,7 @@ export interface Client {
   quota_period: 'monthly' | 'weekly' | 'total'
   quota_warned_at: string | null
   quota_reset_at: string | null
+  quota_suspended: boolean
   enabled: boolean
   expires_at: string | null
   last_handshake: string | null
@@ -107,6 +108,16 @@ export const getClientEvents = (id: number) =>
 
 export const resetClientQuota = (id: number) =>
   api.post(`/clients/${id}/quota-reset`).then((r) => r.data)
+
+export interface QuotaUsage {
+  used: number         // bytes used in the current period
+  quota: number        // bytes quota (0 = unlimited)
+  period: string       // monthly | weekly | total
+  period_start: string // ISO timestamp of period start
+}
+
+export const getClientQuotaUsage = (id: number) =>
+  api.get<QuotaUsage>(`/clients/${id}/quota-usage`).then((r) => r.data)
 
 export const bulkEnableClients = (ids: number[]) =>
   api.post('/clients/bulk/enable', { ids }).then((r) => r.data)
