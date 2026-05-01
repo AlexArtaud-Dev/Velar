@@ -1,17 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useParams } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
+import { ArrowLeft } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { ClientCard } from '@/components/clients/ClientCard'
 import { BulkBar } from '@/components/clients/BulkBar'
 import { CreateClientDialog } from '@/components/clients/CreateClientDialog'
+import { Button } from '@/components/ui/button'
 
 /** Clients page — lists all clients (optionally filtered by interface). */
 export default function Clients() {
   const { id: ifaceIdParam } = useParams<{ id: string }>()
   const ifaceId = ifaceIdParam ? Number(ifaceIdParam) : undefined
+  const navigate = useNavigate()
 
   const qc = useQueryClient()
   const { data: clients = [], isLoading } = useQuery<Client[]>({
@@ -65,9 +68,22 @@ export default function Clients() {
   return (
     <div className="p-4 sm:p-6 space-y-6">
       <div className="flex items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold">Clients</h1>
-          <p className="text-muted-foreground text-sm mt-1">{title}</p>
+        <div className="flex items-center gap-3">
+          {ifaceId && (
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => navigate('/interfaces')}
+              className="shrink-0"
+              title="Back to interfaces"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+          )}
+          <div>
+            <h1 className="text-2xl font-bold">Clients</h1>
+            <p className="text-muted-foreground text-sm mt-1">{title}</p>
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <CreateClientDialog
