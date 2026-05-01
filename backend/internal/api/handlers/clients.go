@@ -11,19 +11,21 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 )
 
 // ClientHandler handles all /clients API routes.
-// It holds a reference to the WireGuard service so that peer changes can be
-// applied immediately without waiting for the next sync cycle.
+// It holds references to the WireGuard and nftables-quota services so that
+// peer and quota changes are applied immediately without waiting for jobs.
 type ClientHandler struct {
-	wg wgsvc.Service
+	wg  wgsvc.Service
+	nft nftquota.Service
 }
 
-// NewClientHandler creates a ClientHandler backed by the given WireGuard service.
-func NewClientHandler(wg wgsvc.Service) *ClientHandler {
-	return &ClientHandler{wg: wg}
+// NewClientHandler creates a ClientHandler backed by the given services.
+func NewClientHandler(wg wgsvc.Service, nft nftquota.Service) *ClientHandler {
+	return &ClientHandler{wg: wg, nft: nft}
 }
 
 // buildDownloadURL constructs a full one-time download URL from a raw token.

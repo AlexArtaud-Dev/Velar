@@ -39,15 +39,25 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	if enabled {
 		psk, _ := auth.Decrypt(client.PresharedKey, config.C.AppSecret)
 		h.wg.AddPeer(client.Interface.Name, client.PublicKey, psk, client.AssignedIP+"/32") //nolint:errcheck
-		if !config.C.WGMock && (client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0) {
-			if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
-				slog.Warn("enable client: apply bandwidth limit", "client", client.Name, "err", err)
+		if !config.C.WGMock {
+			if client.BandwidthLimitDown > 0 || client.BandwidthLimitUp > 0 {
+				if err := bwsvc.Apply(client.Interface.Name, client.AssignedIP, client.BandwidthLimitDown, client.BandwidthLimitUp); err != nil {
+					slog.Warn("enable client: apply bandwidth limit", "client", client.Name, "err", err)
+				}
+			}
+			if client.DataQuotaBytes > 0 {
+				if err := h.nft.Apply(client.AssignedIP, quotaRemaining(client)); err != nil {
+					slog.Warn("enable client: apply nft quota", "client", client.Name, "err", err)
+				}
 			}
 		}
 	} else {
 		h.wg.RemovePeer(client.Interface.Name, client.PublicKey) //nolint:errcheck
 		if !config.C.WGMock {
 			bwsvc.Remove(client.Interface.Name, client.AssignedIP) //nolint:errcheck
+			if client.DataQuotaBytes > 0 {
+				h.nft.Remove(client.AssignedIP) //nolint:errcheck
+			}
 		}
 	}
 

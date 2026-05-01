@@ -9,21 +9,21 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
+	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
 )
 
 // checkQuotas runs every 15 seconds and enforces per-client data quotas.
-// At 80% usage it sends a single warning email per period.
-// At 100% it removes the peer from WireGuard and disables the client in the DB.
 //
-// Usage is computed as:
+// With nftables enforcement the kernel drops packets the instant the budget is
+// exhausted — no overshoot. This job's role is therefore:
 //
-//	SUM(peer_snapshots) for the current period
-//	+ unsnapshotted live delta (currentWGBytes − lastSnapshotBaseline)
-//
-// Including the live delta prevents a fast client from overshooting the quota
-// by a full snapshot interval (up to 60 s) before enforcement fires.
-func checkQuotas(wg wgsvc.Service) {
+//  1. Detect period rollovers and reset nftables counters to the full quota.
+//  2. Detect when nftables reports a quota as exceeded, update the DB flag, and
+//     send alert emails (the peer is removed from WireGuard for clean state).
+//  3. Send a single 80 % warning email per period (still DB-based — accurate
+//     historical count independent of the nftables counter).
+func checkQuotas(wg wgsvc.Service, nft nftquota.Service) {
 	var clients []models.Client
 	if err := database.DB.Preload("Interface").
 		Where("enabled = true AND data_quota_bytes > 0").
@@ -58,69 +58,63 @@ func checkQuotas(wg wgsvc.Service) {
 			periodStart = *cl.QuotaResetAt
 		}
 
-		var result struct{ Total int64 }
-		q := database.DB.Model(&models.PeerSnapshot{}).
-			Select("COALESCE(SUM(bytes_rx + bytes_tx), 0) as total").
-			Where("client_id = ?", cl.ID)
-		if !periodStart.IsZero() {
-			q = q.Where("timestamp >= ?", periodStart)
+		// ── Period rollover detection ─────────────────────────────────────────
+		// When the natural period boundary just passed (within the last 30 s),
+		// reset the nftables counter so the client gets a fresh full budget.
+		// Only relevant for monthly/weekly periods; "total" has no rollover.
+		if cl.QuotaPeriod != "total" && !periodStart.IsZero() && time.Since(periodStart) < 30*time.Second {
+			if err := nft.Reset(cl.AssignedIP, cl.DataQuotaBytes); err != nil {
+				slog.Warn("checkQuotas: period rollover nft reset", "client", cl.Name, "err", err)
+			}
+			// Clear the warned flag for the new period.
+			database.DB.Model(&cl).Update("quota_warned_at", nil)
+			slog.Info("quota period rolled over", "client", cl.Name, "period", cl.QuotaPeriod)
 		}
-		q.Scan(&result)
-		used := result.Total
 
-		// Add the live unsnapshotted delta so enforcement fires promptly
-		// even between the 1-minute snapshot intervals.
-		if ifaceStats, ok := ifaceLive[cl.Interface.Name]; ok {
-			if live, ok := ifaceStats[cl.PublicKey]; ok {
-				prevRx, prevTx, baselineSet := GetLastSnapshotBaseline(cl.ID)
-				if baselineSet {
-					var deltaRx, deltaTx int64
-					if live.rx >= prevRx {
-						deltaRx = live.rx - prevRx
-					} else {
-						deltaRx = live.rx // counter reset
-					}
-					if live.tx >= prevTx {
-						deltaTx = live.tx - prevTx
-					} else {
-						deltaTx = live.tx // counter reset
-					}
-					used += deltaRx + deltaTx
+		// ── Enforcement via nftables ──────────────────────────────────────────
+		// The kernel drops packets the moment the budget is exhausted; we just
+		// need to detect that it happened and update the DB + send emails.
+		if !cl.QuotaSuspended {
+			_, exceeded, nftErr := nft.GetUsage(cl.AssignedIP)
+			if nftErr == nil && exceeded {
+				// Compute used bytes for the email body (DB + live delta).
+				used := dbPlusLiveUsed(cl, periodStart, ifaceLive)
+				usedStr := formatQuotaBytes(used)
+				quotaStr := formatQuotaBytes(cl.DataQuotaBytes)
+
+				if err := wg.RemovePeer(cl.Interface.Name, cl.PublicKey); err != nil {
+					slog.Error("checkQuotas: remove peer", "client", cl.Name, "err", err)
 				}
-			}
-		}
+				// Clean up nftables rule — peer is gone so no traffic to drop.
+				nft.Remove(cl.AssignedIP) //nolint:errcheck
 
-		usedStr := formatQuotaBytes(used)
-		quotaStr := formatQuotaBytes(cl.DataQuotaBytes)
+				database.DB.Model(&cl).Updates(map[string]interface{}{"enabled": false, "quota_suspended": true})
+				slog.Info("client suspended: quota exceeded",
+					"client", cl.Name, "used", used, "quota", cl.DataQuotaBytes)
 
-		// Over quota — remove peer and disable the client.
-		if used >= cl.DataQuotaBytes {
-			if err := wg.RemovePeer(cl.Interface.Name, cl.PublicKey); err != nil {
-				slog.Error("checkQuotas: remove peer", "client", cl.Name, "err", err)
-			}
-			database.DB.Model(&cl).Updates(map[string]interface{}{"enabled": false, "quota_suspended": true})
-			slog.Info("client suspended: quota exceeded",
-				"client", cl.Name, "used", used, "quota", cl.DataQuotaBytes)
-
-			mailer.SendHTML(
-				fmt.Sprintf("Data quota exceeded: %s", cl.Name),
-				mailer.HTMLAdminQuotaExceeded(cl.Name, cl.AssignedIP, cl.Interface.Name, usedStr, quotaStr, cl.QuotaPeriod),
-			)
-			if cl.Email != "" {
-				mailer.SendHTMLTo(cl.Email,
-					fmt.Sprintf("VPN access suspended: data quota exceeded — %s", cl.Name),
-					mailer.HTMLClientQuotaExceeded(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod),
+				mailer.SendHTML(
+					fmt.Sprintf("Data quota exceeded: %s", cl.Name),
+					mailer.HTMLAdminQuotaExceeded(cl.Name, cl.AssignedIP, cl.Interface.Name, usedStr, quotaStr, cl.QuotaPeriod),
 				)
+				if cl.Email != "" {
+					mailer.SendHTMLTo(cl.Email,
+						fmt.Sprintf("VPN access suspended: data quota exceeded — %s", cl.Name),
+						mailer.HTMLClientQuotaExceeded(cl.Name, cl.AssignedIP, usedStr, quotaStr, cl.QuotaPeriod),
+					)
+				}
+				continue
 			}
-			continue
 		}
 
-		// 80% warning — send at most once per period.
+		// ── 80 % warning — DB-based, sent at most once per period ────────────
+		used := dbPlusLiveUsed(cl, periodStart, ifaceLive)
 		threshold := int64(math.Round(float64(cl.DataQuotaBytes) * 0.8))
 		if used >= threshold {
 			alreadyWarned := cl.QuotaWarnedAt != nil &&
 				(periodStart.IsZero() || cl.QuotaWarnedAt.After(periodStart))
 			if !alreadyWarned {
+				usedStr := formatQuotaBytes(used)
+				quotaStr := formatQuotaBytes(cl.DataQuotaBytes)
 				now := time.Now()
 				database.DB.Model(&cl).Update("quota_warned_at", &now)
 				slog.Info("client quota warning sent",
@@ -139,6 +133,41 @@ func checkQuotas(wg wgsvc.Service) {
 			}
 		}
 	}
+}
+
+// dbPlusLiveUsed computes bytes used in the current period from DB snapshots
+// plus the unsnapshotted live WG delta. Mirrors the quota-usage endpoint logic.
+func dbPlusLiveUsed(cl models.Client, periodStart time.Time, ifaceLive map[string]map[string]peerLive) int64 {
+	var result struct{ Total int64 }
+	q := database.DB.Model(&models.PeerSnapshot{}).
+		Select("COALESCE(SUM(bytes_rx + bytes_tx), 0) as total").
+		Where("client_id = ?", cl.ID)
+	if !periodStart.IsZero() {
+		q = q.Where("timestamp >= ?", periodStart)
+	}
+	q.Scan(&result)
+	used := result.Total
+
+	if ifaceStats, ok := ifaceLive[cl.Interface.Name]; ok {
+		if live, ok := ifaceStats[cl.PublicKey]; ok {
+			prevRx, prevTx, baselineSet := GetLastSnapshotBaseline(cl.ID)
+			if baselineSet {
+				var deltaRx, deltaTx int64
+				if live.rx >= prevRx {
+					deltaRx = live.rx - prevRx
+				} else {
+					deltaRx = live.rx
+				}
+				if live.tx >= prevTx {
+					deltaTx = live.tx - prevTx
+				} else {
+					deltaTx = live.tx
+				}
+				used += deltaRx + deltaTx
+			}
+		}
+	}
+	return used
 }
 
 // quotaPeriodStart returns the beginning of the current quota period for the
