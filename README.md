@@ -76,7 +76,7 @@ Enable **local network access** per interface with one click. Velar detects your
 - Live connection indicator in the nav
 
 ### 📦 Data Quotas
-Set a **monthly, weekly, or total data cap** per client. Velar automatically suspends the peer when the limit is hit and sends warning emails at 80% and on suspension. Force-reset usage at any time from the dashboard.
+Set a **monthly, weekly, or total data cap** per client. Enforcement is handled by **Linux nftables at the kernel level** — packets are dropped the instant the budget is exhausted, with zero overshoot. Velar sends warning emails at 80% usage and on suspension, and re-enables the peer automatically when the quota is raised or reset. Usage is tracked across server restarts.
 
 ### ✅ Bulk Client Operations
 Select multiple clients and **enable, disable, or delete** them in one action — no clicking through each card individually.
@@ -120,6 +120,7 @@ You'll be forced to change it on first login.
 | Auth | bcrypt, JWT, httpOnly cookies, TOTP |
 | VPN | WireGuard, wg-quick |
 | Bandwidth | Linux tc (HTB + ingress police) |
+| Quotas | Linux nftables (named quotas, kernel-level enforcement) |
 | DNS | AdGuard Home |
 | Runtime | Docker, Docker Compose |
 
@@ -133,6 +134,7 @@ You'll be forced to change it on first login.
 | [Configuration Reference](./docs/CONFIGURATION.md) | All environment variables explained |
 | [Architecture](./docs/ARCHITECTURE.md) | How Velar works internally, request flow, services |
 | [Bandwidth Limiting](./docs/BANDWIDTH.md) | How tc-based shaping works, limits and caveats |
+| [Data Quotas](./docs/QUOTAS.md) | nftables kernel-level quota enforcement, periods, suspension flow |
 | [LAN Access](./docs/LAN-ACCESS.md) | Split-tunnel setup, subnet detection, requirements |
 | [Reverse Proxy](./docs/REVERSE-PROXY.md) | Nginx, Caddy, SWAG + Authelia examples |
 | [Troubleshooting](./docs/TROUBLESHOOTING.md) | Common issues and fixes |
