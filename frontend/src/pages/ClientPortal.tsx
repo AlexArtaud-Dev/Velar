@@ -212,7 +212,6 @@ function ExpirySection({ client }: { client: PortalClient }) {
 
 function PortalContent({ client }: { client: PortalClient }) {
   const status = STATUS_CONFIG[client.status] ?? STATUS_CONFIG.active
-  const StatusIcon = status.Icon
 
   return (
     <div className="w-full max-w-lg space-y-4">
