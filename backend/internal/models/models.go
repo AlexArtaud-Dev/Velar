@@ -89,6 +89,19 @@ type ConnectionEvent struct {
 	Client    Client    `gorm:"foreignKey:ClientID" json:"-"`
 }
 
+// AuditLog records admin-initiated mutations for lightweight change tracking.
+// Rows older than 90 days are pruned automatically.
+type AuditLog struct {
+	ID         uint      `gorm:"primaryKey" json:"id"`
+	AdminID    uint      `gorm:"not null;index" json:"admin_id"`
+	Action     string    `gorm:"not null" json:"action"`       // e.g. "client.create", "client.delete"
+	TargetType string    `gorm:"not null" json:"target_type"` // "client" | "interface" | "admin"
+	TargetID   uint      `json:"target_id"`
+	TargetName string    `json:"target_name"`
+	Detail     string    `json:"detail"` // optional JSON / short description
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // PeerSnapshot stores per-client bandwidth deltas sampled every minute.
 // BytesRx/BytesTx are deltas (not cumulative) — bytes transferred since the
 // previous snapshot. Rows older than 7 days are purged automatically.

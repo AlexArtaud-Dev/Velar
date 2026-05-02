@@ -64,6 +64,12 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	database.DB.Model(&client).Update("enabled", enabled)
 	h.syncConf(client.Interface)
 
+	action := "client.disable"
+	if enabled {
+		action = "client.enable"
+	}
+	auditLog(c, action, "client", client.ID, client.Name, "")
+
 	// Notify the client of the status change.
 	if enabled {
 		mailer.SendHTMLTo(

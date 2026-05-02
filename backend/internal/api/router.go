@@ -133,6 +133,12 @@ func NewRouter(
 			dashboard.GET("/snapshots", dashboardHandler.GetSnapshots)
 		}
 
+		// Prometheus metrics (60s server-side cache)
+		api.GET("/metrics", handlers.GetMetrics)
+
+		// Audit logs
+		api.GET("/audit", handlers.ListAuditLogs)
+
 		// Client history endpoints
 		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
 		clients.GET("/:id/events", clientHandler.GetEvents)

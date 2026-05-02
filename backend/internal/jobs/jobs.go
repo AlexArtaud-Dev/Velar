@@ -18,6 +18,7 @@ const (
 	disconnectThreshold = 3 * time.Minute     // peer is considered disconnected after this gap
 	snapshotRetention   = 7 * 24 * time.Hour  // bandwidth snapshots older than 7 days are purged
 	eventRetention      = 30 * 24 * time.Hour // connection events older than 30 days are purged
+	auditLogRetention   = 90 * 24 * time.Hour // audit log entries older than 90 days are purged
 )
 
 // Start registers all background jobs and begins the scheduler.
