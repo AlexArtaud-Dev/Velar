@@ -3,7 +3,7 @@
 @tailwind utilities;
 
 @layer base {
-  /* Light theme (default) */
+  /* ── Light theme ─────────────────────────────────────────────────────── */
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
@@ -25,7 +25,7 @@
     --radius: 0.5rem;
   }
 
-  /* Dark theme */
+  /* ── Dark theme ──────────────────────────────────────────────────────── */
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -46,6 +46,50 @@
     --ring: 212.7 26.8% 83.9%;
     --radius: 0.5rem;
   }
+
+  /* ── Apple theme ─────────────────────────────────────────────────────── */
+  .apple {
+    --background: 240 5% 96%;
+    --foreground: 225 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 225 25% 10%;
+    --border: 220 13% 90%;
+    --input: 220 13% 93%;
+    --primary: 211 100% 50%;       /* Apple Blue #007AFF */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 6% 93%;
+    --secondary-foreground: 225 25% 10%;
+    --muted: 240 6% 93%;
+    --muted-foreground: 220 9% 46%;
+    --accent: 211 100% 94%;
+    --accent-foreground: 211 100% 36%;
+    --destructive: 4 86% 58%;      /* Apple Red */
+    --destructive-foreground: 0 0% 100%;
+    --ring: 211 100% 50%;
+    --radius: 0.875rem;
+  }
+
+  /* ── Cyberpunk theme ─────────────────────────────────────────────────── */
+  .cyberpunk {
+    --background: 230 30% 5%;
+    --foreground: 180 50% 85%;
+    --card: 230 28% 8%;
+    --card-foreground: 180 50% 85%;
+    --border: 180 80% 30%;
+    --input: 230 28% 11%;
+    --primary: 180 100% 50%;       /* Neon cyan */
+    --primary-foreground: 230 30% 5%;
+    --secondary: 230 28% 12%;
+    --secondary-foreground: 180 50% 75%;
+    --muted: 230 28% 11%;
+    --muted-foreground: 230 15% 48%;
+    --accent: 300 100% 55%;        /* Neon magenta */
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 100% 55%;
+    --destructive-foreground: 0 0% 100%;
+    --ring: 180 100% 50%;
+    --radius: 0.125rem;
+  }
 }
 
 @layer base {
@@ -56,25 +100,115 @@
     @apply bg-background text-foreground;
     font-feature-settings: "rlig" 1, "calt" 1;
   }
+
+  /* Apple: system font stack (SF Pro on Apple devices, Inter/system-ui elsewhere) */
+  .apple,
+  .apple body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text',
+      'Inter', system-ui, sans-serif;
+    letter-spacing: -0.01em;
+  }
+
+  /* Cyberpunk: monospace everywhere */
+  .cyberpunk,
+  .cyberpunk body {
+    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Consolas,
+      'Liberation Mono', Menlo, monospace;
+  }
 }
 
-/* Thin, themed scrollbar (Chromium) */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
+/* ── Apple: gradient wallpaper background ────────────────────────────────── */
+.apple body {
+  background: linear-gradient(160deg, #eef3ff 0%, #f5f0ff 40%, #fff0f5 100%) !important;
+  background-attachment: fixed !important;
+  min-height: 100vh;
 }
-::-webkit-scrollbar-track {
-  background: transparent;
+
+/* Apple: frosted-glass sidebar + cards */
+.apple aside,
+.apple header {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: saturate(200%) blur(24px);
+  -webkit-backdrop-filter: saturate(200%) blur(24px);
 }
-::-webkit-scrollbar-thumb {
-  background: hsl(var(--border));
-  border-radius: 999px;
+
+/* Apple: card glass effect */
+.apple .apple-glass {
+  background: rgba(255, 255, 255, 0.80) !important;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+  box-shadow: 0 2px 24px rgba(0, 0, 0, 0.07), 0 1px 4px rgba(0, 0, 0, 0.05);
 }
-::-webkit-scrollbar-thumb:hover {
-  background: hsl(var(--muted-foreground) / 0.5);
+
+/* Apple: soft drop shadows on cards */
+.apple [class*="shadow"] {
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04) !important;
 }
+
+/* ── Cyberpunk: dot-grid background ──────────────────────────────────────── */
+.cyberpunk body {
+  background: #070c17 !important;
+  background-image: radial-gradient(rgba(0, 255, 255, 0.04) 1px, transparent 1px) !important;
+  background-size: 28px 28px !important;
+  background-attachment: fixed !important;
+}
+
+/* Cyberpunk: scanline overlay */
+.cyberpunk body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.04) 2px,
+    rgba(0, 0, 0, 0.04) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Cyberpunk: neon border glow on cards */
+.cyberpunk .cyber-card {
+  border-color: rgba(0, 255, 255, 0.2) !important;
+  box-shadow:
+    0 0 0 1px rgba(0, 255, 255, 0.08),
+    0 0 16px rgba(0, 255, 255, 0.06),
+    inset 0 1px 0 rgba(0, 255, 255, 0.06);
+}
+
+/* Cyberpunk: neon glow on headings */
+.cyberpunk h1 {
+  text-shadow: 0 0 30px rgba(0, 255, 255, 0.25), 0 0 60px rgba(0, 255, 255, 0.1);
+  color: #e0fffe;
+}
+.cyberpunk h2, .cyberpunk h3 {
+  text-shadow: 0 0 16px rgba(0, 255, 255, 0.2);
+}
+
+/* Cyberpunk: neon active state */
+.cyberpunk [data-cyber-active] {
+  background: rgba(0, 255, 255, 0.08) !important;
+  border-left-color: hsl(180 100% 50%) !important;
+  color: hsl(180 100% 70%) !important;
+  text-shadow: 0 0 12px rgba(0, 255, 255, 0.4);
+}
+
+/* Cyberpunk: primary button glow */
+.cyberpunk button[class*="bg-primary"] {
+  box-shadow: 0 0 20px rgba(0, 255, 255, 0.35), 0 0 8px rgba(0, 255, 255, 0.2);
+}
+
+/* Cyberpunk: scrollbar neon */
+.cyberpunk ::-webkit-scrollbar-thumb {
+  background: rgba(0, 255, 255, 0.35);
+}
+
+/* ── Thin, themed scrollbar (Chromium) ───────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
 /* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--border)) transparent;
-}
+* { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }

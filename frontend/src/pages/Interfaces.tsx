@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi, Globe, Key } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
@@ -15,6 +15,8 @@ import {
   type CreateInterfacePayload, type UpdateInterfacePayload, type WGInterface,
 } from '@/api/interfaces'
 import { getAdguardStatus } from '@/api/settings'
+import { useThemeStore } from '@/stores/theme'
+import { cn } from '@/lib/utils'
 
 const DNS_PRESETS = [
   { label: 'Cloudflare', value: '1.1.1.1' },
@@ -34,6 +36,7 @@ function serverIPFromSubnet(subnet: string): string {
 export default function Interfaces() {
   const navigate = useNavigate()
   const qc = useQueryClient()
+  const { theme } = useThemeStore()
   const { data: ifaces = [], isLoading } = useQuery({ queryKey: ['interfaces'], queryFn: listInterfaces, refetchInterval: 5000 })
 
   const deleteMut = useMutation({
@@ -49,6 +52,12 @@ export default function Interfaces() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['interfaces'] }),
   })
 
+  const isCyber = theme === 'cyberpunk'
+  const cardExtra = cn(
+    theme === 'apple'     && 'apple-glass',
+    theme === 'cyberpunk' && 'cyber-card',
+  )
+
   if (isLoading) return <PageSkeleton />
 
   return (
@@ -63,30 +72,78 @@ export default function Interfaces() {
 
       <div className="grid gap-4">
         {ifaces.map((iface) => (
-          <Card key={iface.id}>
-            <CardHeader className="pb-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Badge variant={iface.up ? 'success' : 'destructive'}>{iface.up ? 'UP' : 'DOWN'}</Badge>
-                  <CardTitle className="text-lg font-mono">{iface.name}</CardTitle>
+          <Card key={iface.id} className={cn('overflow-hidden', cardExtra)}>
+            {/* Coloured status stripe */}
+            <div className={cn(
+              'h-1 w-full',
+              iface.up
+                ? isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500'
+                : 'bg-destructive',
+            )} />
+
+            <CardHeader className="pb-3 pt-4">
+              <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                {/* Left: name + meta */}
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      'p-2 rounded-[var(--radius)]',
+                      iface.up
+                        ? isCyber ? 'bg-[rgba(0,255,255,0.1)]' : 'bg-green-500/10'
+                        : 'bg-muted',
+                    )}>
+                      <Network className={cn(
+                        'h-4 w-4',
+                        iface.up
+                          ? isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500'
+                          : 'text-muted-foreground',
+                      )} />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-mono">{iface.name}</CardTitle>
+                        <Badge variant={iface.up ? 'success' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">
+                          {iface.up ? 'UP' : 'DOWN'}
+                        </Badge>
+                        {iface.lan_access && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1">
+                            <Wifi className="h-2.5 w-2.5" /> LAN
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Meta grid */}
+                  <div className="flex flex-wrap gap-x-4 gap-y-1 pl-12">
+                    <MetaChip icon={<Globe className="h-3 w-3" />} label={iface.subnet} />
+                    <MetaChip icon={<span className="text-[10px] font-bold">UDP</span>} label={`:${iface.port}`} />
+                    <MetaChip icon={<span className="text-[10px] font-bold">DNS</span>} label={iface.dns_server} />
+                    {iface.lan_access && iface.lan_subnet && (
+                      <MetaChip icon={<Wifi className="h-3 w-3" />} label={iface.lan_subnet} />
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
+
+                {/* Right: actions */}
+                <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
                   <Button
                     variant="outline"
                     size="sm"
+                    className="h-8 text-xs gap-1.5"
                     onClick={() => navigate(`/interfaces/${iface.id}/clients`)}
                   >
-                    <Users className="h-3 w-3 mr-1" />
+                    <Users className="h-3 w-3" />
                     {iface.peer_count} clients
-                    <ChevronRight className="h-3 w-3 ml-1" />
+                    <ChevronRight className="h-3 w-3 opacity-50" />
                   </Button>
                   {iface.up ? (
-                    <Button variant="outline" size="icon" onClick={() => downMut.mutate(iface.id)} title="Bring down">
-                      <PowerOff className="h-4 w-4" />
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => downMut.mutate(iface.id)} title="Bring down">
+                      <PowerOff className="h-3.5 w-3.5" />
                     </Button>
                   ) : (
-                    <Button variant="outline" size="icon" onClick={() => upMut.mutate(iface.id)} title="Bring up">
-                      <Power className="h-4 w-4" />
+                    <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => upMut.mutate(iface.id)} title="Bring up">
+                      <Power className="h-3.5 w-3.5 text-green-500" />
                     </Button>
                   )}
                   <CheckButton iface={iface} />
@@ -97,38 +154,46 @@ export default function Interfaces() {
                   <Button
                     variant="outline"
                     size="icon"
+                    className="h-8 w-8"
                     onClick={() => { if (confirm(`Delete ${iface.name}?`)) deleteMut.mutate(iface.id) }}
                     title="Delete"
                   >
-                    <Trash2 className="h-4 w-4 text-destructive" />
+                    <Trash2 className="h-3.5 w-3.5 text-destructive" />
                   </Button>
                 </div>
               </div>
-              <CardDescription className="font-mono text-xs flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span>{iface.subnet} • :{iface.port} • DNS {iface.dns_server}</span>
-                {iface.lan_access && (
-                  <span className="flex items-center gap-1 text-green-600 dark:text-green-400 not-italic font-sans">
-                    <Wifi className="h-3 w-3" />
-                    LAN {iface.lan_subnet && <span className="font-mono">({iface.lan_subnet})</span>}
-                  </span>
-                )}
-              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-xs text-muted-foreground font-mono break-all">
-                <span className="font-semibold">PubKey:</span> {iface.public_key}
+
+            {/* Public key — collapsed in footer */}
+            <CardContent className="pt-0 pb-3">
+              <div className={cn(
+                'flex items-center gap-2 px-3 py-2 rounded-[calc(var(--radius)-2px)] text-xs font-mono text-muted-foreground',
+                isCyber ? 'bg-[rgba(0,255,255,0.04)] border border-[rgba(0,255,255,0.08)]' : 'bg-muted/40',
+              )}>
+                <Key className="h-3 w-3 shrink-0 opacity-60" />
+                <span className="truncate">{iface.public_key}</span>
               </div>
             </CardContent>
           </Card>
         ))}
         {ifaces.length === 0 && (
-          <div className="text-center py-12 text-muted-foreground">
-            <Network className="h-12 w-12 mx-auto mb-3 opacity-30" />
-            <p>No interfaces yet. Create one to get started.</p>
+          <div className="text-center py-16 text-muted-foreground">
+            <Network className="h-12 w-12 mx-auto mb-3 opacity-20" />
+            <p className="font-medium">No interfaces yet</p>
+            <p className="text-sm mt-1 opacity-70">Create one to get started.</p>
           </div>
         )}
       </div>
     </div>
+  )
+}
+
+function MetaChip({ icon, label }: { icon: React.ReactNode; label: string }) {
+  return (
+    <span className="flex items-center gap-1 text-xs text-muted-foreground">
+      <span className="opacity-60">{icon}</span>
+      <span className="font-mono">{label}</span>
+    </span>
   )
 }
 

@@ -1,33 +1,42 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
-  LayoutDashboard,
-  Network,
-  Users,
-  Settings,
-  LogOut,
-  Shield,
-  Wifi,
-  WifiOff,
-  Sun,
-  Moon,
+  LayoutDashboard, Network, Users, Settings, LogOut,
+  Shield, Wifi, WifiOff,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
-import { useThemeStore } from '@/stores/theme'
+import { useThemeStore, THEMES } from '@/stores/theme'
 import { logout } from '@/api/auth'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { cn } from '@/lib/utils'
 
 const navItems = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+  { to: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
   { to: '/interfaces', label: 'Interfaces', icon: Network },
-  { to: '/clients', label: 'Clients', icon: Users },
-  { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/clients',    label: 'Clients',    icon: Users },
+  { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
+
+/** Small cycling theme button — shows current theme emoji, cycles on click */
+function ThemeButton() {
+  const { theme, cycleTheme } = useThemeStore()
+  const current = THEMES.find((t) => t.value === theme) ?? THEMES[0]
+  const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]
+
+  return (
+    <button
+      onClick={cycleTheme}
+      title={`Switch to ${next.label}`}
+      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors text-sm leading-none select-none"
+    >
+      {current.emoji}
+    </button>
+  )
+}
 
 export default function Layout() {
   const navigate = useNavigate()
   const { admin, logout: clearAuth } = useAuthStore()
-  const { theme, toggleTheme } = useThemeStore()
+  const { theme } = useThemeStore()
   const { connected } = useWebSocket()
 
   async function handleLogout() {
@@ -36,16 +45,35 @@ export default function Layout() {
     navigate('/login')
   }
 
+  const isCyber = theme === 'cyberpunk'
+
   return (
     <div className="flex h-screen bg-background">
 
       {/* ── Desktop sidebar ── */}
-      <aside className="hidden lg:flex w-60 border-r border-border flex-col shrink-0">
+      <aside className={cn(
+        'hidden lg:flex w-60 border-r border-border flex-col shrink-0 transition-colors',
+        isCyber && 'border-r-[rgba(0,255,255,0.15)]',
+      )}>
 
         {/* Logo */}
-        <div className="flex items-center gap-2.5 px-5 py-5 border-b border-border">
-          <Shield className="h-5 w-5 text-primary" />
-          <span className="text-base font-bold tracking-tight">Velar</span>
+        <div className={cn(
+          'flex items-center gap-2.5 px-5 py-5 border-b border-border',
+          isCyber && 'border-b-[rgba(0,255,255,0.15)]',
+        )}>
+          <Shield className={cn(
+            'h-5 w-5',
+            theme === 'apple'     && 'text-[hsl(211,100%,50%)]',
+            theme === 'cyberpunk' && 'text-[hsl(180,100%,50%)] drop-shadow-[0_0_6px_rgba(0,255,255,0.7)]',
+            theme === 'dark'      && 'text-primary',
+            theme === 'light'     && 'text-primary',
+          )} />
+          <span className={cn(
+            'text-base font-bold tracking-tight',
+            theme === 'cyberpunk' && 'text-[hsl(180,60%,88%)] tracking-widest uppercase text-sm',
+          )}>
+            Velar
+          </span>
         </div>
 
         {/* Nav */}
@@ -57,10 +85,13 @@ export default function Layout() {
               end={end}
               className={({ isActive }) =>
                 cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-all duration-150',
+                  'flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-all duration-150',
                   'border-l-2',
                   isActive
-                    ? 'border-primary bg-accent text-foreground'
+                    ? cn(
+                        'border-primary bg-accent text-foreground',
+                        isCyber && 'bg-[rgba(0,255,255,0.07)] border-[hsl(180,100%,50%)] text-[hsl(180,60%,85%)] [text-shadow:0_0_12px_rgba(0,255,255,0.4)]',
+                      )
                     : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50',
                 )
               }
@@ -72,12 +103,18 @@ export default function Layout() {
         </nav>
 
         {/* Footer */}
-        <div className="px-3 py-4 border-t border-border space-y-3">
+        <div className={cn(
+          'px-3 py-4 border-t border-border space-y-3',
+          isCyber && 'border-t-[rgba(0,255,255,0.15)]',
+        )}>
           {/* Live indicator */}
           <div className="flex items-center gap-2 text-xs text-muted-foreground px-2">
             {connected ? (
               <>
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className={cn(
+                  'h-1.5 w-1.5 rounded-full animate-pulse',
+                  isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500',
+                )} />
                 <span>Live</span>
               </>
             ) : (
@@ -90,15 +127,11 @@ export default function Layout() {
 
           {/* User row */}
           <div className="flex items-center justify-between px-1">
-            <span className="text-sm text-muted-foreground truncate">{admin?.username}</span>
+            <span className="text-xs text-muted-foreground truncate max-w-[6.5rem]">
+              {admin?.username}
+            </span>
             <div className="flex items-center gap-0.5">
-              <button
-                onClick={toggleTheme}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-              >
-                {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-              </button>
+              <ThemeButton />
               <button
                 onClick={handleLogout}
                 className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
@@ -115,11 +148,14 @@ export default function Layout() {
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
         {/* Mobile top bar */}
-        <header className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
+        <header className={cn(
+          'lg:hidden flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0',
+          isCyber && 'border-b-[rgba(0,255,255,0.15)]',
+        )}>
           {/* Live dot */}
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {connected
-              ? <><span className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" /><span>Live</span></>
+              ? <><span className={cn('h-1.5 w-1.5 rounded-full animate-pulse', isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500')} /><span>Live</span></>
               : <><Wifi className="h-3.5 w-3.5 text-red-500" /><WifiOff className="h-3.5 w-3.5 text-red-500 hidden" /></>
             }
           </div>
@@ -127,18 +163,14 @@ export default function Layout() {
           {/* Logo */}
           <div className="flex items-center gap-2">
             <Shield className="h-5 w-5 text-primary" />
-            <span className="font-bold tracking-tight">Velar</span>
+            <span className={cn('font-bold tracking-tight', isCyber && 'uppercase tracking-widest text-sm')}>
+              Velar
+            </span>
           </div>
 
           {/* Actions */}
           <div className="flex items-center gap-1">
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-              title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
-            >
-              {theme === 'dark' ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
-            </button>
+            <ThemeButton />
             <button
               onClick={handleLogout}
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
@@ -149,13 +181,16 @@ export default function Layout() {
           </div>
         </header>
 
-        {/* Page content — extra bottom padding on mobile clears the 56px bottom nav */}
+        {/* Page content */}
         <main className="flex-1 overflow-auto max-lg:pb-14">
           <Outlet />
         </main>
 
         {/* ── Mobile bottom nav ── */}
-        <nav className="lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border">
+        <nav className={cn(
+          'lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border',
+          isCyber && 'border-t-[rgba(0,255,255,0.15)]',
+        )}>
           {navItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
@@ -164,18 +199,13 @@ export default function Layout() {
               className={({ isActive }) =>
                 cn(
                   'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
-                  isActive
-                    ? 'text-foreground'
-                    : 'text-muted-foreground hover:text-foreground',
+                  isActive ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
                 )
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className={cn(
-                    'p-1 rounded-lg transition-colors',
-                    isActive ? 'bg-accent' : '',
-                  )}>
+                  <span className={cn('p-1 rounded-lg transition-colors', isActive ? 'bg-accent' : '')}>
                     <Icon className="h-5 w-5" />
                   </span>
                   {label}
