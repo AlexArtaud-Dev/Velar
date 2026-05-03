@@ -44,6 +44,10 @@ func DevProxy(c *gin.Context) {
 		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "token is expired"})
 		return
 	}
+	if pat.TokenEncrypted == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "token predates encryption support — revoke it and create a new one"})
+		return
+	}
 
 	// Decrypt the raw token — never leaves the server.
 	rawToken, err := auth.Decrypt(pat.TokenEncrypted, config.C.AppSecret)
