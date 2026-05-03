@@ -1,13 +1,19 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Network, Users, Settings, LogOut,
-  Shield, Wifi, WifiOff, Key,
+  Shield, Wifi, WifiOff, Key, ChevronDown, Check,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, THEMES, type Theme } from '@/stores/theme'
 import { logout } from '@/api/auth'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { cn } from '@/lib/utils'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const navItems = [
   { to: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
@@ -17,33 +23,51 @@ const navItems = [
   { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
 
-const THEME_LABELS: Record<Theme, string> = {
-  dark:      '🌙 Dark',
-  light:     '☀️ Light',
-  apple:     '🍎 Clear',
-  cyberpunk: '⚡ Cyberpunk',
+const THEME_META: Record<Theme, { label: string; emoji: string; dot: string }> = {
+  dark:      { label: 'Dark',      emoji: '🌙', dot: 'bg-slate-600' },
+  light:     { label: 'Light',     emoji: '☀️', dot: 'bg-slate-300' },
+  apple:     { label: 'Clear',     emoji: '🍎', dot: 'bg-[hsl(211,100%,50%)]' },
+  cyberpunk: { label: 'Cyberpunk', emoji: '⚡', dot: 'bg-[hsl(180,100%,50%)]' },
 }
 
-/** Compact theme selector dropdown */
+/** Dropdown theme picker with named entries and color dots */
 function ThemeSelector() {
   const { theme, setTheme } = useThemeStore()
+  const current = THEME_META[theme]
+  const isCyber = theme === 'cyberpunk'
 
   return (
-    <select
-      value={theme}
-      onChange={(e) => setTheme(e.target.value as Theme)}
-      className={cn(
-        'text-xs rounded-md px-1.5 py-1 border border-border bg-background text-muted-foreground',
-        'hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer transition-colors',
-      )}
-      title="Switch theme"
-    >
-      {THEMES.map((t) => (
-        <option key={t.value} value={t.value}>
-          {THEME_LABELS[t.value]}
-        </option>
-      ))}
-    </select>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button className={cn(
+          'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
+          'border border-border hover:bg-accent/60',
+          isCyber
+            ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,75%)] hover:bg-[rgba(0,255,255,0.08)]'
+            : 'text-muted-foreground hover:text-foreground',
+        )}>
+          <span>{current.emoji}</span>
+          <span>{current.label}</span>
+          <ChevronDown className="h-3 w-3 opacity-60" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent side="top" align="end" className="min-w-[9rem]">
+        {THEMES.map((t) => {
+          const m = THEME_META[t.value]
+          return (
+            <DropdownMenuItem
+              key={t.value}
+              onClick={() => setTheme(t.value)}
+              className="flex items-center gap-2 cursor-pointer"
+            >
+              <span className={cn('h-2 w-2 rounded-full shrink-0', m.dot)} />
+              <span className="flex-1">{m.emoji} {m.label}</span>
+              {theme === t.value && <Check className="h-3.5 w-3.5 text-primary" />}
+            </DropdownMenuItem>
+          )
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }
 

@@ -58,10 +58,13 @@ export function ClientCard({
   const quotaSet        = client.data_quota_bytes > 0
   const hasBandwidthLimit = client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0
 
-  // Initials avatar
+  // Initials avatar — split on spaces, underscores, hyphens, and digit/letter
+  // boundaries so "PC_ABEO" → "PA", "S22_ULTRA" → "SU", "My Client" → "MC"
   const initials = client.name
-    .split(/\s+/)
-    .map((w) => w[0]?.toUpperCase() ?? '')
+    .split(/[\s_\-]+/)
+    .filter(Boolean)
+    .map((w) => w.replace(/^\d+/, '')[0]?.toUpperCase() ?? w[0]?.toUpperCase() ?? '')
+    .filter(Boolean)
     .slice(0, 2)
     .join('')
 
