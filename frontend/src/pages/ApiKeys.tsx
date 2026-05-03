@@ -552,35 +552,43 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
           {/* Token input */}
           <div className="space-y-1.5">
             <Label className="text-xs">Bearer token</Label>
-            <div className="flex gap-2">
-              <Input
-                placeholder="vp_… or paste a JWT"
-                value={tokenInput}
-                onChange={(e) => setTokenInput(e.target.value)}
-                className={cn('font-mono text-xs', isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)]')}
-              />
-              {tokens.length > 0 && (
-                <select
-                  className={cn(
-                    'text-xs rounded-md px-2 border border-border bg-background text-muted-foreground shrink-0',
-                    'focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer',
-                  )}
-                  value=""
-                  onChange={(e) => {
-                    const t = tokens.find((t) => String(t.id) === e.target.value)
-                    if (t) setTokenInput('')  // token value not stored client-side; user must paste
-                  }}
-                  title="Your saved tokens (paste the full token value above)"
-                >
-                  <option value="">Saved tokens</option>
-                  {tokens.map((t) => (
-                    <option key={t.id} value={String(t.id)}>{t.name} ({t.token_prefix}…)</option>
-                  ))}
-                </select>
-              )}
-            </div>
+            <Input
+              placeholder="Paste your full token here (vp_… or JWT)"
+              value={tokenInput}
+              onChange={(e) => setTokenInput(e.target.value)}
+              className={cn('font-mono text-xs', isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)]')}
+            />
+            {tokens.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-0.5">
+                <span className="text-[11px] text-muted-foreground self-center">Your tokens:</span>
+                {tokens.map((t) => {
+                  const expired = t.expires_at != null && new Date(t.expires_at) < new Date()
+                  return (
+                    <span
+                      key={t.id}
+                      title={`${t.name} — prefix: ${t.token_prefix}… (paste the full token above)`}
+                      className={cn(
+                        'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-mono cursor-default',
+                        expired
+                          ? 'border-destructive/30 text-muted-foreground line-through'
+                          : isCyber
+                            ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,60%)]'
+                            : 'border-border text-muted-foreground',
+                      )}
+                    >
+                      <span className={cn(
+                        'h-1.5 w-1.5 rounded-full shrink-0',
+                        expired ? 'bg-destructive/50' : isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500',
+                      )} />
+                      {t.name}
+                      <span className="opacity-50">{t.token_prefix}…</span>
+                    </span>
+                  )
+                })}
+              </div>
+            )}
             <p className="text-[11px] text-muted-foreground">
-              Saved tokens shown for reference — paste the full token value above (shown once at creation).
+              Full token values are shown only once at creation — paste the one you want to test above.
             </p>
           </div>
 
