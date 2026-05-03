@@ -17,6 +17,12 @@ import { cn } from '@/lib/utils'
 
 type HttpMethod = 'GET' | 'POST' | 'DELETE'
 
+interface PathParam {
+  name: string
+  description: string
+  example?: string
+}
+
 interface QueryParam {
   name: string
   type: 'string' | 'integer'
@@ -37,16 +43,61 @@ interface HeaderParam {
 interface EndpointDef {
   id: string
   method: HttpMethod
-  path: string
+  path: string          // may contain :param segments
   name: string
   category: string
   description: string
   auth: string
+  pathParams?: PathParam[]
   queryParams: QueryParam[]
   headers: HeaderParam[]
 }
 
 const ENDPOINTS: EndpointDef[] = [
+  {
+    id: 'health',
+    method: 'GET',
+    path: '/health',
+    name: 'Health Check',
+    category: 'System',
+    description:
+      'Public liveness and readiness check. Returns the overall app status, version, uptime, ' +
+      'and sub-checks for the database, AdGuard Home, and WireGuard. ' +
+      'No authentication required — safe for uptime monitors (Uptime Kuma, Grafana Synthetic, etc.).',
+    auth: 'None (public)',
+    queryParams: [],
+    headers: [],
+  },
+  {
+    id: 'interfaces-overview',
+    method: 'GET',
+    path: '/api/v1/interfaces/overview',
+    name: 'Interfaces Overview',
+    category: 'Interfaces',
+    description:
+      'Returns a live status snapshot for every WireGuard interface in one call. ' +
+      'Each entry combines DB metadata (name, subnet, port, enabled flag) with a real-time ' +
+      'kernel check (interface up, UDP port bound) and the count of currently enabled peers.',
+    auth: 'JWT or PAT',
+    queryParams: [],
+    headers: [],
+  },
+  {
+    id: 'interface-check',
+    method: 'GET',
+    path: '/api/v1/interfaces/:id/check',
+    name: 'Interface Check',
+    category: 'Interfaces',
+    description:
+      'Checks whether a specific WireGuard interface is up in the kernel and whether its ' +
+      'UDP port is actively bound. Useful for targeted health probes on a single interface.',
+    auth: 'JWT or PAT',
+    pathParams: [
+      { name: 'id', description: 'Interface ID (integer)', example: '1' },
+    ],
+    queryParams: [],
+    headers: [],
+  },
   {
     id: 'metrics',
     method: 'GET',
@@ -432,6 +483,7 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
 
   // Tester state
   const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null)
+  const [pathVals, setPathVals]               = useState<Record<string, string>>({})
   const [queryVals, setQueryVals]             = useState<Record<string, string>>({})
   const [headerVals, setHeaderVals]           = useState<Record<string, string>>({})
   const [response, setResponse]               = useState<TesterResponse | null>(null)
@@ -439,20 +491,37 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
   const [testerError, setTesterError]         = useState('')
   const responseRef = useRef<HTMLDivElement>(null)
 
+  function setPP(name: string, val: string) { setPathVals((p) => ({ ...p, [name]: val })) }
   function setQP(name: string, val: string) { setQueryVals((p) => ({ ...p, [name]: val })) }
   function setHP(name: string, val: string) { setHeaderVals((p) => ({ ...p, [name]: val })) }
+
+  // Resolve :param segments in the path template with actual values
+  function resolvePath(): string {
+    return endpoint.path.replace(/:([a-zA-Z_]+)/g, (_, name) => encodeURIComponent(pathVals[name] ?? `:${name}`))
+  }
 
   // Active (non-expired) tokens available for selection
   const activeTokens = tokens.filter(
     (t) => !t.expires_at || new Date(t.expires_at) >= new Date(),
   )
 
+  // Health endpoint is public — no token required
+  const isPublic = endpoint.auth === 'None (public)'
+
   async function execute() {
-    if (selectedTokenId == null) { setTesterError('Select a token to authenticate the request.'); return }
+    if (!isPublic && selectedTokenId == null) {
+      setTesterError('Select a token to authenticate the request.')
+      return
+    }
+    // Validate path params
+    const missingPath = (endpoint.pathParams ?? []).find((p) => !pathVals[p.name]?.trim())
+    if (missingPath) { setTesterError(`Enter a value for the path parameter: ${missingPath.name}`); return }
+
     setTesterError('')
     setLoading(true)
     setResponse(null)
     try {
+      const resolvedPath = resolvePath()
       // Build query params — only non-empty values
       const qp: Record<string, string> = {}
       endpoint.queryParams.forEach((p) => {
@@ -465,8 +534,23 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
         const v = headerVals[h.name] ?? h.default
         if (v) hdrs[h.name] = v
       })
-      // Proxy call — token never touches the browser; server decrypts + forwards
-      const result = await devProxy(selectedTokenId, endpoint.path, qp, hdrs)
+      // Proxy call — token never touches the browser; server decrypts + forwards.
+      // For public endpoints we still go through devProxy (needs a PAT for the proxy
+      // itself) only if a token is selected; otherwise fall back to a direct fetch.
+      let result
+      if (selectedTokenId != null) {
+        result = await devProxy(selectedTokenId, resolvedPath, qp, hdrs)
+      } else {
+        // Public endpoint — direct fetch, no token needed
+        const url = new URL(resolvedPath, window.location.origin)
+        Object.entries(qp).forEach(([k, v]) => url.searchParams.set(k, v))
+        const t0 = performance.now()
+        const res = await fetch(url.toString(), { headers: hdrs })
+        const duration = Math.round(performance.now() - t0)
+        const ct = res.headers.get('content-type') ?? ''
+        const body = await res.text()
+        result = { status: res.status, status_text: res.statusText, content_type: ct, body, duration_ms: duration }
+      }
       let body = result.body
       if (result.content_type.includes('json')) {
         try { body = JSON.stringify(JSON.parse(body), null, 2) } catch { /* keep raw */ }
@@ -489,7 +573,8 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
   const cardClass = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
   const isOk = response && response.status >= 200 && response.status < 300
 
-  // Build example curl
+  // Build example curl (uses live path + param values)
+  const curlPath = resolvePath()
   const curlHeaders = endpoint.headers
     .map((h) => ` \\\n  -H "${h.name}: ${headerVals[h.name] ?? h.default}"`)
     .join('')
@@ -497,8 +582,9 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
     .filter((p) => queryVals[p.name])
     .map((p) => `${p.name}=${encodeURIComponent(queryVals[p.name])}`)
     .join('&')
-  const curlUrl = `${window.location.origin}${endpoint.path}${curlParams ? '?' + curlParams : ''}`
-  const curlCmd = `curl -H "Authorization: Bearer <token>"${curlHeaders} \\\n  "${curlUrl}"`
+  const curlUrl = `${window.location.origin}${curlPath}${curlParams ? '?' + curlParams : ''}`
+  const curlAuth = isPublic ? '' : ' \\\n  -H "Authorization: Bearer <token>"'
+  const curlCmd = `curl${curlAuth}${curlHeaders} \\\n  "${curlUrl}"`
 
   return (
     <div className="p-6 space-y-5 max-w-3xl">
@@ -524,12 +610,18 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
       </div>
 
       {/* Parameters */}
-      {(endpoint.queryParams.length > 0 || endpoint.headers.length > 0) && (
+      {((endpoint.pathParams?.length ?? 0) > 0 || endpoint.queryParams.length > 0 || endpoint.headers.length > 0) && (
         <Card className={cardClass}>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm">Parameters</CardTitle>
           </CardHeader>
           <CardContent className="space-y-0 p-0">
+            {(endpoint.pathParams?.length ?? 0) > 0 && (
+              <ParamTable title="Path parameters" params={(endpoint.pathParams ?? []).map(p => ({
+                name: p.name, in: 'path', type: 'integer',
+                required: true, default: p.example, description: p.description,
+              }))} isCyber={isCyber} />
+            )}
             {endpoint.queryParams.length > 0 && (
               <ParamTable title="Query parameters" params={endpoint.queryParams.map(p => ({
                 name: p.name, in: 'query', type: p.type,
@@ -556,34 +648,67 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Token selector */}
-          <div className="space-y-1.5">
-            <Label className="text-xs">Authentication token</Label>
-            {activeTokens.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                No active tokens — create one in the{' '}
-                <span className="underline cursor-pointer" onClick={() => {}}>API Keys</span> tab.
+          {/* Token selector — hidden for public endpoints */}
+          {isPublic ? (
+            <div className={cn(
+              'flex items-center gap-2 text-xs px-3 py-2 rounded-[var(--radius)] border',
+              isCyber
+                ? 'border-[rgba(0,255,255,0.15)] text-[hsl(180,60%,60%)] bg-[rgba(0,255,255,0.04)]'
+                : 'border-border text-muted-foreground bg-muted/40',
+            )}>
+              <span className={cn('h-1.5 w-1.5 rounded-full shrink-0', isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500')} />
+              Public endpoint — no token required
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label className="text-xs">Authentication token</Label>
+              {activeTokens.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No active tokens — create one in the <strong>API Keys</strong> tab.
+                </p>
+              ) : (
+                <select
+                  className={cn(
+                    'w-full text-sm rounded-md px-3 py-2 border border-border bg-background',
+                    'focus:outline-none focus:ring-1 focus:ring-ring',
+                    isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)] text-[hsl(180,70%,75%)]',
+                  )}
+                  value={selectedTokenId ?? ''}
+                  onChange={(e) => setSelectedTokenId(e.target.value ? Number(e.target.value) : null)}
+                >
+                  <option value="">— select a token —</option>
+                  {activeTokens.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+              )}
+              <p className="text-[11px] text-muted-foreground">
+                Proxied server-side — your token never appears in the browser or network tab.
               </p>
-            ) : (
-              <select
-                className={cn(
-                  'w-full text-sm rounded-md px-3 py-2 border border-border bg-background',
-                  'focus:outline-none focus:ring-1 focus:ring-ring',
-                  isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)] text-[hsl(180,70%,75%)]',
-                )}
-                value={selectedTokenId ?? ''}
-                onChange={(e) => setSelectedTokenId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">— select a token —</option>
-                {activeTokens.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}</option>
+            </div>
+          )}
+
+          {/* Path param inputs */}
+          {(endpoint.pathParams?.length ?? 0) > 0 && (
+            <div className="space-y-2">
+              <Label className="text-xs">Path parameters</Label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {(endpoint.pathParams ?? []).map((p) => (
+                  <div key={p.name} className="space-y-1">
+                    <label className="text-[11px] text-muted-foreground font-mono">
+                      :{p.name}<span className="text-destructive ml-0.5">*</span>
+                    </label>
+                    <Input
+                      placeholder={p.example ?? p.name}
+                      value={pathVals[p.name] ?? ''}
+                      onChange={(e) => setPP(p.name, e.target.value)}
+                      className="h-8 text-xs font-mono"
+                    />
+                  </div>
                 ))}
-              </select>
-            )}
-            <p className="text-[11px] text-muted-foreground">
-              The request is proxied server-side — your token never appears in the browser or network tab.
-            </p>
-          </div>
+              </div>
+            </div>
+          )}
 
           {/* Query params inputs */}
           {endpoint.queryParams.length > 0 && (

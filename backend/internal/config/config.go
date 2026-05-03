@@ -1,5 +1,8 @@
 package config
 
+// AppVersion is the current Velar release. Bump this on each release.
+const AppVersion = "1.0.0"
+
 import (
 	"log/slog"
 	"os"
