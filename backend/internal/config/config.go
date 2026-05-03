@@ -1,8 +1,5 @@
 package config
 
-// AppVersion is the current Velar release. Bump this on each release.
-const AppVersion = "1.0.0"
-
 import (
 	"log/slog"
 	"os"
@@ -32,6 +29,9 @@ type Config struct {
 	// Used to build one-time download links in notification emails.
 	AppURL string
 }
+
+// AppVersion is the current Velar release. Bump this on each release.
+const AppVersion = "1.0.0"
 
 var C Config
 
