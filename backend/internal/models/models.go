@@ -99,7 +99,7 @@ type PersonalAccessToken struct {
 	Name           string     `gorm:"not null" json:"name"`
 	TokenPrefix    string     `gorm:"not null" json:"token_prefix"`    // first 8 chars, display only
 	TokenHash      string     `gorm:"uniqueIndex;not null" json:"-"`   // SHA-256 of raw token (auth lookup)
-	TokenEncrypted string     `gorm:"not null" json:"-"`               // AES-256-GCM encrypted raw token (proxy use)
+	TokenEncrypted string     `gorm:"not null;default:''" json:"-"`    // AES-256-GCM encrypted raw token (proxy use)
 	ExpiresAt      *time.Time `json:"expires_at"`
 	LastUsedAt     *time.Time `json:"last_used_at"`
 	CreatedAt      time.Time  `json:"created_at"`
