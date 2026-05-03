@@ -142,6 +142,9 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 		return
 	}
 
+	auditLog(c, "interface.create", "interface", iface.ID, iface.Name,
+		fmt.Sprintf("port=%d subnet=%s", iface.Port, iface.Subnet))
+
 	c.JSON(http.StatusCreated, iface)
 }
 
@@ -362,6 +365,9 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "database error: " + err.Error()})
 		return
 	}
+
+	auditLog(c, "interface.delete", "interface", iface.ID, iface.Name,
+		fmt.Sprintf("clients_removed=%d", len(clients)))
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

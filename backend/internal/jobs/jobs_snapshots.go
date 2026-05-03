@@ -104,8 +104,8 @@ func snapshotBandwidth(wg wgsvc.Service) {
 	}
 }
 
-// purgeOldData removes PeerSnapshot rows older than 7 days and ConnectionEvent
-// rows older than 30 days to keep the database from growing unbounded.
+// purgeOldData removes PeerSnapshot rows older than 7 days, ConnectionEvent
+// rows older than 30 days, and AuditLog entries older than 90 days.
 func purgeOldData() {
 	snapshotCutoff := time.Now().Add(-snapshotRetention)
 	res := database.DB.Where("timestamp < ?", snapshotCutoff).Delete(&models.PeerSnapshot{})
@@ -117,5 +117,11 @@ func purgeOldData() {
 	res = database.DB.Where("timestamp < ?", eventCutoff).Delete(&models.ConnectionEvent{})
 	if res.RowsAffected > 0 {
 		slog.Info("purged old connection events", "count", res.RowsAffected)
+	}
+
+	auditCutoff := time.Now().Add(-auditLogRetention)
+	res = database.DB.Where("created_at < ?", auditCutoff).Delete(&models.AuditLog{})
+	if res.RowsAffected > 0 {
+		slog.Info("purged old audit logs", "count", res.RowsAffected)
 	}
 }

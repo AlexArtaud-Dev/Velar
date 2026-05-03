@@ -214,6 +214,9 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		}
 	}
 
+	auditLog(c, "client.create", "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s", iface.Name, assignedIP))
+
 	c.JSON(http.StatusCreated, client)
 }
 
@@ -390,6 +393,9 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	}
 
 	h.syncConf(client.Interface)
+
+	auditLog(c, "client.delete", "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s", client.Interface.Name, client.AssignedIP))
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

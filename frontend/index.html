@@ -11,7 +11,9 @@
         try {
           var s = JSON.parse(localStorage.getItem('velar-theme') || '{}')
           var theme = s.state && s.state.theme ? s.state.theme : 'dark'
-          if (theme === 'dark') document.documentElement.classList.add('dark')
+          var root = document.documentElement
+          root.classList.remove('dark', 'apple', 'cyberpunk')
+          if (theme !== 'light') root.classList.add(theme)
         } catch (e) {
           document.documentElement.classList.add('dark')
         }

@@ -81,3 +81,46 @@ func (h *InterfaceHandler) Check(c *gin.Context) {
 		"interface":    iface.Name,
 	})
 }
+
+// StatusOverview returns a live status snapshot for every interface in one call.
+// Each entry combines DB metadata with a kernel-level check (interface up + UDP
+// port bound) and the count of currently enabled peers.
+//
+// Route: GET /api/v1/interfaces/overview  (JWT or PAT)
+func (h *InterfaceHandler) StatusOverview(c *gin.Context) {
+	var ifaces []models.Interface
+	database.DB.Find(&ifaces)
+
+	type entry struct {
+		ID          uint   `json:"id"`
+		Name        string `json:"name"`
+		Port        int    `json:"port"`
+		Subnet      string `json:"subnet"`
+		Enabled     bool   `json:"enabled"`
+		InterfaceUp bool   `json:"interface_up"`
+		PortBound   bool   `json:"port_bound"`
+		ClientCount int64  `json:"client_count"`
+	}
+
+	result := make([]entry, 0, len(ifaces))
+	for _, iface := range ifaces {
+		kStatus, _ := h.wg.GetInterfaceStatus(iface.Name)
+		var count int64
+		database.DB.Model(&models.Client{}).
+			Where("interface_id = ? AND enabled = true", iface.ID).
+			Count(&count)
+
+		result = append(result, entry{
+			ID:          iface.ID,
+			Name:        iface.Name,
+			Port:        iface.Port,
+			Subnet:      iface.Subnet,
+			Enabled:     iface.Enabled,
+			InterfaceUp: kStatus.Up,
+			PortBound:   checkUDPPort(iface.Port),
+			ClientCount: count,
+		})
+	}
+
+	c.JSON(http.StatusOK, result)
+}

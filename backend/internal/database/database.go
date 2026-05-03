@@ -89,6 +89,8 @@ func AutoMigrate() error {
 		&models.DownloadToken{},
 		&models.ConnectionEvent{},
 		&models.PeerSnapshot{},
+		&models.AuditLog{},
+		&models.PersonalAccessToken{},
 	)
 }
 

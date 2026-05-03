@@ -41,6 +41,9 @@ func NewRouter(
 		c.Next()
 	})
 
+	// Public health check — no auth required (safe for uptime monitors / probes)
+	r.GET("/health", handlers.HealthCheck(ag))
+
 	// Public download endpoint
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
 
@@ -63,6 +66,9 @@ func NewRouter(
 		authGroup.POST("/totp/disable", middleware.JWT(), handlers.TOTPDisable())
 	}
 
+	// Shared handler instances (used by both JWT and JWTORPAT groups)
+	ifaceHandler := handlers.NewInterfaceHandler(wg)
+
 	// Protected API
 	api := r.Group("/api/v1", middleware.JWT())
 	{
@@ -70,7 +76,6 @@ func NewRouter(
 		api.GET("/me", handlers.GetMe())
 
 		// Interfaces
-		ifaceHandler := handlers.NewInterfaceHandler(wg)
 		ifaces := api.Group("/interfaces")
 		{
 			ifaces.GET("", ifaceHandler.List)
@@ -80,7 +85,7 @@ func NewRouter(
 			ifaces.DELETE("/:id", ifaceHandler.Delete)
 			ifaces.POST("/:id/up", ifaceHandler.BringUp)
 			ifaces.POST("/:id/down", ifaceHandler.BringDown)
-			ifaces.GET("/:id/check", ifaceHandler.Check)
+			// /:id/check moved to extAPI so PATs can reach it too
 		}
 
 		// Clients
@@ -133,10 +138,33 @@ func NewRouter(
 			dashboard.GET("/snapshots", dashboardHandler.GetSnapshots)
 		}
 
+		// Personal Access Tokens (JWT-only — managed from the web app)
+		api.GET("/tokens", handlers.ListPATs)
+		api.POST("/tokens", handlers.CreatePAT)
+		api.DELETE("/tokens/:id", handlers.DeletePAT)
+
+		// Developer proxy — server-side API tester, never exposes raw tokens to browser
+		api.POST("/dev/proxy", handlers.DevProxy)
+
 		// Client history endpoints
 		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
 		clients.GET("/:id/events", clientHandler.GetEvents)
+	}
 
+	// ── External / developer API — accepts JWT or PAT ─────────────────────────
+	// These routes are designed to be called from scripts, monitoring tools,
+	// and CI pipelines using a personal access token.
+	extAPI := r.Group("/api/v1", middleware.JWTORPAT())
+	{
+		// Prometheus metrics (60s server-side cache)
+		extAPI.GET("/metrics", handlers.GetMetrics)
+
+		// Audit logs
+		extAPI.GET("/audit", handlers.ListAuditLogs)
+
+		// Interface status — live kernel check per interface + overview
+		extAPI.GET("/interfaces/overview", ifaceHandler.StatusOverview)
+		extAPI.GET("/interfaces/:id/check", ifaceHandler.Check)
 	}
 
 	return r

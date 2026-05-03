@@ -30,6 +30,9 @@ type Config struct {
 	AppURL string
 }
 
+// AppVersion is the current Velar release. Bump this on each release.
+const AppVersion = "1.0.0"
+
 var C Config
 
 func Load() {
