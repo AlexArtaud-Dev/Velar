@@ -55,18 +55,8 @@ export function ClientCard({
   const disableMut = useMutation({ mutationFn: disableClient, onSuccess: invalidate })
   const deleteMut  = useMutation({ mutationFn: deleteClient,  onSuccess: invalidate })
 
-  const quotaSet        = client.data_quota_bytes > 0
+  const quotaSet          = client.data_quota_bytes > 0
   const hasBandwidthLimit = client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0
-
-  // Initials avatar — split on spaces, underscores, hyphens, and digit/letter
-  // boundaries so "PC_ABEO" → "PA", "S22_ULTRA" → "SU", "My Client" → "MC"
-  const initials = client.name
-    .split(/[\s_\-]+/)
-    .filter(Boolean)
-    .map((w) => w.replace(/^\d+/, '')[0]?.toUpperCase() ?? w[0]?.toUpperCase() ?? '')
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
 
   return (
     <Card
@@ -84,7 +74,7 @@ export function ClientCard({
       <CardHeader className="pb-2">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
 
-          {/* Left: selector dot + avatar + name */}
+          {/* Left: selector dot + name */}
           <div className="flex items-center gap-2.5">
             {/* Dot / checkbox hybrid */}
             <button
@@ -121,20 +111,6 @@ export function ClientCard({
                 </span>
               </span>
             </button>
-
-            {/* Initials avatar */}
-            <div className={cn(
-              'h-8 w-8 rounded-[calc(var(--radius)-2px)] flex items-center justify-center text-xs font-bold shrink-0 select-none',
-              isOnline
-                ? isCyber
-                  ? 'bg-[rgba(0,255,255,0.12)] text-[hsl(180,100%,60%)] border border-[rgba(0,255,255,0.2)]'
-                  : 'bg-green-500/10 text-green-700 dark:text-green-400'
-                : isApple
-                  ? 'bg-[rgba(0,122,255,0.08)] text-[hsl(211,100%,45%)]'
-                  : 'bg-muted text-muted-foreground',
-            )}>
-              {initials || '?'}
-            </div>
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
