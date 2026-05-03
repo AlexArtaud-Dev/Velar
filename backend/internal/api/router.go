@@ -133,16 +133,26 @@ func NewRouter(
 			dashboard.GET("/snapshots", dashboardHandler.GetSnapshots)
 		}
 
-		// Prometheus metrics (60s server-side cache)
-		api.GET("/metrics", handlers.GetMetrics)
-
-		// Audit logs
-		api.GET("/audit", handlers.ListAuditLogs)
+		// Personal Access Tokens (JWT-only — managed from the web app)
+		api.GET("/tokens", handlers.ListPATs)
+		api.POST("/tokens", handlers.CreatePAT)
+		api.DELETE("/tokens/:id", handlers.DeletePAT)
 
 		// Client history endpoints
 		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
 		clients.GET("/:id/events", clientHandler.GetEvents)
+	}
 
+	// ── External / developer API — accepts JWT or PAT ─────────────────────────
+	// These routes are designed to be called from scripts, monitoring tools,
+	// and CI pipelines using a personal access token.
+	extAPI := r.Group("/api/v1", middleware.JWTORPAT())
+	{
+		// Prometheus metrics (60s server-side cache)
+		extAPI.GET("/metrics", handlers.GetMetrics)
+
+		// Audit logs
+		extAPI.GET("/audit", handlers.ListAuditLogs)
 	}
 
 	return r

@@ -89,6 +89,21 @@ type ConnectionEvent struct {
 	Client    Client    `gorm:"foreignKey:ClientID" json:"-"`
 }
 
+// PersonalAccessToken allows API access without a short-lived JWT.
+// The raw token (format: vp_<64 hex chars>) is shown exactly once at creation.
+// Only the SHA-256 hash is persisted; the prefix (first 8 chars) is stored for
+// display purposes so the user can identify which token is which.
+type PersonalAccessToken struct {
+	ID          uint       `gorm:"primaryKey" json:"id"`
+	AdminID     uint       `gorm:"not null;index" json:"admin_id"`
+	Name        string     `gorm:"not null" json:"name"`
+	TokenPrefix string     `gorm:"not null" json:"token_prefix"` // first 8 chars, for display only
+	TokenHash   string     `gorm:"uniqueIndex;not null" json:"-"` // SHA-256 of raw token
+	ExpiresAt   *time.Time `json:"expires_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
 // AuditLog records admin-initiated mutations for lightweight change tracking.
 // Rows older than 90 days are pruned automatically.
 type AuditLog struct {

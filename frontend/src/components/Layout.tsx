@@ -1,10 +1,10 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Network, Users, Settings, LogOut,
-  Shield, Wifi, WifiOff,
+  Shield, Wifi, WifiOff, Key,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
-import { useThemeStore, THEMES } from '@/stores/theme'
+import { useThemeStore, THEMES, type Theme } from '@/stores/theme'
 import { logout } from '@/api/auth'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { cn } from '@/lib/utils'
@@ -13,23 +13,37 @@ const navItems = [
   { to: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
   { to: '/interfaces', label: 'Interfaces', icon: Network },
   { to: '/clients',    label: 'Clients',    icon: Users },
+  { to: '/tokens',     label: 'API Keys',   icon: Key },
   { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
 
-/** Small cycling theme button — shows current theme emoji, cycles on click */
-function ThemeButton() {
-  const { theme, cycleTheme } = useThemeStore()
-  const current = THEMES.find((t) => t.value === theme) ?? THEMES[0]
-  const next = THEMES[(THEMES.indexOf(current) + 1) % THEMES.length]
+const THEME_LABELS: Record<Theme, string> = {
+  dark:      '🌙 Dark',
+  light:     '☀️ Light',
+  apple:     '🍎 Clear',
+  cyberpunk: '⚡ Cyberpunk',
+}
+
+/** Compact theme selector dropdown */
+function ThemeSelector() {
+  const { theme, setTheme } = useThemeStore()
 
   return (
-    <button
-      onClick={cycleTheme}
-      title={`Switch to ${next.label}`}
-      className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors text-sm leading-none select-none"
+    <select
+      value={theme}
+      onChange={(e) => setTheme(e.target.value as Theme)}
+      className={cn(
+        'text-xs rounded-md px-1.5 py-1 border border-border bg-background text-muted-foreground',
+        'hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring cursor-pointer transition-colors',
+      )}
+      title="Switch theme"
     >
-      {current.emoji}
-    </button>
+      {THEMES.map((t) => (
+        <option key={t.value} value={t.value}>
+          {THEME_LABELS[t.value]}
+        </option>
+      ))}
+    </select>
   )
 }
 
@@ -131,7 +145,7 @@ export default function Layout() {
               {admin?.username}
             </span>
             <div className="flex items-center gap-0.5">
-              <ThemeButton />
+              <ThemeSelector />
               <button
                 onClick={handleLogout}
                 className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
@@ -170,7 +184,7 @@ export default function Layout() {
 
           {/* Actions */}
           <div className="flex items-center gap-1">
-            <ThemeButton />
+            <ThemeSelector />
             <button
               onClick={handleLogout}
               className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"

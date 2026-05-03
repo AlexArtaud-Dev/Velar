@@ -7,7 +7,7 @@ import { getPublicIP } from '@/api/settings'
 import { getDashboardStats, getDashboardSnapshots, type SnapshotPoint } from '@/api/dashboard'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useThemeStore } from '@/stores/theme'
-import { formatBytes, timeAgo } from '@/lib/utils'
+import { formatBytes, formatBytesShort, timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -182,7 +182,7 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v as number)} width={72} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytesShort(v as number)} width={64} />
                 <Tooltip formatter={(v) => formatBytes(v as number)} />
                 <Area type="monotone" dataKey="rx" stroke={rxColor} fill="url(#lrx)" name="↓ RX" strokeWidth={isCyber ? 1.5 : 2} />
                 <Area type="monotone" dataKey="tx" stroke={txColor} fill="url(#ltx)" name="↑ TX" strokeWidth={isCyber ? 1.5 : 2} />
@@ -245,7 +245,7 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytes(v as number)} width={72} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => formatBytesShort(v as number)} width={64} />
                 <Tooltip formatter={(v) => formatBytes(v as number)} labelFormatter={(l) => `${l}`} />
                 <Area type="monotone" dataKey="rx" stroke={rxColor} fill="url(#hrx)" name="↓ Download" strokeWidth={isCyber ? 1.5 : 2} />
                 <Area type="monotone" dataKey="tx" stroke={txColor} fill="url(#htx)" name="↑ Upload"   strokeWidth={isCyber ? 1.5 : 2} />

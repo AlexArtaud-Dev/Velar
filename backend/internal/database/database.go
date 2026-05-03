@@ -90,6 +90,7 @@ func AutoMigrate() error {
 		&models.ConnectionEvent{},
 		&models.PeerSnapshot{},
 		&models.AuditLog{},
+		&models.PersonalAccessToken{},
 	)
 }
 
