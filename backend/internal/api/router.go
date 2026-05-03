@@ -138,6 +138,9 @@ func NewRouter(
 		api.POST("/tokens", handlers.CreatePAT)
 		api.DELETE("/tokens/:id", handlers.DeletePAT)
 
+		// Developer proxy — server-side API tester, never exposes raw tokens to browser
+		api.POST("/dev/proxy", handlers.DevProxy)
+
 		// Client history endpoints
 		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
 		clients.GET("/:id/events", clientHandler.GetEvents)

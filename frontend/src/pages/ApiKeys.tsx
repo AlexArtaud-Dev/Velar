@@ -1,6 +1,5 @@
 import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuthStore } from '@/stores/auth'
 import {
   Key, Plus, Trash2, Copy, Check, AlertTriangle, Clock,
   ChevronRight, Play, Loader2, TriangleAlert,
@@ -10,7 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { listTokens, createToken, deleteToken, type PAT, type CreatedPAT } from '@/api/tokens'
+import { listTokens, createToken, deleteToken, devProxy, type PAT, type CreatedPAT } from '@/api/tokens'
 import { useThemeStore } from '@/stores/theme'
 import { cn } from '@/lib/utils'
 
@@ -432,46 +431,53 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
   const isApple = theme === 'apple'
 
   // Tester state
-  const [tokenInput, setTokenInput]   = useState('')
-  const [queryVals, setQueryVals]     = useState<Record<string, string>>({})
-  const [headerVals, setHeaderVals]   = useState<Record<string, string>>({})
-  const [response, setResponse]       = useState<TesterResponse | null>(null)
-  const [loading, setLoading]         = useState(false)
-  const [testerError, setTesterError] = useState('')
+  const [selectedTokenId, setSelectedTokenId] = useState<number | null>(null)
+  const [queryVals, setQueryVals]             = useState<Record<string, string>>({})
+  const [headerVals, setHeaderVals]           = useState<Record<string, string>>({})
+  const [response, setResponse]               = useState<TesterResponse | null>(null)
+  const [loading, setLoading]                 = useState(false)
+  const [testerError, setTesterError]         = useState('')
   const responseRef = useRef<HTMLDivElement>(null)
 
   function setQP(name: string, val: string) { setQueryVals((p) => ({ ...p, [name]: val })) }
   function setHP(name: string, val: string) { setHeaderVals((p) => ({ ...p, [name]: val })) }
 
+  // Active (non-expired) tokens available for selection
+  const activeTokens = tokens.filter(
+    (t) => !t.expires_at || new Date(t.expires_at) >= new Date(),
+  )
+
   async function execute() {
-    const tok = tokenInput.trim()
-    if (!tok) { setTesterError('Enter a token to authenticate the request.'); return }
+    if (selectedTokenId == null) { setTesterError('Select a token to authenticate the request.'); return }
     setTesterError('')
     setLoading(true)
     setResponse(null)
     try {
-      const url = new URL(endpoint.path, window.location.origin)
+      // Build query params — only non-empty values
+      const qp: Record<string, string> = {}
       endpoint.queryParams.forEach((p) => {
         const v = queryVals[p.name] ?? ''
-        if (v) url.searchParams.set(p.name, v)
+        if (v) qp[p.name] = v
       })
-      const headers: Record<string, string> = { Authorization: `Bearer ${tok}` }
+      // Build custom headers (e.g. Accept) — exclude Authorization, handled server-side
+      const hdrs: Record<string, string> = {}
       endpoint.headers.forEach((h) => {
         const v = headerVals[h.name] ?? h.default
-        if (v) headers[h.name] = v
+        if (v) hdrs[h.name] = v
       })
-      const t0 = performance.now()
-      const res = await fetch(url.toString(), { headers })
-      const duration = Math.round(performance.now() - t0)
-      const ct = res.headers.get('content-type') ?? ''
-      let body: string
-      if (ct.includes('json')) {
-        const json = await res.json()
-        body = JSON.stringify(json, null, 2)
-      } else {
-        body = await res.text()
+      // Proxy call — token never touches the browser; server decrypts + forwards
+      const result = await devProxy(selectedTokenId, endpoint.path, qp, hdrs)
+      let body = result.body
+      if (result.content_type.includes('json')) {
+        try { body = JSON.stringify(JSON.parse(body), null, 2) } catch { /* keep raw */ }
       }
-      setResponse({ status: res.status, statusText: res.statusText, contentType: ct, body, duration })
+      setResponse({
+        status:      result.status,
+        statusText:  result.status_text,
+        contentType: result.content_type,
+        body,
+        duration:    result.duration_ms,
+      })
       setTimeout(() => responseRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' }), 50)
     } catch (err) {
       setTesterError(err instanceof Error ? err.message : 'Request failed')
@@ -550,63 +556,32 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
           </div>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Token input */}
+          {/* Token selector */}
           <div className="space-y-1.5">
-            <div className="flex items-center justify-between">
-              <Label className="text-xs">Bearer token</Label>
-              <button
-                type="button"
-                onClick={() => {
-                  const jwt = useAuthStore.getState().accessToken
-                  if (jwt) setTokenInput(jwt)
-                }}
+            <Label className="text-xs">Authentication token</Label>
+            {activeTokens.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                No active tokens — create one in the{' '}
+                <span className="underline cursor-pointer" onClick={() => {}}>API Keys</span> tab.
+              </p>
+            ) : (
+              <select
                 className={cn(
-                  'text-[11px] px-2 py-0.5 rounded border transition-colors',
-                  isCyber
-                    ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,60%)] hover:bg-[rgba(0,255,255,0.08)]'
-                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent/60',
+                  'w-full text-sm rounded-md px-3 py-2 border border-border bg-background',
+                  'focus:outline-none focus:ring-1 focus:ring-ring',
+                  isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)] text-[hsl(180,70%,75%)]',
                 )}
+                value={selectedTokenId ?? ''}
+                onChange={(e) => setSelectedTokenId(e.target.value ? Number(e.target.value) : null)}
               >
-                Use current session
-              </button>
-            </div>
-            <Input
-              placeholder="Paste your full token (vp_…) or click 'Use current session'"
-              value={tokenInput}
-              onChange={(e) => setTokenInput(e.target.value)}
-              className={cn('font-mono text-xs', isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)]')}
-            />
-            {tokens.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-0.5">
-                <span className="text-[11px] text-muted-foreground self-center">Your tokens:</span>
-                {tokens.map((t) => {
-                  const expired = t.expires_at != null && new Date(t.expires_at) < new Date()
-                  return (
-                    <span
-                      key={t.id}
-                      title={`${t.name} — prefix: ${t.token_prefix}… (paste the full token above)`}
-                      className={cn(
-                        'inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full border font-mono cursor-default',
-                        expired
-                          ? 'border-destructive/30 text-muted-foreground line-through'
-                          : isCyber
-                            ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,60%)]'
-                            : 'border-border text-muted-foreground',
-                      )}
-                    >
-                      <span className={cn(
-                        'h-1.5 w-1.5 rounded-full shrink-0',
-                        expired ? 'bg-destructive/50' : isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500',
-                      )} />
-                      {t.name}
-                      <span className="opacity-50">{t.token_prefix}…</span>
-                    </span>
-                  )
-                })}
-              </div>
+                <option value="">— select a token —</option>
+                {activeTokens.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}</option>
+                ))}
+              </select>
             )}
             <p className="text-[11px] text-muted-foreground">
-              Full token values are shown only once at creation — paste the one you want to test above.
+              The request is proxied server-side — your token never appears in the browser or network tab.
             </p>
           </div>
 

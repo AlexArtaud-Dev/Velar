@@ -12,6 +12,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
@@ -30,28 +31,64 @@ const THEME_META: Record<Theme, { label: string; emoji: string; dot: string }> =
   cyberpunk: { label: 'Cyberpunk', emoji: '⚡', dot: 'bg-[hsl(180,100%,50%)]' },
 }
 
-/** Dropdown theme picker with named entries and color dots */
-function ThemeSelector() {
+/** User menu — combines avatar, theme picker, and logout in one dropdown */
+function UserMenu({
+  username,
+  onLogout,
+  compact = false,
+}: {
+  username?: string
+  onLogout: () => void
+  compact?: boolean
+}) {
   const { theme, setTheme } = useThemeStore()
-  const current = THEME_META[theme]
   const isCyber = theme === 'cyberpunk'
+  const initial = username?.charAt(0).toUpperCase() ?? '?'
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className={cn(
-          'flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-medium transition-colors',
-          'border border-border hover:bg-accent/60',
-          isCyber
-            ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,75%)] hover:bg-[rgba(0,255,255,0.08)]'
-            : 'text-muted-foreground hover:text-foreground',
-        )}>
-          <span>{current.emoji}</span>
-          <span>{current.label}</span>
-          <ChevronDown className="h-3 w-3 opacity-60" />
-        </button>
+        {compact ? (
+          // Mobile: just the avatar circle
+          <button className={cn(
+            'h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold transition-colors',
+            isCyber
+              ? 'bg-[rgba(0,255,255,0.15)] text-[hsl(180,80%,70%)] hover:bg-[rgba(0,255,255,0.25)]'
+              : 'bg-accent text-foreground hover:bg-accent/80',
+          )}>
+            {initial}
+          </button>
+        ) : (
+          // Desktop: full row with username + chevron
+          <button className={cn(
+            'flex items-center gap-2.5 w-full px-2 py-2 rounded-[var(--radius)] transition-colors',
+            isCyber
+              ? 'text-[hsl(180,60%,75%)] hover:bg-[rgba(0,255,255,0.08)]'
+              : 'text-muted-foreground hover:text-foreground hover:bg-accent/60',
+          )}>
+            <span className={cn(
+              'h-6 w-6 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0',
+              isCyber
+                ? 'bg-[rgba(0,255,255,0.15)] text-[hsl(180,80%,70%)]'
+                : 'bg-accent text-foreground',
+            )}>
+              {initial}
+            </span>
+            <span className="flex-1 text-xs font-medium truncate text-left">{username}</span>
+            <ChevronDown className="h-3 w-3 opacity-50 shrink-0" />
+          </button>
+        )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="end" className="min-w-[9rem]">
+
+      <DropdownMenuContent
+        side={compact ? 'bottom' : 'top'}
+        align={compact ? 'end' : 'start'}
+        className="w-44"
+      >
+        {/* Theme options */}
+        <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">
+          Theme
+        </div>
         {THEMES.map((t) => {
           const m = THEME_META[t.value]
           return (
@@ -66,6 +103,17 @@ function ThemeSelector() {
             </DropdownMenuItem>
           )
         })}
+
+        <DropdownMenuSeparator />
+
+        {/* Logout */}
+        <DropdownMenuItem
+          onClick={onLogout}
+          className="flex items-center gap-2 cursor-pointer text-muted-foreground focus:text-foreground"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          <span>Logout</span>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   )
@@ -163,22 +211,8 @@ export default function Layout() {
             )}
           </div>
 
-          {/* User row */}
-          <div className="flex items-center justify-between px-1">
-            <span className="text-xs text-muted-foreground truncate max-w-[6.5rem]">
-              {admin?.username}
-            </span>
-            <div className="flex items-center gap-0.5">
-              <ThemeSelector />
-              <button
-                onClick={handleLogout}
-                className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-accent/60 transition-colors"
-                title="Logout"
-              >
-                <LogOut className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
+          {/* User menu */}
+          <UserMenu username={admin?.username} onLogout={handleLogout} />
         </div>
       </aside>
 
@@ -206,17 +240,8 @@ export default function Layout() {
             </span>
           </div>
 
-          {/* Actions */}
-          <div className="flex items-center gap-1">
-            <ThemeSelector />
-            <button
-              onClick={handleLogout}
-              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground transition-colors"
-              title="Logout"
-            >
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+          {/* User menu (compact avatar) */}
+          <UserMenu username={admin?.username} onLogout={handleLogout} compact />
         </header>
 
         {/* Page content */}

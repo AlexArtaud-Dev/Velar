@@ -24,3 +24,25 @@ export function createToken(name: string, expiresAt?: string | null): Promise<Cr
 export function deleteToken(id: number): Promise<void> {
   return api.delete(`/tokens/${id}`).then(() => undefined)
 }
+
+export interface ProxyResult {
+  status: number
+  status_text: string
+  content_type: string
+  body: string
+  duration_ms: number
+}
+
+export function devProxy(
+  tokenId: number,
+  path: string,
+  queryParams: Record<string, string>,
+  headers: Record<string, string>,
+): Promise<ProxyResult> {
+  return api.post('/dev/proxy', {
+    token_id: tokenId,
+    path,
+    query_params: queryParams,
+    headers,
+  }).then((r) => r.data)
+}

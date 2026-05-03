@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
 	"github.com/gin-gonic/gin"
@@ -51,12 +53,19 @@ func CreatePAT(c *gin.Context) {
 	sum := sha256.Sum256([]byte(token))
 	hash := hex.EncodeToString(sum[:])
 
+	encToken, err := auth.Encrypt(token, config.C.AppSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token encryption failed"})
+		return
+	}
+
 	pat := models.PersonalAccessToken{
-		AdminID:     adminIDFromCtx(c),
-		Name:        req.Name,
-		TokenPrefix: token[:8], // "vp_" + first 5 hex chars for display
-		TokenHash:   hash,
-		ExpiresAt:   req.ExpiresAt,
+		AdminID:        adminIDFromCtx(c),
+		Name:           req.Name,
+		TokenPrefix:    token[:8], // "vp_" + first 5 hex chars for display
+		TokenHash:      hash,
+		TokenEncrypted: encToken,
+		ExpiresAt:      req.ExpiresAt,
 	}
 	if err := database.DB.Create(&pat).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
