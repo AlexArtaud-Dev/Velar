@@ -1,5 +1,6 @@
 import { useState, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useAuthStore } from '@/stores/auth'
 import {
   Key, Plus, Trash2, Copy, Check, AlertTriangle, Clock,
   ChevronRight, Play, Loader2, TriangleAlert,
@@ -551,9 +552,26 @@ function EndpointDocs({ endpoint, tokens, theme }: { endpoint: EndpointDef; toke
         <CardContent className="space-y-4">
           {/* Token input */}
           <div className="space-y-1.5">
-            <Label className="text-xs">Bearer token</Label>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs">Bearer token</Label>
+              <button
+                type="button"
+                onClick={() => {
+                  const jwt = useAuthStore.getState().accessToken
+                  if (jwt) setTokenInput(jwt)
+                }}
+                className={cn(
+                  'text-[11px] px-2 py-0.5 rounded border transition-colors',
+                  isCyber
+                    ? 'border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,60%)] hover:bg-[rgba(0,255,255,0.08)]'
+                    : 'border-border text-muted-foreground hover:text-foreground hover:bg-accent/60',
+                )}
+              >
+                Use current session
+              </button>
+            </div>
             <Input
-              placeholder="Paste your full token here (vp_… or JWT)"
+              placeholder="Paste your full token (vp_…) or click 'Use current session'"
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
               className={cn('font-mono text-xs', isCyber && 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.2)]')}
