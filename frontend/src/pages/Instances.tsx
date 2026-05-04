@@ -97,15 +97,23 @@ export default function Instances() {
       <main className="flex-1 overflow-y-auto p-6">
         {selected === null ? (
           <RegisterForm theme={theme} onRegistered={(id) => setSelected(id)} />
-        ) : (
-          <InstancePanel
-            key={selected}
-            instanceId={selected}
-            instance={instances.find((i) => i.id === selected)!}
-            theme={theme}
-            onDelete={() => setSelected(null)}
-          />
-        )}
+        ) : (() => {
+          const inst = instances.find((i) => i.id === selected)
+          if (!inst) return (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          )
+          return (
+            <InstancePanel
+              key={selected}
+              instanceId={selected}
+              instance={inst}
+              theme={theme}
+              onDelete={() => setSelected(null)}
+            />
+          )
+        })()}
       </main>
     </div>
   )
