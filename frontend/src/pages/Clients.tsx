@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Server, Plus, Trash2, ToggleLeft, ToggleRight, Check, Loader2, ArrowDown, ArrowUp, X } from 'lucide-react'
+import { ArrowLeft, Server, Plus, Check, Loader2, X } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
@@ -10,11 +10,9 @@ import { ClientCard } from '@/components/clients/ClientCard'
 import { BulkBar } from '@/components/clients/BulkBar'
 import { CreateClientDialog } from '@/components/clients/CreateClientDialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Badge } from '@/components/ui/badge'
-import { formatBytes, timeAgo, cn } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
 /** Clients page — local clients + slave source bar. */
@@ -164,18 +162,6 @@ export default function Clients() {
 
 // ── Slave clients list ────────────────────────────────────────────────────────
 
-interface SlaveClient {
-  id: number
-  interface_id: number
-  name: string
-  assigned_ip: string
-  enabled: boolean
-  bytes_rx: number
-  bytes_tx: number
-  last_handshake: string | null
-  public_key: string
-}
-
 interface SlaveIface {
   id: number
   name: string
@@ -190,6 +176,7 @@ function SlaveClientsList({
   onIfaceFilterChange: (id: number | undefined) => void
   theme: string
 }) {
+  const qc = useQueryClient()
   const isCyber = theme === 'cyberpunk'
 
   const { data: slaveIfaces = [] } = useQuery({
@@ -200,17 +187,17 @@ function SlaveClientsList({
   })
 
   const url = ifaceFilter ? `/api/v1/clients?interface_id=${ifaceFilter}` : '/api/v1/clients'
-  const { data: clients = [], isLoading, refetch } = useQuery({
+  const { data: clients = [], isLoading } = useQuery({
     queryKey: ['slave-clients', instance.id, ifaceFilter],
     queryFn: () => proxyToInstance(instance.id, 'GET', url).then((r) => {
-      const d = JSON.parse(r.body); return (Array.isArray(d) ? d : []) as SlaveClient[]
+      const d = JSON.parse(r.body); return (Array.isArray(d) ? d : []) as Client[]
     }),
     refetchInterval: 10_000,
   })
 
-  const enableMut  = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'POST',   `/api/v1/clients/${id}/enable`),  onSuccess: () => refetch() })
-  const disableMut = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'POST',   `/api/v1/clients/${id}/disable`), onSuccess: () => refetch() })
-  const deleteMut  = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'DELETE', `/api/v1/clients/${id}`),         onSuccess: () => refetch() })
+  function invalidate() {
+    qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] })
+  }
 
   // Create client form
   const [showCreate, setShowCreate] = useState(false)
@@ -220,7 +207,7 @@ function SlaveClientsList({
     mutationFn: () => proxyToInstance(instance.id, 'POST', '/api/v1/clients', {
       name: newName.trim(), interface_id: newIfaceId,
     }),
-    onSuccess: () => { setShowCreate(false); setNewName(''); refetch() },
+    onSuccess: () => { setShowCreate(false); setNewName(''); invalidate() },
   })
 
   // keep newIfaceId in sync when ifaces load
@@ -288,7 +275,7 @@ function SlaveClientsList({
         </div>
       )}
 
-      {/* Client cards */}
+      {/* Client cards — full feature parity via instanceId prop */}
       {isLoading ? (
         <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />)}</div>
       ) : clients.length === 0 ? (
@@ -296,91 +283,19 @@ function SlaveClientsList({
       ) : (
         <div className="space-y-3">
           {clients.map((cl) => (
-            <SlaveClientCard
+            <ClientCard
               key={cl.id}
               client={cl}
-              theme={theme}
-              onEnable={() => enableMut.mutate(cl.id)}
-              onDisable={() => disableMut.mutate(cl.id)}
-              onDelete={() => { if (confirm(`Delete ${cl.name}?`)) deleteMut.mutate(cl.id) }}
-              busy={enableMut.isPending || disableMut.isPending || deleteMut.isPending}
+              isSelected={false}
+              anySelected={false}
+              onToggleSelect={() => {}}
+              onUpdated={invalidate}
+              instanceId={instance.id}
+              instanceUrl={instance.url}
             />
           ))}
         </div>
       )}
     </div>
-  )
-}
-
-// ── Slave client card ─────────────────────────────────────────────────────────
-
-function SlaveClientCard({
-  client, theme, onEnable, onDisable, onDelete, busy,
-}: {
-  client: SlaveClient
-  theme: string
-  onEnable: () => void
-  onDisable: () => void
-  onDelete: () => void
-  busy: boolean
-}) {
-  const isCyber = theme === 'cyberpunk'
-  const isApple = theme === 'apple'
-
-  return (
-    <Card className={cn(
-      'transition-all duration-200',
-      !client.enabled && 'opacity-60',
-      isApple && 'apple-glass',
-      isCyber && 'cyber-card',
-      !isApple && !isCyber && 'hover:shadow-md',
-    )}>
-      <CardHeader className="pb-2">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-          <div className="flex items-center gap-2.5">
-            <span className={cn(
-              'h-2.5 w-2.5 rounded-full shrink-0',
-              client.enabled
-                ? isCyber ? 'bg-[hsl(180,100%,50%)] shadow-[0_0_6px_rgba(0,255,255,0.6)]' : 'bg-green-500'
-                : 'bg-muted-foreground/25',
-            )} />
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <CardTitle className="text-sm leading-none">{client.name}</CardTitle>
-                {!client.enabled && <Badge variant="secondary" className="h-4 text-[10px] px-1.5">Disabled</Badge>}
-              </div>
-            </div>
-          </div>
-          <div className="flex items-center gap-1 ml-auto sm:ml-0">
-            <Button variant="ghost" size="icon" className="h-7 w-7" title={client.enabled ? 'Disable' : 'Enable'} disabled={busy}
-              onClick={client.enabled ? onDisable : onEnable}>
-              {client.enabled
-                ? <ToggleRight className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500')} />
-                : <ToggleLeft className="h-4 w-4 text-muted-foreground" />}
-            </Button>
-            <Button variant="ghost" size="icon" className="h-7 w-7" title="Delete" disabled={busy} onClick={onDelete}>
-              <Trash2 className="h-3.5 w-3.5 text-destructive" />
-            </Button>
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent className="pt-1">
-        <div className={cn('flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground px-1 pb-2', isCyber && 'font-mono')}>
-          <span className={cn('font-mono px-1.5 py-0.5 rounded text-xs',
-            isCyber ? 'bg-[rgba(0,255,255,0.08)] text-[hsl(180,80%,65%)]' : 'bg-muted text-foreground/80')}>
-            {client.assigned_ip}
-          </span>
-          <span className="flex items-center gap-0.5">
-            <ArrowDown className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-blue-500')} />
-            {formatBytes(client.bytes_rx)}
-          </span>
-          <span className="flex items-center gap-0.5">
-            <ArrowUp className={cn('h-3 w-3', isCyber ? 'text-[hsl(300,100%,55%)]' : 'text-emerald-500')} />
-            {formatBytes(client.bytes_tx)}
-          </span>
-          {client.last_handshake && <span>{timeAgo(new Date(client.last_handshake).getTime() / 1000)}</span>}
-        </div>
-      </CardContent>
-    </Card>
   )
 }

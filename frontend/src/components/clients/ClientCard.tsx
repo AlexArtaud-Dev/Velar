@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { enableClient, disableClient, deleteClient, type Client } from '@/api/clients'
+import { proxyToInstance } from '@/api/instances'
 import { type PeerStatOut } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,9 @@ interface ClientCardProps {
   onToggleSelect: () => void
   onUpdated: () => void
   anySelected: boolean
+  /** When set, all API calls are proxied through this slave instance. */
+  instanceId?: number
+  instanceUrl?: string
 }
 
 export function ClientCard({
@@ -28,6 +32,8 @@ export function ClientCard({
   onToggleSelect,
   onUpdated,
   anySelected,
+  instanceId,
+  instanceUrl,
 }: ClientCardProps) {
   const qc = useQueryClient()
   const { theme } = useThemeStore()
@@ -47,13 +53,32 @@ export function ClientCard({
   }
 
   function invalidate() {
-    qc.invalidateQueries({ queryKey: ['clients'] })
+    if (instanceId) {
+      qc.invalidateQueries({ queryKey: ['slave-clients', instanceId] })
+    } else {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+    }
     onUpdated()
   }
 
-  const enableMut  = useMutation({ mutationFn: enableClient,  onSuccess: invalidate })
-  const disableMut = useMutation({ mutationFn: disableClient, onSuccess: invalidate })
-  const deleteMut  = useMutation({ mutationFn: deleteClient,  onSuccess: invalidate })
+  const enableMut  = useMutation({
+    mutationFn: (id: number) => instanceId
+      ? proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
+      : enableClient(id),
+    onSuccess: invalidate,
+  })
+  const disableMut = useMutation({
+    mutationFn: (id: number) => instanceId
+      ? proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
+      : disableClient(id),
+    onSuccess: invalidate,
+  })
+  const deleteMut  = useMutation({
+    mutationFn: (id: number) => instanceId
+      ? proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
+      : deleteClient(id),
+    onSuccess: invalidate,
+  })
 
   const quotaSet          = client.data_quota_bytes > 0
   const hasBandwidthLimit = client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0
@@ -147,7 +172,7 @@ export function ClientCard({
                 ? <Check className="h-3.5 w-3.5 text-green-500" />
                 : <Link className="h-3.5 w-3.5 text-muted-foreground" />}
             </Button>
-            <ClientActionsMenu client={client} onUpdated={invalidate} />
+            <ClientActionsMenu client={client} onUpdated={invalidate} instanceId={instanceId} instanceUrl={instanceUrl} />
             <Button
               variant="ghost"
               size="icon"
