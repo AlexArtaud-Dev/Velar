@@ -2,17 +2,16 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Server, Plus, Trash2, RefreshCw, ChevronRight,
-  Wifi, WifiOff, AlertTriangle, Check, Loader2,
+  WifiOff, AlertTriangle, Check, Loader2,
   Network, Users, Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   listInstances, registerInstance, deleteInstance, pingInstance, proxyToInstance,
-  type RemoteInstance, type InstanceHealth,
+  type RemoteInstance,
 } from '@/api/instances'
 import { useThemeStore } from '@/stores/theme'
 import { cn } from '@/lib/utils'
