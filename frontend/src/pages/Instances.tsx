@@ -253,9 +253,10 @@ function InstancePanel({
   const { data: overviewData, isLoading: loadingOverview, refetch: refetchOverview } = useQuery({
     queryKey: ['instance-overview', instanceId],
     queryFn: () =>
-      proxyToInstance(instanceId, 'GET', '/api/v1/interfaces/overview').then((r) =>
-        JSON.parse(r.body) as InterfaceOverview[],
-      ),
+      proxyToInstance(instanceId, 'GET', '/api/v1/interfaces/overview').then((r) => {
+        const d = JSON.parse(r.body)
+        return (Array.isArray(d) ? d : []) as InterfaceOverview[]
+      }),
     enabled: pingData?.reachable === true,
     refetchInterval: 30_000,
   })
@@ -263,9 +264,10 @@ function InstancePanel({
   const { data: clientsData, isLoading: loadingClients, refetch: refetchClients } = useQuery({
     queryKey: ['instance-clients', instanceId],
     queryFn: () =>
-      proxyToInstance(instanceId, 'GET', '/api/v1/clients').then((r) =>
-        JSON.parse(r.body) as SlaveClient[],
-      ),
+      proxyToInstance(instanceId, 'GET', '/api/v1/clients').then((r) => {
+        const d = JSON.parse(r.body)
+        return (Array.isArray(d) ? d : []) as SlaveClient[]
+      }),
     enabled: pingData?.reachable === true,
     refetchInterval: 30_000,
   })

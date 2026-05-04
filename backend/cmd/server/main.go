@@ -79,7 +79,11 @@ func main() {
 		restoreQuotas(nft)
 	}
 
-	ag := adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
+	// AdGuard client — not used in slave mode (no AdGuard on slave nodes)
+	var ag *adguard.Client
+	if config.C.VelarMode != "slave" {
+		ag = adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
+	}
 	ddnsSvc := ddns.NewService()
 
 	// Initial DDNS fetch (best effort)
