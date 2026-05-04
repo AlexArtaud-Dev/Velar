@@ -49,6 +49,7 @@ func main() {
 	// Slave mode: generate/display master token instead of seeding a human admin
 	if config.C.VelarMode == "slave" {
 		slog.Info("starting in slave mode — web UI disabled")
+		ensureSlaveSystemAdmin()
 		ensureSlaveToken()
 	} else {
 		// Seed admin if none exists (standalone / master mode only)
@@ -318,6 +319,28 @@ func ensureSlaveToken() {
 	fmt.Println("║  to regenerate if lost.                                         ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
 	fmt.Println()
+}
+
+// ensureSlaveSystemAdmin creates a non-loginable system admin on the slave so
+// that MasterToken middleware can set a valid admin_id in the request context.
+// Handlers use this ID for audit logs and ownership — the account has no
+// usable password and is never exposed via the web UI.
+func ensureSlaveSystemAdmin() {
+	var count int64
+	database.DB.Model(&models.Admin{}).Count(&count)
+	if count > 0 {
+		return
+	}
+	admin := models.Admin{
+		Username:           "system",
+		PasswordHash:       "", // intentionally unusable — no login possible
+		MustChangePassword: false,
+	}
+	if err := database.DB.Create(&admin).Error; err != nil {
+		slog.Error("slave: create system admin", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("slave: system admin created", "id", admin.ID)
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$"
