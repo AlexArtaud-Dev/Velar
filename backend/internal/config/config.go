@@ -28,6 +28,12 @@ type Config struct {
 	// Public URL of the Velar dashboard (e.g. https://velar.example.com)
 	// Used to build one-time download links in notification emails.
 	AppURL string
+	// VelarMode controls the instance role: "standalone" (default) or "slave".
+	// In slave mode the web UI is not served and all API routes are protected by
+	// a single master token (vs_…) instead of JWT.
+	VelarMode string
+	// SlaveTokenReset forces regeneration of the slave token on next boot.
+	SlaveTokenReset bool
 }
 
 // AppVersion is the current Velar release. Bump this on each release.
@@ -54,7 +60,9 @@ func Load() {
 		SMTPPass:    getEnv("SMTP_PASSWORD", ""),
 		SMTPFrom:    getEnv("SMTP_FROM", ""),
 		AdminEmail:  getEnv("ADMIN_EMAIL", ""),
-		AppURL:      getEnv("APP_URL", ""),
+		AppURL:          getEnv("APP_URL", ""),
+		VelarMode:       getEnv("VELAR_MODE", "standalone"),
+		SlaveTokenReset: parseBool(getEnv("SLAVE_TOKEN_RESET", "false")),
 	}
 
 	if len(C.AppSecret) < 32 {

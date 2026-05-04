@@ -41,13 +41,19 @@ func NewRouter(
 		c.Next()
 	})
 
-	// Public health check — no auth required (safe for uptime monitors / probes)
+	// Public health check — always available regardless of mode
 	r.GET("/health", handlers.HealthCheck(ag))
 
-	// Public download endpoint
-	r.GET("/dl/:token", handlers.DownloadConfig(wg))
+	// ── Slave mode — stripped router, all routes under MasterToken ────────────
+	if config.C.VelarMode == "slave" {
+		buildSlaveRoutes(r, wg, nft, ag, ddnsSvc)
+		return r
+	}
 
-	// Public client portal — no auth required (token acts as the credential)
+	// ── Standalone / master mode ───────────────────────────────────────────────
+
+	// Public endpoints
+	r.GET("/dl/:token", handlers.DownloadConfig(wg))
 	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
 
 	// WebSocket (JWT checked inside handler)
@@ -66,16 +72,14 @@ func NewRouter(
 		authGroup.POST("/totp/disable", middleware.JWT(), handlers.TOTPDisable())
 	}
 
-	// Shared handler instances (used by both JWT and JWTORPAT groups)
+	// Shared handler instances
 	ifaceHandler := handlers.NewInterfaceHandler(wg)
 
-	// Protected API
+	// Protected API (JWT only — web app)
 	api := r.Group("/api/v1", middleware.JWT())
 	{
-		// Admin
 		api.GET("/me", handlers.GetMe())
 
-		// Interfaces
 		ifaces := api.Group("/interfaces")
 		{
 			ifaces.GET("", ifaceHandler.List)
@@ -85,10 +89,8 @@ func NewRouter(
 			ifaces.DELETE("/:id", ifaceHandler.Delete)
 			ifaces.POST("/:id/up", ifaceHandler.BringUp)
 			ifaces.POST("/:id/down", ifaceHandler.BringDown)
-			// /:id/check moved to extAPI so PATs can reach it too
 		}
 
-		// Clients
 		clientHandler := handlers.NewClientHandler(wg, nft)
 		clients := api.Group("/clients")
 		{
@@ -105,13 +107,13 @@ func NewRouter(
 			clients.POST("/:id/send-config", clientHandler.SendConfig)
 			clients.POST("/:id/quota-reset", clientHandler.QuotaReset)
 			clients.GET("/:id/quota-usage", clientHandler.GetQuotaUsage)
-			// Bulk operations
 			clients.POST("/bulk/enable", clientHandler.BulkEnable)
 			clients.POST("/bulk/disable", clientHandler.BulkDisable)
 			clients.POST("/bulk/delete", clientHandler.BulkDelete)
+			clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
+			clients.GET("/:id/events", clientHandler.GetEvents)
 		}
 
-		// Settings
 		settingsHandler := handlers.NewSettingsHandler(ag, ddnsSvc)
 		settings := api.Group("/settings")
 		{
@@ -120,7 +122,6 @@ func NewRouter(
 			settings.GET("/notifications", settingsHandler.GetNotificationStatus)
 		}
 
-		// Admin operations
 		adminHandler := handlers.NewAdminHandler(wg)
 		backupHandler := handlers.NewBackupHandler(wg)
 		admin := api.Group("/admin")
@@ -130,7 +131,6 @@ func NewRouter(
 			admin.POST("/restore", backupHandler.Restore)
 		}
 
-		// Dashboard
 		dashboardHandler := handlers.NewDashboardHandler()
 		dashboard := api.Group("/dashboard")
 		{
@@ -138,34 +138,91 @@ func NewRouter(
 			dashboard.GET("/snapshots", dashboardHandler.GetSnapshots)
 		}
 
-		// Personal Access Tokens (JWT-only — managed from the web app)
+		// Personal Access Tokens
 		api.GET("/tokens", handlers.ListPATs)
 		api.POST("/tokens", handlers.CreatePAT)
 		api.DELETE("/tokens/:id", handlers.DeletePAT)
 
-		// Developer proxy — server-side API tester, never exposes raw tokens to browser
+		// Developer proxy — server-side API tester
 		api.POST("/dev/proxy", handlers.DevProxy)
 
-		// Client history endpoints
-		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
-		clients.GET("/:id/events", clientHandler.GetEvents)
+		// Remote instances (slave management)
+		instanceHandler := handlers.NewInstanceHandler()
+		instances := api.Group("/instances")
+		{
+			instances.GET("", instanceHandler.List)
+			instances.POST("", instanceHandler.Register)
+			instances.DELETE("/:id", instanceHandler.Delete)
+			instances.GET("/:id/ping", instanceHandler.Ping)
+			instances.POST("/:id/proxy", instanceHandler.Proxy)
+		}
 	}
 
-	// ── External / developer API — accepts JWT or PAT ─────────────────────────
-	// These routes are designed to be called from scripts, monitoring tools,
-	// and CI pipelines using a personal access token.
+	// External / developer API — accepts JWT or PAT
 	extAPI := r.Group("/api/v1", middleware.JWTORPAT())
 	{
-		// Prometheus metrics (60s server-side cache)
 		extAPI.GET("/metrics", handlers.GetMetrics)
-
-		// Audit logs
 		extAPI.GET("/audit", handlers.ListAuditLogs)
-
-		// Interface status — live kernel check per interface + overview
 		extAPI.GET("/interfaces/overview", ifaceHandler.StatusOverview)
 		extAPI.GET("/interfaces/:id/check", ifaceHandler.Check)
 	}
 
 	return r
+}
+
+// buildSlaveRoutes wires up the stripped slave router.
+// All operational routes are gated by MasterToken — no JWT, no UI, no PAT management.
+func buildSlaveRoutes(
+	r *gin.Engine,
+	wg wireguard.Service,
+	nft nftquota.Service,
+	ag *adguard.Client,
+	ddnsSvc *ddns.Service,
+) {
+	slave := r.Group("/api/v1", middleware.MasterToken())
+
+	ifaceHandler := handlers.NewInterfaceHandler(wg)
+	ifaces := slave.Group("/interfaces")
+	{
+		ifaces.GET("", ifaceHandler.List)
+		ifaces.POST("", ifaceHandler.Create)
+		ifaces.GET("/overview", ifaceHandler.StatusOverview)
+		ifaces.GET("/:id", ifaceHandler.Get)
+		ifaces.PUT("/:id", ifaceHandler.Update)
+		ifaces.DELETE("/:id", ifaceHandler.Delete)
+		ifaces.POST("/:id/up", ifaceHandler.BringUp)
+		ifaces.POST("/:id/down", ifaceHandler.BringDown)
+		ifaces.GET("/:id/check", ifaceHandler.Check)
+	}
+
+	clientHandler := handlers.NewClientHandler(wg, nft)
+	clients := slave.Group("/clients")
+	{
+		clients.GET("", clientHandler.List)
+		clients.POST("", clientHandler.Create)
+		clients.GET("/:id", clientHandler.Get)
+		clients.PUT("/:id", clientHandler.Update)
+		clients.DELETE("/:id", clientHandler.Delete)
+		clients.POST("/:id/enable", clientHandler.Enable)
+		clients.POST("/:id/disable", clientHandler.Disable)
+		clients.GET("/:id/config", clientHandler.GetConfig)
+		clients.GET("/:id/qr", clientHandler.GetQR)
+		clients.POST("/:id/quota-reset", clientHandler.QuotaReset)
+		clients.GET("/:id/quota-usage", clientHandler.GetQuotaUsage)
+		clients.POST("/bulk/enable", clientHandler.BulkEnable)
+		clients.POST("/bulk/disable", clientHandler.BulkDisable)
+		clients.POST("/bulk/delete", clientHandler.BulkDelete)
+		clients.GET("/:id/snapshots", clientHandler.GetSnapshots)
+		clients.GET("/:id/events", clientHandler.GetEvents)
+	}
+
+	settingsHandler := handlers.NewSettingsHandler(ag, ddnsSvc)
+	settings := slave.Group("/settings")
+	{
+		settings.GET("/public-ip", settingsHandler.GetPublicIP)
+		settings.GET("/adguard", settingsHandler.GetAdguardStatus)
+	}
+
+	slave.GET("/metrics", handlers.GetMetrics)
+	slave.GET("/audit", handlers.ListAuditLogs)
 }

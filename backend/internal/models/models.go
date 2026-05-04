@@ -105,6 +105,26 @@ type PersonalAccessToken struct {
 	CreatedAt      time.Time  `json:"created_at"`
 }
 
+// SlaveToken authenticates a master instance on this node when running in slave mode.
+// Generated once on first boot; only the SHA-256 hash is stored.
+type SlaveToken struct {
+	ID        uint      `gorm:"primaryKey"`
+	TokenHash string    `gorm:"uniqueIndex;not null"`
+	CreatedAt time.Time
+}
+
+// RemoteInstance represents a registered slave node on the master instance.
+// The full vs_ token is AES-encrypted at rest; only the prefix is shown in the UI.
+type RemoteInstance struct {
+	ID             uint       `gorm:"primaryKey" json:"id"`
+	Name           string     `gorm:"not null" json:"name"`
+	URL            string     `gorm:"not null" json:"url"`
+	TokenEncrypted string     `gorm:"not null;default:''" json:"-"`
+	TokenPrefix    string     `gorm:"not null" json:"token_prefix"`
+	LastSeenAt     *time.Time `json:"last_seen_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+}
+
 // AuditLog records admin-initiated mutations for lightweight change tracking.
 // Rows older than 90 days are pruned automatically.
 type AuditLog struct {

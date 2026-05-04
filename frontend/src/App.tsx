@@ -12,6 +12,7 @@ import Settings from '@/pages/Settings'
 import ForceChangePassword from '@/components/ForceChangePassword'
 import ClientPortal from '@/pages/ClientPortal'
 import ApiKeys from '@/pages/ApiKeys'
+import Instances from '@/pages/Instances'
 
 /**
  * Handles the silent token refresh on page load.
@@ -72,6 +73,7 @@ export default function App() {
               <Route path="/interfaces/:id/clients" element={<Clients />} />
               <Route path="/clients" element={<Clients />} />
               <Route path="/tokens" element={<ApiKeys />} />
+              <Route path="/instances" element={<Instances />} />
               <Route path="/settings" element={<Settings />} />
             </Route>
           </Route>

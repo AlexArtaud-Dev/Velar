@@ -91,6 +91,8 @@ func AutoMigrate() error {
 		&models.PeerSnapshot{},
 		&models.AuditLog{},
 		&models.PersonalAccessToken{},
+		&models.SlaveToken{},
+		&models.RemoteInstance{},
 	)
 }
 
