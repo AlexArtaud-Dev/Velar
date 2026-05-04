@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Server, Plus, Trash2, RefreshCw, ChevronRight,
-  WifiOff, AlertTriangle, Check, Loader2,
+  WifiOff, AlertTriangle, Check, Loader2, X,
   Network, Users, Activity,
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -272,6 +272,15 @@ function InstancePanel({
     refetchInterval: 30_000,
   })
 
+  const [showIfaceForm, setShowIfaceForm] = useState(false)
+  const [ifaceName, setIfaceName]     = useState('')
+  const [ifacePort, setIfacePort]     = useState('51820')
+  const [ifaceSubnet, setIfaceSubnet] = useState('10.0.0.0/24')
+  const [ifaceDns, setIfaceDns]       = useState('1.1.1.1')
+
+  const [addClientForIface, setAddClientForIface] = useState<number | null>(null)
+  const [clientName, setClientName] = useState('')
+
   const deleteMut = useMutation({
     mutationFn: () => deleteInstance(instanceId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['instances'] }); onDelete() },
@@ -281,6 +290,22 @@ function InstancePanel({
     mutationFn: ({ clientId, enable }: { clientId: number; enable: boolean }) =>
       proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/${enable ? 'enable' : 'disable'}`),
     onSuccess: () => refetchClients(),
+  })
+
+  const createIfaceMut = useMutation({
+    mutationFn: () => proxyToInstance(instanceId, 'POST', '/api/v1/interfaces', {
+      name: ifaceName.trim(), port: parseInt(ifacePort), subnet: ifaceSubnet.trim(), dns: ifaceDns.trim(),
+    }),
+    onSuccess: () => {
+      setShowIfaceForm(false); setIfaceName(''); setIfacePort('51820'); setIfaceSubnet('10.0.0.0/24'); setIfaceDns('1.1.1.1')
+      refetchOverview(); refetchClients()
+    },
+  })
+
+  const createClientMut = useMutation({
+    mutationFn: ({ ifaceId }: { ifaceId: number }) =>
+      proxyToInstance(instanceId, 'POST', '/api/v1/clients', { name: clientName.trim(), interface_id: ifaceId }),
+    onSuccess: () => { setAddClientForIface(null); setClientName(''); refetchClients(); refetchOverview() },
   })
 
   function refresh() {
@@ -367,12 +392,62 @@ function InstancePanel({
       {reachable && (
         <Card className={cardClass}>
           <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Network className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
-              <CardTitle className="text-sm">Interfaces</CardTitle>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Network className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+                <CardTitle className="text-sm">Interfaces</CardTitle>
+              </div>
+              {!showIfaceForm && (
+                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowIfaceForm(true)}>
+                  <Plus className="h-3 w-3 mr-1" /> New
+                </Button>
+              )}
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-3">
+            {/* Inline create form */}
+            {showIfaceForm && (
+              <div className={cn(
+                'rounded-[var(--radius)] border border-border p-3 space-y-3',
+                isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/20',
+              )}>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New interface</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Name</Label>
+                    <Input className="h-7 text-xs" placeholder="wg0" value={ifaceName} onChange={(e) => setIfaceName(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Port</Label>
+                    <Input className="h-7 text-xs" type="number" value={ifacePort} onChange={(e) => setIfacePort(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Subnet (CIDR)</Label>
+                    <Input className="h-7 text-xs" placeholder="10.0.0.0/24" value={ifaceSubnet} onChange={(e) => setIfaceSubnet(e.target.value)} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">DNS</Label>
+                    <Input className="h-7 text-xs" placeholder="1.1.1.1" value={ifaceDns} onChange={(e) => setIfaceDns(e.target.value)} />
+                  </div>
+                </div>
+                {createIfaceMut.isError && (
+                  <p className="text-xs text-destructive">{(createIfaceMut.error as Error)?.message ?? 'Failed'}</p>
+                )}
+                <div className="flex items-center gap-2">
+                  <Button size="sm" className="h-7 text-xs"
+                    disabled={!ifaceName.trim() || createIfaceMut.isPending}
+                    onClick={() => createIfaceMut.mutate()}
+                  >
+                    {createIfaceMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />}
+                    Create
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowIfaceForm(false)}>
+                    <X className="h-3 w-3 mr-1" /> Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+
             {loadingOverview ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
             ) : !overviewData?.length ? (
@@ -381,31 +456,64 @@ function InstancePanel({
               <div className="space-y-2">
                 {overviewData.map((iface) => (
                   <div key={iface.id} className={cn(
-                    'flex items-center justify-between px-3 py-2.5 rounded-[var(--radius)] border border-border',
+                    'rounded-[var(--radius)] border border-border',
                     isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/30',
                   )}>
-                    <div className="flex items-center gap-3">
-                      <span className={cn(
-                        'h-2 w-2 rounded-full shrink-0',
-                        iface.interface_up ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') : 'bg-red-500',
-                      )} />
-                      <div>
-                        <span className="text-sm font-medium font-mono">{iface.name}</span>
-                        <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                          <span>{iface.subnet}</span>
-                          <span>:{iface.port}</span>
-                          <span className={cn(
-                            iface.port_bound ? 'text-green-600 dark:text-green-400' : 'text-destructive',
-                          )}>
-                            {iface.port_bound ? 'port bound' : 'port free'}
-                          </span>
+                    <div className="flex items-center justify-between px-3 py-2.5">
+                      <div className="flex items-center gap-3">
+                        <span className={cn(
+                          'h-2 w-2 rounded-full shrink-0',
+                          iface.interface_up ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') : 'bg-red-500',
+                        )} />
+                        <div>
+                          <span className="text-sm font-medium font-mono">{iface.name}</span>
+                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
+                            <span>{iface.subnet}</span>
+                            <span>:{iface.port}</span>
+                            <span className={cn(iface.port_bound ? 'text-green-600 dark:text-green-400' : 'text-destructive')}>
+                              {iface.port_bound ? 'port bound' : 'port free'}
+                            </span>
+                          </div>
                         </div>
                       </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          <Users className="h-3 w-3 inline mr-1" />{iface.client_count}
+                        </span>
+                        <Button variant="outline" size="sm" className="h-6 text-[11px]"
+                          onClick={() => { setAddClientForIface(iface.id); setClientName('') }}
+                        >
+                          <Plus className="h-3 w-3 mr-1" /> Client
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Users className="h-3 w-3" />
-                      {iface.client_count} peer{iface.client_count !== 1 ? 's' : ''}
-                    </div>
+
+                    {/* Inline add-client form */}
+                    {addClientForIface === iface.id && (
+                      <div className={cn(
+                        'border-t border-border px-3 py-2.5 flex items-end gap-2',
+                        isCyber ? 'bg-[rgba(0,255,255,0.02)]' : 'bg-muted/20',
+                      )}>
+                        <div className="flex-1 space-y-1">
+                          <Label className="text-xs">Client name</Label>
+                          <Input className="h-7 text-xs" placeholder="e.g. Phone, Laptop…"
+                            value={clientName} onChange={(e) => setClientName(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && clientName.trim() && createClientMut.mutate({ ifaceId: iface.id })}
+                          />
+                        </div>
+                        <Button size="sm" className="h-7 text-xs mb-0"
+                          disabled={!clientName.trim() || createClientMut.isPending}
+                          onClick={() => createClientMut.mutate({ ifaceId: iface.id })}
+                        >
+                          {createClientMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+                        </Button>
+                        <Button variant="ghost" size="sm" className="h-7 text-xs"
+                          onClick={() => setAddClientForIface(null)}
+                        >
+                          <X className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -449,9 +557,7 @@ function InstancePanel({
                       </div>
                     </div>
                     <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7 text-xs"
+                      variant="outline" size="sm" className="h-7 text-xs"
                       disabled={toggleClientMut.isPending}
                       onClick={() => toggleClientMut.mutate({ clientId: cl.id, enable: !cl.enabled })}
                     >
