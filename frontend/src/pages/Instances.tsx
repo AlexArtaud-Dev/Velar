@@ -211,17 +211,24 @@ function RegisterForm({ theme, onRegistered }: { theme: string; onRegistered: (i
             isCyber ? 'bg-[rgba(0,255,255,0.04)] text-[hsl(180,60%,70%)]' : 'bg-muted text-foreground/80',
           )}>
 {`services:
-  velar-slave:
-    image: ghcr.io/alexartaud-dev/velar-api:latest
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
     network_mode: host
-    cap_add: [NET_ADMIN, SYS_MODULE]
-    environment:
-      VELAR_MODE: slave
-      APP_SECRET: <32char secret>
-      APP_PORT: 8080
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
     volumes:
-      - ./data:/data
-      - /etc/wireguard:/etc/wireguard`}
+      - wireguard_configs:/etc/wireguard
+      - sqlite_data:/data
+    env_file:
+      - .env.slave
+
+volumes:
+  wireguard_configs:
+  sqlite_data:`}
           </pre>
         </CardContent>
       </Card>
