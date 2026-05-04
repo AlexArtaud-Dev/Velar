@@ -61,9 +61,6 @@ export default function Clients() {
 
   const selectedInstance = instances.find((i) => i.id === slaveId)
 
-  const isCyber = theme === 'cyberpunk'
-  const isApple = theme === 'apple'
-
   return (
     <div className="p-4 sm:p-6 space-y-6">
       {/* Header */}
@@ -194,7 +191,6 @@ function SlaveClientsList({
   theme: string
 }) {
   const isCyber = theme === 'cyberpunk'
-  const isApple = theme === 'apple'
 
   const { data: slaveIfaces = [] } = useQuery({
     queryKey: ['slave-interfaces', instance.id],
@@ -382,7 +378,7 @@ function SlaveClientCard({
             <ArrowUp className={cn('h-3 w-3', isCyber ? 'text-[hsl(300,100%,55%)]' : 'text-emerald-500')} />
             {formatBytes(client.bytes_tx)}
           </span>
-          {client.last_handshake && <span>{timeAgo(client.last_handshake)}</span>}
+          {client.last_handshake && <span>{timeAgo(new Date(client.last_handshake).getTime() / 1000)}</span>}
         </div>
       </CardContent>
     </Card>
