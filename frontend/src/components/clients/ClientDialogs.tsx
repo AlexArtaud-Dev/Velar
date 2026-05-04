@@ -131,9 +131,10 @@ interface SendConfigButtonProps {
 /** SendConfigButton confirms and sends a one-time config download email. */
 export function SendConfigButton({ clientId, email, open, onOpenChange, instanceId }: SendConfigButtonProps) {
   const mut = useMutation({
-    mutationFn: instanceId
-      ? () => proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/send-config`)
-      : () => sendConfigEmail(clientId),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/send-config`)
+      else await sendConfigEmail(clientId)
+    },
     onSuccess: () => { onOpenChange(false) },
   })
 
@@ -322,9 +323,10 @@ export function EditClientDialog({ client, open, onOpenChange, onUpdated, instan
   }
 
   const mutation = useMutation({
-    mutationFn: instanceId
-      ? () => proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, editPayload)
-      : () => updateClient(client.id, editPayload),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, editPayload)
+      else await updateClient(client.id, editPayload)
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(
@@ -609,9 +611,10 @@ export function QuotaDialog({ client, open, onOpenChange, onUpdated, instanceId 
   }, [open])
 
   const mutation = useMutation({
-    mutationFn: instanceId
-      ? () => proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period })
-      : () => updateClient(client.id, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period }),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period })
+      else await updateClient(client.id, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period })
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(
@@ -621,9 +624,10 @@ export function QuotaDialog({ client, open, onOpenChange, onUpdated, instanceId 
   })
 
   const resetMut = useMutation({
-    mutationFn: instanceId
-      ? () => proxyToInstance(instanceId, 'POST', `/api/v1/clients/${client.id}/quota-reset`)
-      : () => resetClientQuota(client.id),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${client.id}/quota-reset`)
+      else await resetClientQuota(client.id)
+    },
     onSuccess: () => onUpdated(),
   })
 
@@ -724,9 +728,10 @@ export function BandwidthDialog({ client, open, onOpenChange, onUpdated, instanc
   }, [open])
 
   const mutation = useMutation({
-    mutationFn: instanceId
-      ? () => proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { bandwidth_limit_down: down, bandwidth_limit_up: up })
-      : () => updateClient(client.id, { bandwidth_limit_down: down, bandwidth_limit_up: up }),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { bandwidth_limit_down: down, bandwidth_limit_up: up })
+      else await updateClient(client.id, { bandwidth_limit_down: down, bandwidth_limit_up: up })
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(

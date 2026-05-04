@@ -62,21 +62,24 @@ export function ClientCard({
   }
 
   const enableMut  = useMutation({
-    mutationFn: (id: number) => instanceId
-      ? proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
-      : enableClient(id),
+    mutationFn: async (id: number) => {
+      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
+      else await enableClient(id)
+    },
     onSuccess: invalidate,
   })
   const disableMut = useMutation({
-    mutationFn: (id: number) => instanceId
-      ? proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
-      : disableClient(id),
+    mutationFn: async (id: number) => {
+      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
+      else await disableClient(id)
+    },
     onSuccess: invalidate,
   })
   const deleteMut  = useMutation({
-    mutationFn: (id: number) => instanceId
-      ? proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
-      : deleteClient(id),
+    mutationFn: async (id: number) => {
+      if (instanceId) await proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
+      else await deleteClient(id)
+    },
     onSuccess: invalidate,
   })
 
