@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Server, Plus, Check, Loader2, X, Network } from 'lucide-react'
+import { ArrowLeft, Server, Network } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
@@ -9,9 +9,6 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { ClientCard } from '@/components/clients/ClientCard'
 import { BulkBar } from '@/components/clients/BulkBar'
 import { CreateClientDialog } from '@/components/clients/CreateClientDialog'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
@@ -325,22 +322,6 @@ function SlaveClientsList({
 
   function invalidate() { qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] }) }
 
-  // Create client form
-  const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName]       = useState('')
-  const [newIfaceId, setNewIfaceId] = useState<number | undefined>(ifaceFilter ?? slaveIfaces[0]?.id)
-
-  const createMut = useMutation({
-    mutationFn: async () => {
-      await proxyToInstance(instance.id, 'POST', '/api/v1/clients', {
-        name: newName.trim(), interface_id: newIfaceId,
-      })
-    },
-    onSuccess: () => { setShowCreate(false); setNewName(''); invalidate() },
-  })
-
-  const resolvedIfaceId = newIfaceId ?? slaveIfaces[0]?.id
-
   return (
     <div className="space-y-4">
       {/* Interface filter tabs */}
@@ -366,60 +347,8 @@ function SlaveClientsList({
         </div>
       )}
 
-      {/* Action bar */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-muted-foreground">{clients.length} client{clients.length !== 1 ? 's' : ''}</span>
-        <Button size="sm" variant="outline" className="h-8 text-xs" onClick={() => setShowCreate((v) => !v)}>
-          <Plus className="h-3 w-3 mr-1" /> New client
-        </Button>
-      </div>
-
-      {/* Inline create form */}
-      {showCreate && (
-        <div className={cn('rounded-[var(--radius)] border border-border p-4 space-y-3', isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/20')}>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New client on {instance.name}</p>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label className="text-xs">Name</Label>
-              <Input
-                className="h-8 text-sm"
-                placeholder="e.g. Phone, Laptop…"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && newName.trim() && resolvedIfaceId && createMut.mutate()}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs">Interface</Label>
-              <select
-                className="h-8 w-full rounded-[var(--radius)] border border-border bg-background px-2 text-sm"
-                value={resolvedIfaceId ?? ''}
-                onChange={(e) => setNewIfaceId(Number(e.target.value))}
-              >
-                {slaveIfaces.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-              </select>
-            </div>
-          </div>
-          {createMut.isError && (
-            <p className="text-xs text-destructive">{(createMut.error as Error)?.message ?? 'Failed'}</p>
-          )}
-          <div className="flex gap-2">
-            <Button
-              size="sm" className="h-8"
-              disabled={!newName.trim() || !resolvedIfaceId || createMut.isPending}
-              onClick={() => createMut.mutate()}
-            >
-              {createMut.isPending
-                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                : <Check className="h-3.5 w-3.5 mr-1.5" />}
-              Create
-            </Button>
-            <Button size="sm" variant="outline" className="h-8" onClick={() => setShowCreate(false)}>
-              <X className="h-3.5 w-3.5 mr-1.5" /> Cancel
-            </Button>
-          </div>
-        </div>
-      )}
+      {/* Count */}
+      <p className="text-sm text-muted-foreground">{clients.length} client{clients.length !== 1 ? 's' : ''}</p>
 
       {/* Client cards — full feature parity via instanceId prop */}
       {isLoading ? (
