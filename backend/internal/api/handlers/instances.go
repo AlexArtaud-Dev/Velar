@@ -207,8 +207,18 @@ type slaveClient struct {
 	Name       string  `json:"name"`
 	Email      string  `json:"email"`
 	AssignedIP string  `json:"assigned_ip"`
+	OwnerLabel string  `json:"owner_label"`
 	ExpiresAt  *string `json:"expires_at"`
 	ViewToken  string  `json:"view_token"`
+}
+
+// slaveClientNotifyRequest is the body for POST /instances/:id/clients/notify.
+type slaveClientNotifyRequest struct {
+	// Event is one of: created, updated, deleted, enabled, disabled.
+	Event  string      `json:"event" binding:"required"`
+	Client slaveClient `json:"client" binding:"required"`
+	// InterfaceName is optional — used in admin email subject lines when known.
+	InterfaceName string `json:"interface_name"`
 }
 
 // slaveDownloadLink is the response from POST /api/v1/clients/:id/download-link on the slave.
@@ -324,6 +334,135 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
+}
+
+// NotifySlaveClient sends email notifications for client lifecycle events that
+// happened on a slave instance, where SMTP is not configured.
+// The master handles all email sending using its own SMTP credentials.
+//
+// Route: POST /api/v1/instances/:id/clients/notify
+func (h *InstanceHandler) NotifySlaveClient(c *gin.Context) {
+	instanceID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	if !mailer.SMTPEnabled() {
+		// Silently succeed — no SMTP configured, nothing to do.
+		c.JSON(http.StatusOK, gin.H{"message": "smtp not configured, skipped"})
+		return
+	}
+
+	var req slaveClientNotifyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	cl := req.Client
+	ifaceName := req.InterfaceName
+	if ifaceName == "" {
+		ifaceName = "—"
+	}
+	owner := cl.OwnerLabel
+	if owner == "" {
+		owner = "—"
+	}
+
+	switch req.Event {
+	case "created":
+		// For a new client we need a one-time download link from the slave.
+		var instance models.RemoteInstance
+		if err := database.DB.First(&instance, instanceID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		token, err := auth.Decrypt(instance.TokenEncrypted, config.C.AppSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "token decryption failed"})
+			return
+		}
+
+		hc := &http.Client{Timeout: 10 * time.Second}
+		dlURL := instance.URL + "/api/v1/clients/" + strconv.FormatUint(uint64(cl.ID), 10) + "/download-link"
+		dlReq, _ := http.NewRequest(http.MethodPost, dlURL, nil)
+		dlReq.Header.Set("Authorization", "Bearer "+token)
+		dlResp, err := hc.Do(dlReq)
+		if err == nil && dlResp.StatusCode == http.StatusOK {
+			defer dlResp.Body.Close()
+			var dl slaveDownloadLink
+			if json.NewDecoder(dlResp.Body).Decode(&dl) == nil {
+				downloadURL := strings.TrimRight(instance.URL, "/")
+				if base := config.C.AppURL; base != "" {
+					downloadURL = strings.TrimRight(base, "/") + "/dl/s/" + strconv.FormatUint(instanceID, 10) + "/" + dl.Token
+				} else {
+					downloadURL = "/dl/s/" + strconv.FormatUint(instanceID, 10) + "/" + dl.Token
+				}
+
+				expiry := "No expiry"
+				if cl.ExpiresAt != nil && *cl.ExpiresAt != "" {
+					if t, err := time.Parse(time.RFC3339, *cl.ExpiresAt); err == nil {
+						expiry = t.UTC().Format("2006-01-02 15:04 UTC")
+					}
+				}
+				portalURL := ""
+				if base := config.C.AppURL; base != "" && cl.ViewToken != "" {
+					portalURL = strings.TrimRight(base, "/") + "/portal/s/" + strconv.FormatUint(instanceID, 10) + "/" + cl.ViewToken
+				}
+
+				if cl.Email != "" {
+					mailer.SendHTMLTo(cl.Email,
+						fmt.Sprintf("Your VPN access is ready: %s", cl.Name),
+						mailer.HTMLClientWelcome(cl.Name, cl.AssignedIP, expiry, downloadURL, portalURL),
+					)
+				}
+			}
+		}
+		// Admin notification (best-effort, doesn't need the download link)
+		mailer.SendHTML(
+			fmt.Sprintf("New client added: %s", cl.Name),
+			mailer.HTMLAdminClientCreated(cl.Name, cl.AssignedIP, ifaceName, owner),
+		)
+
+	case "updated":
+		if cl.Email != "" {
+			mailer.SendHTMLTo(cl.Email,
+				fmt.Sprintf("Your VPN config was updated: %s", cl.Name),
+				mailer.HTMLClientUpdated(cl.Name, cl.AssignedIP),
+			)
+		}
+		mailer.SendHTML(
+			fmt.Sprintf("Client updated: %s", cl.Name),
+			mailer.HTMLAdminClientUpdated(cl.Name, cl.AssignedIP, ifaceName),
+		)
+
+	case "deleted":
+		if cl.Email != "" {
+			mailer.SendHTMLTo(cl.Email,
+				fmt.Sprintf("VPN access revoked: %s", cl.Name),
+				mailer.HTMLClientDeleted(cl.Name, cl.AssignedIP),
+			)
+		}
+
+	case "enabled":
+		if cl.Email != "" {
+			mailer.SendHTMLTo(cl.Email,
+				fmt.Sprintf("VPN access re-enabled: %s", cl.Name),
+				mailer.HTMLClientEnabled(cl.Name, cl.AssignedIP),
+			)
+		}
+
+	case "disabled":
+		if cl.Email != "" {
+			mailer.SendHTMLTo(cl.Email,
+				fmt.Sprintf("VPN access disabled: %s", cl.Name),
+				mailer.HTMLClientDisabled(cl.Name, cl.AssignedIP),
+			)
+		}
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "unknown event: " + req.Event})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "notification queued"})
 }
 
 // GetSlaveClientPortal proxies a public portal data request to a slave instance

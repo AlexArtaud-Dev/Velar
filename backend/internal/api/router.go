@@ -158,6 +158,7 @@ func NewRouter(
 			instances.GET("/:id/ping", instanceHandler.Ping)
 			instances.POST("/:id/proxy", instanceHandler.Proxy)
 			instances.POST("/:id/clients/:clientId/send-config", instanceHandler.SendSlaveClientConfig)
+			instances.POST("/:id/clients/notify", instanceHandler.NotifySlaveClient)
 		}
 	}
 

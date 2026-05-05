@@ -109,7 +109,12 @@ export function ClientActionsMenu({ client, onUpdated, instanceId, instanceUrl }
           <DropdownMenuSeparator />
           {client.view_token && (
             <DropdownMenuItem
-              onClick={() => window.open(`${window.location.origin}/portal/${client.view_token}`, '_blank')}
+              onClick={() => {
+                const path = instanceId
+                  ? `/portal/s/${instanceId}/${client.view_token}`
+                  : `/portal/${client.view_token}`
+                window.open(`${window.location.origin}${path}`, '_blank')
+              }}
             >
               <ExternalLink className="h-3.5 w-3.5" /> Open portal
             </DropdownMenuItem>

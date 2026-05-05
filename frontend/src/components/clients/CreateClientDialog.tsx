@@ -9,7 +9,7 @@ import {
   DialogTitle, DialogTrigger,
 } from '@/components/ui/dialog'
 import { createClient, type CreateClientPayload } from '@/api/clients'
-import { listInstances, proxyToInstance } from '@/api/instances'
+import { listInstances, proxyToInstance, notifySlaveClient } from '@/api/instances'
 
 interface CreateClientDialogProps {
   /** Local interfaces (pre-loaded by parent). */
@@ -80,7 +80,16 @@ export function CreateClientDialog({ interfaces, defaultInterfaceId, onCreated }
           : undefined,
       }
       if (instanceId !== null) {
-        await proxyToInstance(instanceId, 'POST', '/api/v1/clients', payload)
+        const result = await proxyToInstance(instanceId, 'POST', '/api/v1/clients', payload)
+        if (result.status === 201) {
+          try {
+            const created = JSON.parse(result.body) as {
+              id: number; name: string; email: string; assigned_ip: string
+              owner_label: string; expires_at: string | null; view_token: string
+            }
+            notifySlaveClient(instanceId, 'created', created)
+          } catch { /* best-effort */ }
+        }
       } else {
         await createClient(payload)
       }

@@ -60,6 +60,27 @@ export function proxyToInstance(
     .then((r) => r.data)
 }
 
+/** Fire-and-forget lifecycle notification for a slave-hosted client.
+ *  Called after create/update/delete/enable/disable on a slave so the master
+ *  sends the email via its own SMTP. Never throws — failures are best-effort. */
+export function notifySlaveClient(
+  instanceId: number,
+  event: 'created' | 'updated' | 'deleted' | 'enabled' | 'disabled',
+  client: {
+    id: number; name: string; email: string; assigned_ip: string
+    owner_label: string; expires_at?: string | null; view_token?: string
+  },
+  interfaceName?: string,
+): void {
+  api
+    .post(`/instances/${instanceId}/clients/notify`, {
+      event,
+      client,
+      interface_name: interfaceName ?? '',
+    })
+    .catch(() => { /* best-effort — never block the UI */ })
+}
+
 /** Ask the master to send a config email for a client hosted on a slave.
  *  The master fetches client data + creates a download token on the slave,
  *  then sends the email via its own SMTP. */

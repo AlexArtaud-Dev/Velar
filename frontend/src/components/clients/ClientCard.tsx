@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { enableClient, disableClient, deleteClient, type Client } from '@/api/clients'
-import { proxyToInstance } from '@/api/instances'
+import { proxyToInstance, notifySlaveClient } from '@/api/instances'
 import { type PeerStatOut } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -63,22 +63,34 @@ export function ClientCard({
 
   const enableMut  = useMutation({
     mutationFn: async (id: number) => {
-      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
-      else await enableClient(id)
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
+        notifySlaveClient(instanceId, 'enabled', client)
+      } else {
+        await enableClient(id)
+      }
     },
     onSuccess: invalidate,
   })
   const disableMut = useMutation({
     mutationFn: async (id: number) => {
-      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
-      else await disableClient(id)
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
+        notifySlaveClient(instanceId, 'disabled', client)
+      } else {
+        await disableClient(id)
+      }
     },
     onSuccess: invalidate,
   })
   const deleteMut  = useMutation({
     mutationFn: async (id: number) => {
-      if (instanceId) await proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
-      else await deleteClient(id)
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
+        notifySlaveClient(instanceId, 'deleted', client)
+      } else {
+        await deleteClient(id)
+      }
     },
     onSuccess: invalidate,
   })

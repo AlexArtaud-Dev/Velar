@@ -31,7 +31,7 @@ import {
   updateClient, resetClientQuota, getClientSnapshots, getClientEvents,
   type Client, type SnapshotPoint, type ConnectionEvent,
 } from '@/api/clients'
-import { proxyToInstance, sendSlaveClientConfig } from '@/api/instances'
+import { proxyToInstance, sendSlaveClientConfig, notifySlaveClient } from '@/api/instances'
 import { formatBytes } from '@/lib/utils'
 
 // ── Clipboard helper ──────────────────────────────────────────────────────────
@@ -324,8 +324,12 @@ export function EditClientDialog({ client, open, onOpenChange, onUpdated, instan
 
   const mutation = useMutation({
     mutationFn: async () => {
-      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, editPayload)
-      else await updateClient(client.id, editPayload)
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, editPayload)
+        notifySlaveClient(instanceId, 'updated', client)
+      } else {
+        await updateClient(client.id, editPayload)
+      }
     },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
