@@ -35,7 +35,8 @@ func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service) {
 	// Token cleanup — remove used or expired download tokens.
 	c.AddFunc("@every 1h", cleanupTokens)
 
-	// DDNS — refresh the public IP and update WGHost if it has changed.
+	// DDNS — refresh the public IP immediately at startup, then every 5 minutes.
+	go refreshDDNS(ddnsSvc)
 	c.AddFunc("@every 5m", func() { refreshDDNS(ddnsSvc) })
 
 	// Connection events — detect peer connect/disconnect transitions.
