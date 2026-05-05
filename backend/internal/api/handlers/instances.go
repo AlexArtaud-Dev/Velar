@@ -314,7 +314,7 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 
 	portalURL := ""
 	if base := config.C.AppURL; base != "" && sc.ViewToken != "" {
-		portalURL = strings.TrimRight(base, "/") + "/portal/" + sc.ViewToken
+		portalURL = strings.TrimRight(base, "/") + "/portal/s/" + strconv.FormatUint(instanceID, 10) + "/" + sc.ViewToken
 	}
 
 	mailer.SendHTMLTo(
@@ -324,6 +324,39 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
+}
+
+// GetSlaveClientPortal proxies a public portal data request to a slave instance
+// so the portal page can display data for slave-hosted clients without exposing
+// the slave's internal URL.
+//
+// Route: GET /api/v1/public/client/s/:instanceId/:token  (public — no auth)
+func (h *InstanceHandler) GetSlaveClientPortal(c *gin.Context) {
+	instanceID, err := strconv.ParseUint(c.Param("instanceId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid instance id"})
+		return
+	}
+	viewToken := c.Param("token")
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, instanceID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	// /api/v1/public/client/:token is public on the slave — no bearer token needed
+	targetURL := strings.TrimRight(instance.URL, "/") + "/api/v1/public/client/" + viewToken
+	hc := &http.Client{Timeout: 10 * time.Second}
+	resp, err := hc.Get(targetURL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach slave: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	c.Data(resp.StatusCode, "application/json", body)
 }
 
 // DownloadSlaveConfig proxies a one-time config download from a slave instance

@@ -27,3 +27,8 @@ export const getPortalClient = (token: string) =>
   publicApi
     .get<PortalClient>(`/public/client/${token}`)
     .then((r) => r.data)
+
+export const getSlavePortalClient = (instanceId: number, token: string) =>
+  publicApi
+    .get<PortalClient>(`/public/client/s/${instanceId}/${token}`)
+    .then((r) => r.data)

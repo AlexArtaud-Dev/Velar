@@ -78,6 +78,7 @@ export default function App() {
             </Route>
           </Route>
           <Route path="/portal/:token" element={<ClientPortal />} />
+          <Route path="/portal/s/:instanceId/:token" element={<ClientPortal />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         {isAuthenticated && admin?.must_change_password && <ForceChangePassword />}

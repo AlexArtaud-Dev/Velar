@@ -57,6 +57,7 @@ func NewRouter(
 	instanceHandler := handlers.NewInstanceHandler()
 	r.GET("/dl/s/:instanceId/:token", instanceHandler.DownloadSlaveConfig)
 	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
+	r.GET("/api/v1/public/client/s/:instanceId/:token", instanceHandler.GetSlaveClientPortal)
 
 	// WebSocket (JWT checked inside handler)
 	r.GET("/ws/stats", handlers.WSHandler(hub))
@@ -181,8 +182,9 @@ func buildSlaveRoutes(
 	ag *adguard.Client,
 	ddnsSvc *ddns.Service,
 ) {
-	// Public config download — clients access this directly (no auth needed)
+	// Public routes — no auth (same as master)
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
+	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
 
 	slave := r.Group("/api/v1", middleware.MasterToken())
 
