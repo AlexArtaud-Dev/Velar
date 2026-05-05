@@ -54,6 +54,8 @@ func NewRouter(
 
 	// Public endpoints
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
+	instanceHandler := handlers.NewInstanceHandler()
+	r.GET("/dl/s/:instanceId/:token", instanceHandler.DownloadSlaveConfig)
 	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
 
 	// WebSocket (JWT checked inside handler)
@@ -147,7 +149,6 @@ func NewRouter(
 		api.POST("/dev/proxy", handlers.DevProxy)
 
 		// Remote instances (slave management)
-		instanceHandler := handlers.NewInstanceHandler()
 		instances := api.Group("/instances")
 		{
 			instances.GET("", instanceHandler.List)

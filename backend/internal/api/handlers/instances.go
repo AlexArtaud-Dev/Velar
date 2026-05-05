@@ -295,8 +295,14 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 		return
 	}
 
-	// 5. Build the full download URL pointing at the slave
-	downloadURL := strings.TrimRight(instance.URL, "/") + "/dl/" + dl.Token
+	// 5. Build the download URL — routed through the master so the slave's
+	//    internal URL never appears in the email.
+	var downloadURL string
+	if base := config.C.AppURL; base != "" {
+		downloadURL = strings.TrimRight(base, "/") + "/dl/s/" + strconv.FormatUint(instanceID, 10) + "/" + dl.Token
+	} else {
+		downloadURL = "/dl/s/" + strconv.FormatUint(instanceID, 10) + "/" + dl.Token
+	}
 
 	expiry := "No expiry"
 	if sc.ExpiresAt != nil && *sc.ExpiresAt != "" {
@@ -318,4 +324,46 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 	)
 
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
+}
+
+// DownloadSlaveConfig proxies a one-time config download from a slave instance
+// through the master, so the slave's internal URL never appears in emails.
+//
+// Route: GET /dl/s/:instanceId/:token  (public — no auth)
+func (h *InstanceHandler) DownloadSlaveConfig(c *gin.Context) {
+	instanceID, err := strconv.ParseUint(c.Param("instanceId"), 10, 64)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid instance id"})
+		return
+	}
+	rawToken := c.Param("token")
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, instanceID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	// /dl/:token on the slave is public — no bearer token required
+	targetURL := strings.TrimRight(instance.URL, "/") + "/dl/" + rawToken
+	hc := &http.Client{Timeout: 15 * time.Second}
+	resp, err := hc.Get(targetURL)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach slave: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.Data(resp.StatusCode, resp.Header.Get("Content-Type"), body)
+		return
+	}
+
+	// Forward the content-disposition so the browser triggers a file download
+	if cd := resp.Header.Get("Content-Disposition"); cd != "" {
+		c.Header("Content-Disposition", cd)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	c.Data(http.StatusOK, "text/plain", body)
 }
