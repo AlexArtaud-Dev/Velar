@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Server, Plus, Check, Loader2, X } from 'lucide-react'
+import { ArrowLeft, Server, Plus, Check, Loader2, X, Network } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
@@ -15,7 +15,9 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
-/** Clients page — local clients + slave source bar. */
+type Source = 'all' | 'local' | number
+
+/** Clients page — all clients view, local, or per-slave. */
 export default function Clients() {
   const { id: ifaceIdParam } = useParams<{ id: string }>()
   const ifaceId = ifaceIdParam ? Number(ifaceIdParam) : undefined
@@ -23,9 +25,8 @@ export default function Clients() {
   const [searchParams] = useSearchParams()
   const { theme } = useThemeStore()
 
-  // Source selection: null = local, number = slave instance id
   const initialSlave = searchParams.get('slave') ? Number(searchParams.get('slave')) : null
-  const [slaveId, setSlaveId] = useState<number | null>(initialSlave)
+  const [source, setSource] = useState<Source>(initialSlave ?? 'local')
   const initialIfaceFilter = searchParams.get('iface') ? Number(searchParams.get('iface')) : undefined
   const [slaveIfaceFilter, setSlaveIfaceFilter] = useState<number | undefined>(initialIfaceFilter)
 
@@ -36,7 +37,7 @@ export default function Clients() {
     queryKey: ['clients', ifaceId],
     queryFn: () => listClients(ifaceId),
     refetchInterval: 10_000,
-    enabled: slaveId === null,
+    enabled: source === 'local',
   })
   const { stats } = useWebSocket()
 
@@ -45,19 +46,21 @@ export default function Clients() {
   )
 
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const toggleSelect = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-  const selectAll    = () => setSelected(new Set(clients.map((c) => c.id)))
+  const toggleSelect  = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const selectAll     = () => setSelected(new Set(clients.map((c) => c.id)))
   const clearSelection = () => setSelected(new Set())
 
-  function invalidate() { qc.invalidateQueries({ queryKey: ['clients'] }) }
+  function invalidateLocal() { qc.invalidateQueries({ queryKey: ['clients'] }) }
 
-  function handleSourceChange(id: number | null) {
-    setSlaveId(id)
+  function handleSourceChange(s: Source) {
+    setSource(s)
     setSlaveIfaceFilter(undefined)
     setSelected(new Set())
   }
 
-  const selectedInstance = instances.find((i) => i.id === slaveId)
+  const selectedInstance = typeof source === 'number' ? instances.find((i) => i.id === source) : undefined
+
+  const showSourceBar = instances.length > 0
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -72,27 +75,44 @@ export default function Clients() {
           <div>
             <h1 className="text-2xl font-bold">Clients</h1>
             <p className="text-muted-foreground text-sm mt-1">
-              {slaveId === null
-                ? ifaceId ? interfaces.find((i) => i.id === ifaceId)?.name ?? `Interface ${ifaceId}` : 'All clients'
-                : selectedInstance?.name ?? 'Slave clients'}
+              {source === 'all'
+                ? 'All instances'
+                : source === 'local'
+                  ? ifaceId ? interfaces.find((i) => i.id === ifaceId)?.name ?? `Interface ${ifaceId}` : 'Local'
+                  : selectedInstance?.name ?? 'Slave clients'}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {slaveId === null && (
-            <CreateClientDialog interfaces={interfaces} defaultInterfaceId={ifaceId} onCreated={invalidate} />
-          )}
-        </div>
+        {/* "Add client" is always visible — the dialog has its own instance selector */}
+        <CreateClientDialog
+          interfaces={interfaces}
+          defaultInterfaceId={ifaceId}
+          onCreated={() => {
+            qc.invalidateQueries({ queryKey: ['clients'] })
+            qc.invalidateQueries({ queryKey: ['slave-clients'] })
+          }}
+        />
       </div>
 
-      {/* Source bar — only shown when slaves exist */}
-      {instances.length > 0 && (
+      {/* Source bar */}
+      {showSourceBar && (
         <div className="flex flex-wrap items-center gap-1.5">
           <button
-            onClick={() => handleSourceChange(null)}
+            onClick={() => handleSourceChange('all')}
             className={cn(
               'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-              slaveId === null
+              source === 'all'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
+            )}
+          >
+            All
+          </button>
+          <button
+            onClick={() => handleSourceChange('local')}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+              source === 'local'
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
             )}
@@ -105,7 +125,7 @@ export default function Clients() {
               onClick={() => handleSourceChange(inst.id)}
               className={cn(
                 'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-                slaveId === inst.id
+                source === inst.id
                   ? 'bg-primary text-primary-foreground border-primary'
                   : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
               )}
@@ -118,7 +138,9 @@ export default function Clients() {
       )}
 
       {/* Content */}
-      {slaveId !== null && selectedInstance ? (
+      {source === 'all' ? (
+        <AllClientsView instances={instances} />
+      ) : typeof source === 'number' && selectedInstance ? (
         <SlaveClientsList
           instance={selectedInstance}
           ifaceFilter={slaveIfaceFilter}
@@ -141,7 +163,7 @@ export default function Clients() {
                   isSelected={selected.has(client.id)}
                   anySelected={selected.size > 0}
                   onToggleSelect={() => toggleSelect(client.id)}
-                  onUpdated={invalidate}
+                  onUpdated={invalidateLocal}
                 />
               ))}
               {clients.length === 0 && (
@@ -152,7 +174,12 @@ export default function Clients() {
             </div>
           )}
           {selected.size > 0 && (
-            <BulkBar selected={selected} totalCount={clients.length} onSelectAll={selectAll} onClearSelection={clearSelection} />
+            <BulkBar
+              selected={selected}
+              totalCount={clients.length}
+              onSelectAll={selectAll}
+              onClearSelection={clearSelection}
+            />
           )}
         </>
       )}
@@ -160,7 +187,104 @@ export default function Clients() {
   )
 }
 
-// ── Slave clients list ────────────────────────────────────────────────────────
+// ── All-instances view ────────────────────────────────────────────────────────
+
+function AllClientsView({ instances }: { instances: RemoteInstance[] }) {
+  return (
+    <div className="space-y-8">
+      <LocalClientsSection />
+      {instances.map((inst) => (
+        <SlaveClientsSection key={inst.id} instance={inst} />
+      ))}
+    </div>
+  )
+}
+
+function LocalClientsSection() {
+  const qc = useQueryClient()
+  const { data: clients = [], isLoading } = useQuery<Client[]>({
+    queryKey: ['clients'],
+    queryFn: () => listClients(undefined),
+    refetchInterval: 10_000,
+  })
+  const { stats } = useWebSocket()
+  const peerMap = new Map(
+    stats?.interfaces.flatMap((i) => i.peers ?? []).map((p) => [p.client_id, p]) ?? [],
+  )
+  function invalidate() { qc.invalidateQueries({ queryKey: ['clients'] }) }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 pb-2 border-b border-border">
+        <Network className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Local</span>
+        {!isLoading && <span className="text-xs text-muted-foreground/60">({clients.length})</span>}
+      </div>
+      {isLoading ? (
+        <div className="space-y-3">{[1, 2, 3].map((i) => <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />)}</div>
+      ) : clients.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">No local clients.</div>
+      ) : (
+        clients.map((c) => (
+          <ClientCard
+            key={c.id}
+            client={c}
+            peer={peerMap.get(c.id)}
+            isSelected={false}
+            anySelected={false}
+            onToggleSelect={() => {}}
+            onUpdated={invalidate}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+function SlaveClientsSection({ instance }: { instance: RemoteInstance }) {
+  const qc = useQueryClient()
+  const { data: clients = [], isLoading } = useQuery({
+    queryKey: ['slave-clients', instance.id, undefined],
+    queryFn: () =>
+      proxyToInstance(instance.id, 'GET', '/api/v1/clients').then((r) => {
+        const d = JSON.parse(r.body)
+        return (Array.isArray(d) ? d : []) as Client[]
+      }),
+    refetchInterval: 10_000,
+  })
+  function invalidate() { qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] }) }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 pb-2 border-b border-border">
+        <Server className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{instance.name}</span>
+        <span className="text-xs text-muted-foreground/60 font-mono">{instance.url}</span>
+        {!isLoading && <span className="text-xs text-muted-foreground/60">({clients.length})</span>}
+      </div>
+      {isLoading ? (
+        <div className="space-y-3">{[1, 2].map((i) => <div key={i} className="h-20 bg-muted rounded-lg animate-pulse" />)}</div>
+      ) : clients.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground text-sm">No clients on {instance.name}.</div>
+      ) : (
+        clients.map((c) => (
+          <ClientCard
+            key={c.id}
+            client={c}
+            isSelected={false}
+            anySelected={false}
+            onToggleSelect={() => {}}
+            onUpdated={invalidate}
+            instanceId={instance.id}
+            instanceUrl={instance.url}
+          />
+        ))
+      )}
+    </div>
+  )
+}
+
+// ── Slave clients list (single slave source) ──────────────────────────────────
 
 interface SlaveIface {
   id: number
@@ -181,36 +305,40 @@ function SlaveClientsList({
 
   const { data: slaveIfaces = [] } = useQuery({
     queryKey: ['slave-interfaces', instance.id],
-    queryFn: () => proxyToInstance(instance.id, 'GET', '/api/v1/interfaces').then((r) => {
-      const d = JSON.parse(r.body); return (Array.isArray(d) ? d : []) as SlaveIface[]
-    }),
+    queryFn: () =>
+      proxyToInstance(instance.id, 'GET', '/api/v1/interfaces').then((r) => {
+        const d = JSON.parse(r.body)
+        return (Array.isArray(d) ? d : []) as SlaveIface[]
+      }),
   })
 
   const url = ifaceFilter ? `/api/v1/clients?interface_id=${ifaceFilter}` : '/api/v1/clients'
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['slave-clients', instance.id, ifaceFilter],
-    queryFn: () => proxyToInstance(instance.id, 'GET', url).then((r) => {
-      const d = JSON.parse(r.body); return (Array.isArray(d) ? d : []) as Client[]
-    }),
+    queryFn: () =>
+      proxyToInstance(instance.id, 'GET', url).then((r) => {
+        const d = JSON.parse(r.body)
+        return (Array.isArray(d) ? d : []) as Client[]
+      }),
     refetchInterval: 10_000,
   })
 
-  function invalidate() {
-    qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] })
-  }
+  function invalidate() { qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] }) }
 
   // Create client form
   const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [newName, setNewName]       = useState('')
   const [newIfaceId, setNewIfaceId] = useState<number | undefined>(ifaceFilter ?? slaveIfaces[0]?.id)
+
   const createMut = useMutation({
-    mutationFn: () => proxyToInstance(instance.id, 'POST', '/api/v1/clients', {
-      name: newName.trim(), interface_id: newIfaceId,
-    }),
+    mutationFn: async () => {
+      await proxyToInstance(instance.id, 'POST', '/api/v1/clients', {
+        name: newName.trim(), interface_id: newIfaceId,
+      })
+    },
     onSuccess: () => { setShowCreate(false); setNewName(''); invalidate() },
   })
 
-  // keep newIfaceId in sync when ifaces load
   const resolvedIfaceId = newIfaceId ?? slaveIfaces[0]?.id
 
   return (
@@ -218,15 +346,20 @@ function SlaveClientsList({
       {/* Interface filter tabs */}
       {slaveIfaces.length > 1 && (
         <div className="flex flex-wrap gap-1.5">
-          <button onClick={() => onIfaceFilterChange(undefined)}
+          <button
+            onClick={() => onIfaceFilterChange(undefined)}
             className={cn('px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-              ifaceFilter === undefined ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary')}>
+              ifaceFilter === undefined ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary')}
+          >
             All
           </button>
           {slaveIfaces.map((iface) => (
-            <button key={iface.id} onClick={() => onIfaceFilterChange(iface.id)}
+            <button
+              key={iface.id}
+              onClick={() => onIfaceFilterChange(iface.id)}
               className={cn('px-3 py-1.5 rounded-full text-xs font-medium border transition-colors font-mono',
-                ifaceFilter === iface.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary')}>
+                ifaceFilter === iface.id ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary')}
+            >
               {iface.name}
             </button>
           ))}
@@ -248,9 +381,13 @@ function SlaveClientsList({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label className="text-xs">Name</Label>
-              <Input className="h-8 text-sm" placeholder="e.g. Phone, Laptop…" value={newName}
+              <Input
+                className="h-8 text-sm"
+                placeholder="e.g. Phone, Laptop…"
+                value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && newName.trim() && resolvedIfaceId && createMut.mutate()} />
+                onKeyDown={(e) => e.key === 'Enter' && newName.trim() && resolvedIfaceId && createMut.mutate()}
+              />
             </div>
             <div className="space-y-1.5">
               <Label className="text-xs">Interface</Label>
@@ -263,10 +400,19 @@ function SlaveClientsList({
               </select>
             </div>
           </div>
-          {createMut.isError && <p className="text-xs text-destructive">{(createMut.error as Error)?.message ?? 'Failed'}</p>}
+          {createMut.isError && (
+            <p className="text-xs text-destructive">{(createMut.error as Error)?.message ?? 'Failed'}</p>
+          )}
           <div className="flex gap-2">
-            <Button size="sm" className="h-8" disabled={!newName.trim() || !resolvedIfaceId || createMut.isPending} onClick={() => createMut.mutate()}>
-              {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Check className="h-3.5 w-3.5 mr-1.5" />} Create
+            <Button
+              size="sm" className="h-8"
+              disabled={!newName.trim() || !resolvedIfaceId || createMut.isPending}
+              onClick={() => createMut.mutate()}
+            >
+              {createMut.isPending
+                ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
+                : <Check className="h-3.5 w-3.5 mr-1.5" />}
+              Create
             </Button>
             <Button size="sm" variant="outline" className="h-8" onClick={() => setShowCreate(false)}>
               <X className="h-3.5 w-3.5 mr-1.5" /> Cancel

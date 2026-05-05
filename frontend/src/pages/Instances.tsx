@@ -1,10 +1,11 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  Server, Plus, Trash2, RefreshCw, ChevronRight,
-  WifiOff, AlertTriangle, Check, Loader2, X,
-  Network, Users, Activity,
+  Server, Plus, Trash2, RefreshCw,
+  WifiOff, AlertTriangle, Check, Loader2,
+  Network, Users, Activity, ChevronRight,
 } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -246,10 +247,13 @@ function InstancePanel({
   theme: string
   onDelete: () => void
 }) {
+  const navigate = useNavigate()
   const qc = useQueryClient()
   const isCyber = theme === 'cyberpunk'
   const isApple = theme === 'apple'
   const cardClass = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
+
+  const [lastChecked, setLastChecked] = useState<Date | null>(null)
 
   const { data: pingData, isLoading: pinging, refetch: reping } = useQuery({
     queryKey: ['instance-ping', instanceId],
@@ -257,81 +261,49 @@ function InstancePanel({
     refetchInterval: 30_000,
   })
 
-  const { data: overviewData, isLoading: loadingOverview, refetch: refetchOverview } = useQuery({
-    queryKey: ['instance-overview', instanceId],
+  useEffect(() => {
+    if (pingData !== undefined) setLastChecked(new Date())
+  }, [pingData])
+
+  // Quick counts
+  const { data: ifaceCount = 0 } = useQuery({
+    queryKey: ['instance-iface-count', instanceId],
     queryFn: () =>
       proxyToInstance(instanceId, 'GET', '/api/v1/interfaces/overview').then((r) => {
         const d = JSON.parse(r.body)
-        return (Array.isArray(d) ? d : []) as InterfaceOverview[]
+        return Array.isArray(d) ? d.length : 0
       }),
     enabled: pingData?.reachable === true,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   })
 
-  const { data: clientsData, isLoading: loadingClients, refetch: refetchClients } = useQuery({
-    queryKey: ['instance-clients', instanceId],
+  const { data: clientCount = 0 } = useQuery({
+    queryKey: ['instance-client-count', instanceId],
     queryFn: () =>
       proxyToInstance(instanceId, 'GET', '/api/v1/clients').then((r) => {
         const d = JSON.parse(r.body)
-        return (Array.isArray(d) ? d : []) as SlaveClient[]
+        return Array.isArray(d) ? d.length : 0
       }),
     enabled: pingData?.reachable === true,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   })
-
-  const [showIfaceForm, setShowIfaceForm] = useState(false)
-  const [ifaceName, setIfaceName]     = useState('')
-  const [ifacePort, setIfacePort]     = useState('51820')
-  const [ifaceSubnet, setIfaceSubnet] = useState('10.0.0.0/24')
-  const [ifaceDns, setIfaceDns]       = useState('1.1.1.1')
-
-  const [addClientForIface, setAddClientForIface] = useState<number | null>(null)
-  const [clientName, setClientName] = useState('')
 
   const deleteMut = useMutation({
     mutationFn: () => deleteInstance(instanceId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['instances'] }); onDelete() },
   })
 
-  const toggleClientMut = useMutation({
-    mutationFn: ({ clientId, enable }: { clientId: number; enable: boolean }) =>
-      proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/${enable ? 'enable' : 'disable'}`),
-    onSuccess: () => refetchClients(),
-  })
-
-  const createIfaceMut = useMutation({
-    mutationFn: () => proxyToInstance(instanceId, 'POST', '/api/v1/interfaces', {
-      name: ifaceName.trim(), port: parseInt(ifacePort), subnet: ifaceSubnet.trim(), dns: ifaceDns.trim(),
-    }),
-    onSuccess: () => {
-      setShowIfaceForm(false); setIfaceName(''); setIfacePort('51820'); setIfaceSubnet('10.0.0.0/24'); setIfaceDns('1.1.1.1')
-      refetchOverview(); refetchClients()
-    },
-  })
-
-  const createClientMut = useMutation({
-    mutationFn: ({ ifaceId }: { ifaceId: number }) =>
-      proxyToInstance(instanceId, 'POST', '/api/v1/clients', { name: clientName.trim(), interface_id: ifaceId }),
-    onSuccess: () => { setAddClientForIface(null); setClientName(''); refetchClients(); refetchOverview() },
-  })
-
-  function refresh() {
-    reping()
-    refetchOverview()
-    refetchClients()
-  }
-
-  const health = pingData?.health
+  const health    = pingData?.health
   const reachable = pingData?.reachable
 
   const statusColor =
-    reachable === undefined ? 'bg-muted-foreground/40' :
-    !reachable ? 'bg-red-500' :
-    health?.status === 'ok' ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') :
+    reachable === undefined   ? 'bg-muted-foreground/40' :
+    !reachable                ? 'bg-red-500' :
+    health?.status === 'ok'   ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') :
     health?.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500'
 
   return (
-    <div className="space-y-5 max-w-3xl">
+    <div className="space-y-5 max-w-2xl">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
@@ -344,7 +316,7 @@ function InstancePanel({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={refresh} disabled={pinging}>
+          <Button variant="outline" size="sm" onClick={() => reping()} disabled={pinging}>
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', pinging && 'animate-spin')} />
             Refresh
           </Button>
@@ -362,12 +334,19 @@ function InstancePanel({
       {/* Health card */}
       <Card className={cardClass}>
         <CardHeader className="pb-2">
-          <div className="flex items-center gap-2">
-            <Activity className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
-            <CardTitle className="text-sm">Health</CardTitle>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Activity className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+              <CardTitle className="text-sm">Health</CardTitle>
+            </div>
+            {lastChecked && (
+              <span className="text-[11px] text-muted-foreground">
+                Last checked {lastChecked.toLocaleTimeString()}
+              </span>
+            )}
           </div>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           {pinging ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Checking…
@@ -378,205 +357,58 @@ function InstancePanel({
               Unreachable{pingData?.error ? ` — ${pingData.error}` : ''}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
-              <Stat label="Status" value={health?.status ?? '—'} ok={health?.status === 'ok'} isCyber={isCyber} />
-              <Stat label="Version" value={health?.version ?? '—'} isCyber={isCyber} />
-              <Stat label="Uptime" value={formatUptime(health?.uptime_seconds ?? 0)} isCyber={isCyber} />
-              <Stat
-                label="AdGuard"
-                value={health?.checks.adguard.configured
-                  ? (health.checks.adguard.status ?? 'n/a')
-                  : 'not configured'}
-                ok={health?.checks.adguard.status === 'ok'}
-                isCyber={isCyber}
-              />
-            </div>
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
+                <Stat label="Status"  value={health?.status ?? '—'}   ok={health?.status === 'ok'} isCyber={isCyber} />
+                <Stat label="Version" value={health?.version ?? '—'}  isCyber={isCyber} />
+                <Stat label="Uptime"  value={formatUptime(health?.uptime_seconds ?? 0)} isCyber={isCyber} />
+                <Stat
+                  label="AdGuard"
+                  value={health?.checks.adguard.configured
+                    ? (health.checks.adguard.status ?? 'n/a')
+                    : 'not configured'}
+                  ok={health?.checks.adguard.status === 'ok'}
+                  isCyber={isCyber}
+                />
+              </div>
+
+              {/* Quick stats + navigation */}
+              <div className={cn('grid grid-cols-2 gap-3 pt-3 border-t', isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border')}>
+                <button
+                  onClick={() => navigate('/interfaces')}
+                  className={cn(
+                    'flex flex-col items-center gap-1 py-3 rounded-[var(--radius)] border transition-colors group',
+                    isCyber
+                      ? 'border-[rgba(0,255,255,0.12)] hover:border-[rgba(0,255,255,0.3)] hover:bg-[rgba(0,255,255,0.04)]'
+                      : 'border-border hover:border-primary/50 hover:bg-accent/50',
+                  )}
+                >
+                  <Network className={cn('h-5 w-5', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+                  <span className="text-xl font-bold">{ifaceCount}</span>
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    Interfaces <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </span>
+                </button>
+                <button
+                  onClick={() => navigate(`/clients?slave=${instanceId}`)}
+                  className={cn(
+                    'flex flex-col items-center gap-1 py-3 rounded-[var(--radius)] border transition-colors group',
+                    isCyber
+                      ? 'border-[rgba(0,255,255,0.12)] hover:border-[rgba(0,255,255,0.3)] hover:bg-[rgba(0,255,255,0.04)]'
+                      : 'border-border hover:border-primary/50 hover:bg-accent/50',
+                  )}
+                >
+                  <Users className={cn('h-5 w-5', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+                  <span className="text-xl font-bold">{clientCount}</span>
+                  <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+                    Clients <ChevronRight className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </span>
+                </button>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
-
-      {/* Interfaces */}
-      {reachable && (
-        <Card className={cardClass}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Network className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
-                <CardTitle className="text-sm">Interfaces</CardTitle>
-              </div>
-              {!showIfaceForm && (
-                <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => setShowIfaceForm(true)}>
-                  <Plus className="h-3 w-3 mr-1" /> New
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {/* Inline create form */}
-            {showIfaceForm && (
-              <div className={cn(
-                'rounded-[var(--radius)] border border-border p-3 space-y-3',
-                isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/20',
-              )}>
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New interface</p>
-                <div className="grid grid-cols-2 gap-2">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Name</Label>
-                    <Input className="h-7 text-xs" placeholder="wg0" value={ifaceName} onChange={(e) => setIfaceName(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Port</Label>
-                    <Input className="h-7 text-xs" type="number" value={ifacePort} onChange={(e) => setIfacePort(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">Subnet (CIDR)</Label>
-                    <Input className="h-7 text-xs" placeholder="10.0.0.0/24" value={ifaceSubnet} onChange={(e) => setIfaceSubnet(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">DNS</Label>
-                    <Input className="h-7 text-xs" placeholder="1.1.1.1" value={ifaceDns} onChange={(e) => setIfaceDns(e.target.value)} />
-                  </div>
-                </div>
-                {createIfaceMut.isError && (
-                  <p className="text-xs text-destructive">{(createIfaceMut.error as Error)?.message ?? 'Failed'}</p>
-                )}
-                <div className="flex items-center gap-2">
-                  <Button size="sm" className="h-7 text-xs"
-                    disabled={!ifaceName.trim() || createIfaceMut.isPending}
-                    onClick={() => createIfaceMut.mutate()}
-                  >
-                    {createIfaceMut.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Check className="h-3 w-3 mr-1" />}
-                    Create
-                  </Button>
-                  <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setShowIfaceForm(false)}>
-                    <X className="h-3 w-3 mr-1" /> Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {loadingOverview ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
-            ) : !overviewData?.length ? (
-              <p className="text-sm text-muted-foreground">No interfaces on this slave.</p>
-            ) : (
-              <div className="space-y-2">
-                {overviewData.map((iface) => (
-                  <div key={iface.id} className={cn(
-                    'rounded-[var(--radius)] border border-border',
-                    isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/30',
-                  )}>
-                    <div className="flex items-center justify-between px-3 py-2.5">
-                      <div className="flex items-center gap-3">
-                        <span className={cn(
-                          'h-2 w-2 rounded-full shrink-0',
-                          iface.interface_up ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') : 'bg-red-500',
-                        )} />
-                        <div>
-                          <span className="text-sm font-medium font-mono">{iface.name}</span>
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground mt-0.5">
-                            <span>{iface.subnet}</span>
-                            <span>:{iface.port}</span>
-                            <span className={cn(iface.port_bound ? 'text-green-600 dark:text-green-400' : 'text-destructive')}>
-                              {iface.port_bound ? 'port bound' : 'port free'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          <Users className="h-3 w-3 inline mr-1" />{iface.client_count}
-                        </span>
-                        <Button variant="outline" size="sm" className="h-6 text-[11px]"
-                          onClick={() => { setAddClientForIface(iface.id); setClientName('') }}
-                        >
-                          <Plus className="h-3 w-3 mr-1" /> Client
-                        </Button>
-                      </div>
-                    </div>
-
-                    {/* Inline add-client form */}
-                    {addClientForIface === iface.id && (
-                      <div className={cn(
-                        'border-t border-border px-3 py-2.5 flex items-end gap-2',
-                        isCyber ? 'bg-[rgba(0,255,255,0.02)]' : 'bg-muted/20',
-                      )}>
-                        <div className="flex-1 space-y-1">
-                          <Label className="text-xs">Client name</Label>
-                          <Input className="h-7 text-xs" placeholder="e.g. Phone, Laptop…"
-                            value={clientName} onChange={(e) => setClientName(e.target.value)}
-                            onKeyDown={(e) => e.key === 'Enter' && clientName.trim() && createClientMut.mutate({ ifaceId: iface.id })}
-                          />
-                        </div>
-                        <Button size="sm" className="h-7 text-xs mb-0"
-                          disabled={!clientName.trim() || createClientMut.isPending}
-                          onClick={() => createClientMut.mutate({ ifaceId: iface.id })}
-                        >
-                          {createClientMut.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                        </Button>
-                        <Button variant="ghost" size="sm" className="h-7 text-xs"
-                          onClick={() => setAddClientForIface(null)}
-                        >
-                          <X className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Clients */}
-      {reachable && (
-        <Card className={cardClass}>
-          <CardHeader className="pb-2">
-            <div className="flex items-center gap-2">
-              <Users className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
-              <CardTitle className="text-sm">
-                Clients {clientsData && `(${clientsData.length})`}
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            {loadingClients ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Loading…</div>
-            ) : !clientsData?.length ? (
-              <p className="text-sm text-muted-foreground">No clients on this slave.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {clientsData.map((cl) => (
-                  <div key={cl.id} className={cn(
-                    'flex items-center justify-between px-3 py-2 rounded-[var(--radius)] border border-border',
-                    !cl.enabled && 'opacity-50',
-                    isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/20',
-                  )}>
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <span className={cn(
-                        'h-1.5 w-1.5 rounded-full shrink-0',
-                        cl.enabled ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') : 'bg-muted-foreground/40',
-                      )} />
-                      <div className="min-w-0">
-                        <span className="text-sm font-medium truncate block">{cl.name}</span>
-                        <span className="text-xs text-muted-foreground font-mono">{cl.assigned_ip}</span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="outline" size="sm" className="h-7 text-xs"
-                      disabled={toggleClientMut.isPending}
-                      onClick={() => toggleClientMut.mutate({ clientId: cl.id, enable: !cl.enabled })}
-                    >
-                      {cl.enabled ? 'Disable' : 'Enable'}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
     </div>
   )
 }
@@ -596,26 +428,6 @@ function Stat({ label, value, ok, isCyber }: { label: string; value: string; ok?
       </p>
     </div>
   )
-}
-
-// ── Types ─────────────────────────────────────────────────────────────────────
-
-interface InterfaceOverview {
-  id: number
-  name: string
-  port: number
-  subnet: string
-  enabled: boolean
-  interface_up: boolean
-  port_bound: boolean
-  client_count: number
-}
-
-interface SlaveClient {
-  id: number
-  name: string
-  assigned_ip: string
-  enabled: boolean
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

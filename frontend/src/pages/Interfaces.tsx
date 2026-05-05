@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi, Globe, Key, Server, Check, X } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi, Globe, Key, Server } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -270,7 +270,10 @@ function CheckButton({ iface }: { iface: WGInterface }) {
 }
 
 function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [instanceId, setInstanceId] = useState<number | null>(null) // null = local
+
   const [form, setForm] = useState<CreateInterfacePayload>({
     name: 'wg0',
     port: 51820,
@@ -280,36 +283,62 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
   })
   const [error, setError] = useState('')
 
+  const { data: instances = [] } = useQuery({ queryKey: ['instances'], queryFn: listInstances })
+
+  // AdGuard only makes sense for local
   const { data: adguard } = useQuery({
     queryKey: ['adguard-status'],
     queryFn: getAdguardStatus,
-    enabled: open,
+    enabled: open && instanceId === null,
     retry: false,
   })
 
   const adguardIP = serverIPFromSubnet(form.subnet ?? '10.0.0.0/24')
-  const adguardAvailable = adguard?.running === true
+  const adguardAvailable = instanceId === null && adguard?.running === true
 
   const mutation = useMutation({
-    mutationFn: createInterface,
-    onSuccess: () => { setOpen(false); onCreated() },
+    mutationFn: async () => {
+      if (instanceId !== null) {
+        await proxyToInstance(instanceId, 'POST', '/api/v1/interfaces', form)
+      } else {
+        await createInterface(form)
+      }
+    },
+    onSuccess: () => {
+      if (instanceId !== null) {
+        qc.invalidateQueries({ queryKey: ['slave-interfaces', instanceId] })
+      } else {
+        qc.invalidateQueries({ queryKey: ['interfaces'] })
+      }
+      setOpen(false)
+      onCreated()
+    },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
+
+  function handleOpenChange(v: boolean) {
+    if (v) {
+      setInstanceId(null)
+      setForm({ name: 'wg0', port: 51820, subnet: '10.0.0.0/24', dns_server: '1.1.1.1', lan_access: false })
+      setError('')
+    }
+    setOpen(v)
+  }
 
   function set(key: keyof CreateInterfacePayload) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: key === 'port' ? Number(e.target.value) : e.target.value }))
   }
 
-  const allPresets = [
+  const dnsPresets = [
     ...(adguardAvailable ? [{ label: `AdGuard (${adguardIP})`, value: adguardIP }] : []),
     ...DNS_PRESETS,
   ]
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="h-4 w-4 mr-2" />
@@ -322,27 +351,45 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
           <DialogDescription>A new keypair will be generated automatically.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+
+          {/* Instance selector — only when slaves exist */}
+          {instances.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Instance</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={instanceId ?? ''}
+                onChange={(e) => setInstanceId(e.target.value === '' ? null : Number(e.target.value))}
+              >
+                <option value="">Local</option>
+                {instances.map((inst) => (
+                  <option key={inst.id} value={inst.id}>{inst.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <Field label="Name" id="name" value={form.name} onChange={set('name')} placeholder="wg0" />
           <Field label="Listen port" id="port" type="number" value={String(form.port)} onChange={set('port')} placeholder="51820" />
+
           <div className="space-y-1.5">
-              <Label htmlFor="subnet">Subnet (CIDR)</Label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {SUBNET_PRESETS.map((s) => (
-                  <button key={s} type="button"
-                    onClick={() => setForm((f) => ({ ...f, subnet: s }))}
-                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}
-                  >{s}</button>
-                ))}
-              </div>
-              <Input id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+            <Label htmlFor="subnet">Subnet (CIDR)</Label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {SUBNET_PRESETS.map((s) => (
+                <button key={s} type="button"
+                  onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                  className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}
+                >{s}</button>
+              ))}
             </div>
+            <Input id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+          </div>
+
           <div className="space-y-1.5">
             <Label>DNS server</Label>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {allPresets.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
+              {dnsPresets.map((p) => (
+                <button key={p.value} type="button"
                   onClick={() => setForm((f) => ({ ...f, dns_server: p.value }))}
                   className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
                     form.dns_server === p.value
@@ -354,13 +401,9 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
                 </button>
               ))}
             </div>
-            <Input
-              id="dns"
-              value={form.dns_server ?? ''}
-              onChange={set('dns_server')}
-              placeholder="Custom DNS (e.g. 1.1.1.1)"
-            />
+            <Input id="dns" value={form.dns_server ?? ''} onChange={set('dns_server')} placeholder="1.1.1.1" />
           </div>
+
           {/* LAN access */}
           <div
             className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
@@ -369,18 +412,19 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
             <div>
               <p className="text-sm font-medium">Local network access</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Clients can reach LAN devices (e.g. 192.168.1.x) — split tunnel, auto-detected subnet
+                Clients can reach LAN devices — split tunnel, auto-detected subnet
               </p>
             </div>
             <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
               <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
           </div>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
             {mutation.isPending ? 'Creating…' : 'Create'}
           </Button>
         </DialogFooter>
@@ -583,63 +627,14 @@ function SlaveInterfaceSection({ instance }: { instance: RemoteInstance }) {
   const downMut   = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'POST',   `/api/v1/interfaces/${id}/down`), onSuccess: () => refetch() })
   const deleteMut = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'DELETE', `/api/v1/interfaces/${id}`),      onSuccess: () => refetch() })
 
-  const [showCreate, setShowCreate] = useState(false)
-  const [form, setForm] = useState({ name: 'wg0', port: '51820', subnet: '10.0.0.0/24', dns_server: '1.1.1.1', lan_access: false })
-  const createMut = useMutation({
-    mutationFn: () => proxyToInstance(instance.id, 'POST', '/api/v1/interfaces', {
-      name: form.name.trim(), port: parseInt(form.port), subnet: form.subnet.trim(),
-      dns_server: form.dns_server.trim(), lan_access: form.lan_access,
-    }),
-    onSuccess: () => { setShowCreate(false); setForm({ name: 'wg0', port: '51820', subnet: '10.0.0.0/24', dns_server: '1.1.1.1', lan_access: false }); refetch() },
-  })
-
   return (
     <div className="space-y-4">
       {/* Section header */}
-      <div className="flex items-center justify-between pb-1 border-b border-border">
-        <div className="flex items-center gap-2">
-          <Server className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{instance.name}</span>
-          <span className="text-xs text-muted-foreground font-mono opacity-60">{instance.url}</span>
-        </div>
-        <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => setShowCreate((v) => !v)}>
-          <Plus className="h-3 w-3 mr-1" /> New interface
-        </Button>
+      <div className="flex items-center gap-2 pb-1 border-b border-border">
+        <Server className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{instance.name}</span>
+        <span className="text-xs text-muted-foreground font-mono opacity-60">{instance.url}</span>
       </div>
-
-      {/* Inline create form */}
-      {showCreate && (
-        <div className={cn('rounded-[var(--radius)] border border-border p-4 space-y-3', isCyber ? 'bg-[rgba(0,255,255,0.03)]' : 'bg-muted/20')}>
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">New interface on {instance.name}</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Name"   id="sn"  value={form.name}       onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-            <Field label="Port"   id="sp"  type="number" value={form.port} onChange={(e) => setForm((f) => ({ ...f, port: e.target.value }))} />
-            <Field label="Subnet" id="ss"  value={form.subnet}     onChange={(e) => setForm((f) => ({ ...f, subnet: e.target.value }))} />
-            <Field label="DNS"    id="sd"  value={form.dns_server} onChange={(e) => setForm((f) => ({ ...f, dns_server: e.target.value }))} />
-          </div>
-          <div
-            className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
-            onClick={() => setForm((f) => ({ ...f, lan_access: !f.lan_access }))}
-          >
-            <div>
-              <p className="text-sm font-medium">Local network access</p>
-              <p className="text-xs text-muted-foreground mt-0.5">Clients can reach LAN devices — split tunnel, auto-detected subnet</p>
-            </div>
-            <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
-              <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
-            </div>
-          </div>
-          {createMut.isError && <p className="text-xs text-destructive">{(createMut.error as Error)?.message ?? 'Failed'}</p>}
-          <div className="flex gap-2">
-            <Button size="sm" className="h-8" disabled={!form.name.trim() || createMut.isPending} onClick={() => createMut.mutate()}>
-              {createMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Check className="h-3.5 w-3.5 mr-1.5" />} Create
-            </Button>
-            <Button size="sm" variant="outline" className="h-8" onClick={() => setShowCreate(false)}>
-              <X className="h-3.5 w-3.5 mr-1.5" /> Cancel
-            </Button>
-          </div>
-        </div>
-      )}
 
       {/* Interface cards */}
       {isLoading ? (
