@@ -9,8 +9,8 @@ import { useWebSocket } from '@/hooks/useWebSocket'
 import { ClientCard } from '@/components/clients/ClientCard'
 import { BulkBar } from '@/components/clients/BulkBar'
 import { CreateClientDialog } from '@/components/clients/CreateClientDialog'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { useThemeStore } from '@/stores/theme'
 
 type Source = 'all' | 'local' | number
 
@@ -20,7 +20,6 @@ export default function Clients() {
   const ifaceId = ifaceIdParam ? Number(ifaceIdParam) : undefined
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
-  const { theme } = useThemeStore()
 
   const initialSlave = searchParams.get('slave') ? Number(searchParams.get('slave')) : null
   const [source, setSource] = useState<Source>(initialSlave ?? 'local')
@@ -142,7 +141,6 @@ export default function Clients() {
           instance={selectedInstance}
           ifaceFilter={slaveIfaceFilter}
           onIfaceFilterChange={setSlaveIfaceFilter}
-          theme={theme}
         />
       ) : (
         <>
@@ -290,15 +288,14 @@ interface SlaveIface {
 }
 
 function SlaveClientsList({
-  instance, ifaceFilter, onIfaceFilterChange, theme,
+  instance, ifaceFilter, onIfaceFilterChange,
 }: {
   instance: RemoteInstance
   ifaceFilter: number | undefined
   onIfaceFilterChange: (id: number | undefined) => void
-  theme: string
 }) {
   const qc = useQueryClient()
-  const isCyber = theme === 'cyberpunk'
+
 
   const { data: slaveIfaces = [] } = useQuery({
     queryKey: ['slave-interfaces', instance.id],

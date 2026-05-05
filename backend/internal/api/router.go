@@ -155,6 +155,7 @@ func NewRouter(
 			instances.DELETE("/:id", instanceHandler.Delete)
 			instances.GET("/:id/ping", instanceHandler.Ping)
 			instances.POST("/:id/proxy", instanceHandler.Proxy)
+			instances.POST("/:id/clients/:clientId/send-config", instanceHandler.SendSlaveClientConfig)
 		}
 	}
 
@@ -179,6 +180,9 @@ func buildSlaveRoutes(
 	ag *adguard.Client,
 	ddnsSvc *ddns.Service,
 ) {
+	// Public config download — clients access this directly (no auth needed)
+	r.GET("/dl/:token", handlers.DownloadConfig(wg))
+
 	slave := r.Group("/api/v1", middleware.MasterToken())
 
 	ifaceHandler := handlers.NewInterfaceHandler(wg)
@@ -207,6 +211,7 @@ func buildSlaveRoutes(
 		clients.POST("/:id/disable", clientHandler.Disable)
 		clients.GET("/:id/config", clientHandler.GetConfig)
 		clients.GET("/:id/qr", clientHandler.GetQR)
+		clients.POST("/:id/download-link", clientHandler.CreateDownloadLink)
 		clients.POST("/:id/quota-reset", clientHandler.QuotaReset)
 		clients.GET("/:id/quota-usage", clientHandler.GetQuotaUsage)
 		clients.POST("/bulk/enable", clientHandler.BulkEnable)

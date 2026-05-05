@@ -59,3 +59,12 @@ export function proxyToInstance(
     .post(`/instances/${id}/proxy`, { method, path, body: body ?? null })
     .then((r) => r.data)
 }
+
+/** Ask the master to send a config email for a client hosted on a slave.
+ *  The master fetches client data + creates a download token on the slave,
+ *  then sends the email via its own SMTP. */
+export function sendSlaveClientConfig(instanceId: number, clientId: number): Promise<{ message: string }> {
+  return api
+    .post(`/instances/${instanceId}/clients/${clientId}/send-config`)
+    .then((r) => r.data)
+}

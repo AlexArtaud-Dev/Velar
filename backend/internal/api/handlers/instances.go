@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -13,6 +14,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	"github.com/gin-gonic/gin"
 )
 
@@ -197,4 +199,123 @@ func (h *InstanceHandler) Proxy(c *gin.Context) {
 		"body":         string(respBody),
 		"duration_ms":  durationMS,
 	})
+}
+
+// slaveClient is a minimal subset of the slave's client JSON used by SendSlaveClientConfig.
+type slaveClient struct {
+	ID         uint    `json:"id"`
+	Name       string  `json:"name"`
+	Email      string  `json:"email"`
+	AssignedIP string  `json:"assigned_ip"`
+	ExpiresAt  *string `json:"expires_at"`
+	ViewToken  string  `json:"view_token"`
+}
+
+// slaveDownloadLink is the response from POST /api/v1/clients/:id/download-link on the slave.
+type slaveDownloadLink struct {
+	Token string `json:"token"`
+	URL   string `json:"url"`
+}
+
+// SendSlaveClientConfig sends a one-time config download email for a client
+// hosted on a slave instance, using the master's SMTP configuration.
+//
+// Flow:
+//  1. Master fetches client data from the slave.
+//  2. Master creates a one-time download token on the slave.
+//  3. Master sends the email via its own SMTP.
+//
+// Route: POST /api/v1/instances/:id/clients/:clientId/send-config
+func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
+	instanceID, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+	clientID := c.Param("clientId")
+
+	// 1. Check master SMTP
+	if !mailer.SMTPEnabled() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "SMTP is not configured on this server"})
+		return
+	}
+
+	// 2. Load slave instance
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, instanceID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	token, err := auth.Decrypt(instance.TokenEncrypted, config.C.AppSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token decryption failed"})
+		return
+	}
+
+	hc := &http.Client{Timeout: 15 * time.Second}
+
+	// 3. Fetch client from slave
+	clientURL := instance.URL + "/api/v1/clients/" + clientID
+	getReq, _ := http.NewRequest(http.MethodGet, clientURL, nil)
+	getReq.Header.Set("Authorization", "Bearer "+token)
+	getResp, err := hc.Do(getReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not reach slave: " + err.Error()})
+		return
+	}
+	defer getResp.Body.Close()
+	if getResp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("slave returned %d when fetching client", getResp.StatusCode)})
+		return
+	}
+	var sc slaveClient
+	if err := json.NewDecoder(getResp.Body).Decode(&sc); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not parse client data from slave"})
+		return
+	}
+	if sc.Email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "this client has no email address"})
+		return
+	}
+
+	// 4. Create one-time download token on the slave
+	dlURL := instance.URL + "/api/v1/clients/" + clientID + "/download-link"
+	dlReq, _ := http.NewRequest(http.MethodPost, dlURL, nil)
+	dlReq.Header.Set("Authorization", "Bearer "+token)
+	dlResp, err := hc.Do(dlReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "could not create download link on slave: " + err.Error()})
+		return
+	}
+	defer dlResp.Body.Close()
+	if dlResp.StatusCode != http.StatusOK {
+		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("slave returned %d when creating download link", dlResp.StatusCode)})
+		return
+	}
+	var dl slaveDownloadLink
+	if err := json.NewDecoder(dlResp.Body).Decode(&dl); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "could not parse download link from slave"})
+		return
+	}
+
+	// 5. Build the full download URL pointing at the slave
+	downloadURL := strings.TrimRight(instance.URL, "/") + "/dl/" + dl.Token
+
+	expiry := "No expiry"
+	if sc.ExpiresAt != nil && *sc.ExpiresAt != "" {
+		t, err := time.Parse(time.RFC3339, *sc.ExpiresAt)
+		if err == nil {
+			expiry = t.UTC().Format("2006-01-02 15:04 UTC")
+		}
+	}
+
+	portalURL := ""
+	if base := config.C.AppURL; base != "" && sc.ViewToken != "" {
+		portalURL = strings.TrimRight(base, "/") + "/portal/" + sc.ViewToken
+	}
+
+	mailer.SendHTMLTo(
+		sc.Email,
+		fmt.Sprintf("Your VPN profile: %s", sc.Name),
+		mailer.HTMLClientWelcome(sc.Name, sc.AssignedIP, expiry, downloadURL, portalURL),
+	)
+
+	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
 }

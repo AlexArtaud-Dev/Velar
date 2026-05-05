@@ -31,7 +31,7 @@ import {
   updateClient, resetClientQuota, getClientSnapshots, getClientEvents,
   type Client, type SnapshotPoint, type ConnectionEvent,
 } from '@/api/clients'
-import { proxyToInstance } from '@/api/instances'
+import { proxyToInstance, sendSlaveClientConfig } from '@/api/instances'
 import { formatBytes } from '@/lib/utils'
 
 // ── Clipboard helper ──────────────────────────────────────────────────────────
@@ -132,7 +132,7 @@ interface SendConfigButtonProps {
 export function SendConfigButton({ clientId, email, open, onOpenChange, instanceId }: SendConfigButtonProps) {
   const mut = useMutation({
     mutationFn: async () => {
-      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/send-config`)
+      if (instanceId) await sendSlaveClientConfig(instanceId, clientId)
       else await sendConfigEmail(clientId)
     },
     onSuccess: () => { onOpenChange(false) },
