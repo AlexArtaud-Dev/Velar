@@ -296,7 +296,6 @@ function SlaveClientsList({
 }) {
   const qc = useQueryClient()
 
-
   const { data: slaveIfaces = [] } = useQuery({
     queryKey: ['slave-interfaces', instance.id],
     queryFn: () =>
@@ -316,6 +315,11 @@ function SlaveClientsList({
       }),
     refetchInterval: 10_000,
   })
+
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const toggleSelect   = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const selectAll      = () => setSelected(new Set(clients.map((c) => c.id)))
+  const clearSelection = () => setSelected(new Set())
 
   function invalidate() { qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] }) }
 
@@ -358,15 +362,25 @@ function SlaveClientsList({
             <ClientCard
               key={cl.id}
               client={cl}
-              isSelected={false}
-              anySelected={false}
-              onToggleSelect={() => {}}
+              isSelected={selected.has(cl.id)}
+              anySelected={selected.size > 0}
+              onToggleSelect={() => toggleSelect(cl.id)}
               onUpdated={invalidate}
               instanceId={instance.id}
               instanceUrl={instance.url}
             />
           ))}
         </div>
+      )}
+
+      {selected.size > 0 && (
+        <BulkBar
+          selected={selected}
+          totalCount={clients.length}
+          onSelectAll={selectAll}
+          onClearSelection={clearSelection}
+          instanceId={instance.id}
+        />
       )}
     </div>
   )

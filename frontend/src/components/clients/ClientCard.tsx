@@ -105,8 +105,8 @@ export function ClientCard({
       className={cn(
         'group/card transition-all duration-200',
         isSelected && 'ring-2 ring-primary bg-primary/5',
-        isDisabled && !isCyber && 'border-dashed border-muted-foreground/30 bg-muted/20 opacity-75',
-        isDisabled && isCyber  && 'border-dashed opacity-60',
+        isDisabled && !isCyber && 'border-2 border-dashed border-slate-300 dark:border-slate-600 bg-muted/20 opacity-80',
+        isDisabled && isCyber  && 'border-2 border-dashed border-slate-500/60 opacity-65',
         isApple  && 'apple-glass hover:shadow-md',
         isCyber  && cn(
           'cyber-card',

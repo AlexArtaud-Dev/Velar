@@ -1,10 +1,11 @@
-import { useQuery } from '@tanstack/react-query'
-import { Network, Users, ArrowDown, ArrowUp, Wifi, WifiOff, TrendingUp, Activity } from 'lucide-react'
+import { useQuery, useQueries } from '@tanstack/react-query'
+import { Network, Users, ArrowDown, ArrowUp, Wifi, WifiOff, TrendingUp, Activity, Server } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { listInterfaces } from '@/api/interfaces'
 import { getPublicIP } from '@/api/settings'
 import { getDashboardStats, getDashboardSnapshots, type SnapshotPoint } from '@/api/dashboard'
+import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
 import { useWebSocket } from '@/hooks/useWebSocket'
 import { useThemeStore } from '@/stores/theme'
 import { formatBytes, formatBytesShort, timeAgo } from '@/lib/utils'
@@ -14,6 +15,17 @@ import {
 } from 'recharts'
 import { useState, useEffect, useRef } from 'react'
 import React from 'react'
+
+interface SlaveIfaceOverview {
+  id: number
+  name: string
+  port: number
+  subnet: string
+  enabled: boolean
+  interface_up: boolean
+  port_bound: boolean
+  client_count: number
+}
 
 interface LiveBandwidthPoint {
   time: string
@@ -30,6 +42,30 @@ export default function Dashboard() {
     queryFn: getDashboardStats,
     refetchInterval: 30_000,
   })
+  const { data: instances = [] } = useQuery({ queryKey: ['instances'], queryFn: listInstances })
+
+  // Per-slave interface overview (polled every 30 s)
+  const slaveOverviewResults = useQueries({
+    queries: instances.map((inst) => ({
+      queryKey: ['slave-overview', inst.id] as const,
+      queryFn: () =>
+        proxyToInstance(inst.id, 'GET', '/api/v1/interfaces/overview').then((r) => {
+          const d = JSON.parse(r.body)
+          return (Array.isArray(d) ? d : []) as SlaveIfaceOverview[]
+        }),
+      refetchInterval: 30_000,
+    })),
+  })
+  const slaveOverviews: { instance: RemoteInstance; ifaces: SlaveIfaceOverview[]; isLoading: boolean }[] =
+    instances.map((inst, i) => ({
+      instance: inst,
+      ifaces: slaveOverviewResults[i]?.data ?? [],
+      isLoading: slaveOverviewResults[i]?.isLoading ?? true,
+    }))
+
+  const slaveIfaceUp    = slaveOverviews.reduce((sum, s) => sum + s.ifaces.filter((f) => f.interface_up).length, 0)
+  const slaveIfaceTotal = slaveOverviews.reduce((sum, s) => sum + s.ifaces.length, 0)
+  const slaveClientTotal = slaveOverviews.reduce((sum, s) => sum + s.ifaces.reduce((a, f) => a + f.client_count, 0), 0)
   const [historyRange, setHistoryRange] = useState<'24h' | '7d'>('24h')
   const { data: historyData = [] } = useQuery({
     queryKey: ['dashboard-snapshots', historyRange],
@@ -123,16 +159,16 @@ export default function Dashboard() {
         <StatCard
           icon={<Network className="h-5 w-5" />}
           label="Interfaces"
-          value={`${upInterfaces} / ${interfaces?.length ?? 0}`}
-          sub="active"
+          value={`${upInterfaces + slaveIfaceUp} / ${(interfaces?.length ?? 0) + slaveIfaceTotal}`}
+          sub={instances.length > 0 ? `${instances.length + 1} instances` : 'active'}
           accent="green"
           theme={theme}
         />
         <StatCard
           icon={<Users className="h-5 w-5" />}
           label="Clients"
-          value={`${connectedPeers} / ${totalPeers}`}
-          sub="connected"
+          value={`${connectedPeers} / ${totalPeers + slaveClientTotal}`}
+          sub={instances.length > 0 ? 'online (local) / total' : 'connected'}
           accent={connectedPeers > 0 ? 'blue' : 'default'}
           theme={theme}
         />
@@ -271,6 +307,13 @@ export default function Dashboard() {
             </div>
           </CardHeader>
           <CardContent className="space-y-1.5">
+            {/* Local interfaces (from WebSocket) */}
+            {ifaces.length > 0 && instances.length > 0 && (
+              <div className="flex items-center gap-1.5 pb-1">
+                <Network className="h-3 w-3 text-muted-foreground/60" />
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Local</span>
+              </div>
+            )}
             {ifaces.map((iface) => (
               <div key={iface.id} className={cn(
                 'flex items-center justify-between px-3 py-2.5 rounded-[var(--radius)] border border-border transition-colors',
@@ -299,9 +342,54 @@ export default function Dashboard() {
                 </span>
               </div>
             ))}
-            {!ifaces.length && (
+            {!ifaces.length && !slaveOverviews.length && (
               <p className="text-sm text-muted-foreground py-2">No interfaces.</p>
             )}
+
+            {/* Slave instance sections */}
+            {slaveOverviews.map(({ instance, ifaces: sIfaces, isLoading: sLoading }) => (
+              <div key={instance.id} className="pt-1">
+                <div className="flex items-center gap-1.5 pb-1.5 mt-1 border-t border-border/50">
+                  <Server className="h-3 w-3 text-muted-foreground/60" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{instance.name}</span>
+                  <span className="text-[10px] text-muted-foreground/40 font-mono truncate">{instance.url}</span>
+                </div>
+                {sLoading ? (
+                  <div className="h-9 bg-muted/40 rounded animate-pulse" />
+                ) : sIfaces.length === 0 ? (
+                  <p className="text-xs text-muted-foreground/60 py-1 px-2">No interfaces</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {sIfaces.map((sf) => (
+                      <div key={sf.id} className={cn(
+                        'flex items-center justify-between px-3 py-2 rounded-[var(--radius)] border border-border transition-colors',
+                        sf.interface_up
+                          ? isCyber
+                            ? 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.15)]'
+                            : 'bg-green-500/5 border-green-500/20'
+                          : 'bg-muted/40',
+                      )}>
+                        <div className="flex items-center gap-2.5">
+                          <span className={cn(
+                            'h-2 w-2 rounded-full shrink-0',
+                            sf.interface_up
+                              ? isCyber ? 'bg-[hsl(180,100%,50%)] animate-pulse' : 'bg-green-500 animate-pulse'
+                              : 'bg-muted-foreground/30',
+                          )} />
+                          <span className="font-mono text-sm font-medium">{sf.name}</span>
+                          <Badge variant={sf.interface_up ? 'success' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">
+                            {sf.interface_up ? 'UP' : 'DOWN'}
+                          </Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {sf.client_count} enabled
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </CardContent>
         </Card>
 
