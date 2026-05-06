@@ -79,6 +79,9 @@ func (h *ClientHandler) SendConfig(c *gin.Context) {
 		mailer.HTMLClientWelcome(client.Name, client.AssignedIP, expiry, buildDownloadURL(rawToken), buildPortalURL(client.ViewToken)),
 	)
 
+	auditLog(c, "client.send_config", "client", client.ID, client.Name,
+		fmt.Sprintf("email=%s interface=%s", client.Email, client.Interface.Name))
+
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
 }
 
@@ -96,6 +99,9 @@ func (h *ClientHandler) CreateDownloadLink(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	auditLog(c, "client.download_link", "client", client.ID, client.Name, "")
+
 	c.JSON(http.StatusOK, gin.H{"token": rawToken, "url": "/dl/" + rawToken})
 }
 

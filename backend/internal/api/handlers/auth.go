@@ -10,6 +10,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	auditsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/audit"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	"github.com/gin-gonic/gin"
 )
@@ -72,6 +73,8 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
+		auditsvc.Log(admin.ID, "admin.login", "admin", admin.ID, admin.Username, "")
+
 		c.SetCookie("refresh_token", rawRefresh, int(auth.RefreshTokenTTL.Seconds()), "/", "", config.C.AppEnv == "production", true)
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": accessToken,
@@ -122,6 +125,8 @@ func Logout() gin.HandlerFunc {
 				Where("token_hash = ?", hash).
 				Update("revoked", true)
 		}
+		auditLog(c, "admin.logout", "admin", adminIDFromCtx(c), c.GetString("username"), "")
+
 		c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 		c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 	}
@@ -143,6 +148,8 @@ func TOTPSetup() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save TOTP secret"})
 			return
 		}
+
+		auditLog(c, "admin.totp_setup", "admin", adminID, username, "")
 
 		c.JSON(http.StatusOK, setup)
 	}

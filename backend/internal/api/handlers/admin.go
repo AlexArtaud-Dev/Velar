@@ -157,6 +157,9 @@ func (h *AdminHandler) SyncState(c *gin.Context) {
 		totalAdded += r.PeersAdded
 	}
 
+	auditLog(c, "admin.sync", "admin", 0, "system",
+		fmt.Sprintf("interfaces=%d peers_removed=%d peers_added=%d", len(reports), totalRemoved, totalAdded))
+
 	c.JSON(http.StatusOK, gin.H{
 		"interfaces_synced": len(reports),
 		"peers_removed":     totalRemoved,

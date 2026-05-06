@@ -341,6 +341,9 @@ func (h *InstanceHandler) SendSlaveClientConfig(c *gin.Context) {
 		mailer.HTMLClientWelcome(sc.Name, sc.AssignedIP, expiry, downloadURL, portalURL),
 	)
 
+	auditLog(c, "instance.send_config", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("client=%s email=%s", sc.Name, sc.Email))
+
 	c.JSON(http.StatusOK, gin.H{"message": "email sent"})
 }
 
