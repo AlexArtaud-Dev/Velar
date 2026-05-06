@@ -5,7 +5,7 @@ import { listAuditLogs, type AuditLog } from '@/api/audit'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-const LIMIT = 50
+const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100] as const
 
 // ── Action badge colour ───────────────────────────────────────────────────────
 function actionVariant(action: string): string {
@@ -63,19 +63,20 @@ const CATEGORIES: { label: string; prefix: string }[] = [
 /** Audit Log page */
 export default function Audit() {
   const [page, setPage]         = useState(1)
+  const [limit, setLimit]       = useState<number>(50)
   const [category, setCategory] = useState('')
   const [search, setSearch]     = useState('')
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['audit', page],
-    queryFn: () => listAuditLogs({ page, limit: LIMIT }),
+    queryKey: ['audit', page, limit],
+    queryFn: () => listAuditLogs({ page, limit }),
     placeholderData: (prev) => prev,
     refetchInterval: 30_000,
   })
 
   const items: AuditLog[] = data?.items ?? []
   const total = data?.total ?? 0
-  const totalPages = Math.max(1, Math.ceil(total / LIMIT))
+  const totalPages = Math.max(1, Math.ceil(total / limit))
 
   // Client-side category + text filter (applied to the current page slice)
   const filtered = items.filter((log) => {
@@ -95,6 +96,11 @@ export default function Audit() {
   function handleCategoryChange(prefix: string) {
     setCategory(prefix)
     setSearch('')
+    setPage(1)
+  }
+
+  function handleLimitChange(value: number) {
+    setLimit(value)
     setPage(1)
   }
 
@@ -238,35 +244,62 @@ export default function Audit() {
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Left: total + refreshing indicator */}
         <span className="text-xs text-muted-foreground">
           {total} entr{total !== 1 ? 'ies' : 'y'} total
           {isFetching && !isLoading && (
             <span className="ml-2 opacity-60">Refreshing…</span>
           )}
         </span>
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page <= 1}
-            onClick={() => setPage((p) => p - 1)}
-            className="h-8 w-8 p-0"
-          >
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {page} / {totalPages}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            className="h-8 w-8 p-0"
-          >
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+
+        {/* Right: per-page selector + page nav */}
+        <div className="flex items-center gap-3">
+          {/* Per-page selector */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs text-muted-foreground shrink-0">Per page:</span>
+            <div className="flex gap-1">
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <button
+                  key={n}
+                  onClick={() => handleLimitChange(n)}
+                  className={cn(
+                    'h-7 min-w-[2rem] px-2 rounded text-xs font-medium border transition-colors',
+                    limit === n
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
+                  )}
+                >
+                  {n}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Page nav */}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page <= 1}
+              onClick={() => setPage((p) => p - 1)}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground tabular-nums">
+              {page} / {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+              className="h-8 w-8 p-0"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
