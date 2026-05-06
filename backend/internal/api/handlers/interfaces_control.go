@@ -44,7 +44,7 @@ func (h *InterfaceHandler) BringUp(c *gin.Context) {
 	}
 
 	auditLog(c, "interface.up", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("port=%d", iface.Port))
+		fmt.Sprintf("port=%d subnet=%s", iface.Port, iface.Subnet))
 
 	c.JSON(http.StatusOK, gin.H{"message": "up"})
 }
@@ -64,7 +64,7 @@ func (h *InterfaceHandler) BringDown(c *gin.Context) {
 	database.DB.Model(&iface).Update("enabled", false)
 
 	auditLog(c, "interface.down", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("port=%d", iface.Port))
+		fmt.Sprintf("port=%d subnet=%s", iface.Port, iface.Subnet))
 
 	c.JSON(http.StatusOK, gin.H{"message": "down"})
 }

@@ -89,7 +89,7 @@ func (h *InstanceHandler) Register(c *gin.Context) {
 	}
 
 	auditLog(c, "instance.register", "instance", instance.ID, instance.Name,
-		fmt.Sprintf("url=%s", instance.URL))
+		fmt.Sprintf("url=%s token_prefix=%s", instance.URL, instance.TokenPrefix))
 
 	c.JSON(http.StatusCreated, instance)
 }

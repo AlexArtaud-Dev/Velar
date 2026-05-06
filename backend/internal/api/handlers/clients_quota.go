@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -145,7 +146,9 @@ func (h *ClientHandler) QuotaReset(c *gin.Context) {
 		}
 	}
 
-	auditLog(c, "client.quota_reset", "client", client.ID, client.Name, "")
+	auditLog(c, "client.quota_reset", "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s quota_bytes=%d period=%s was_suspended=%v",
+			client.Interface.Name, client.AssignedIP, client.DataQuotaBytes, client.QuotaPeriod, wasDisabled))
 	slog.Info("quota reset", "client", client.Name)
 	c.JSON(http.StatusOK, gin.H{"message": "quota reset", "reset_at": now})
 }

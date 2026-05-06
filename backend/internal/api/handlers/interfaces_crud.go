@@ -143,7 +143,8 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 	}
 
 	auditLog(c, "interface.create", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("port=%d subnet=%s", iface.Port, iface.Subnet))
+		fmt.Sprintf("port=%d subnet=%s dns=%s lan_access=%v listen=%s",
+			iface.Port, iface.Subnet, iface.DNSServer, iface.LanAccess, iface.ListenAddress))
 
 	c.JSON(http.StatusCreated, iface)
 }
@@ -370,7 +371,7 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 	}
 
 	auditLog(c, "interface.delete", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("clients_removed=%d", len(clients)))
+		fmt.Sprintf("port=%d subnet=%s clients_removed=%d", iface.Port, iface.Subnet, len(clients)))
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"net/http"
 	"strconv"
 	"time"
@@ -72,8 +73,12 @@ func CreatePAT(c *gin.Context) {
 		return
 	}
 
+	patExpiry := "never"
+	if pat.ExpiresAt != nil {
+		patExpiry = pat.ExpiresAt.UTC().Format("2006-01-02")
+	}
 	auditLog(c, "token.create", "admin", pat.ID, pat.Name,
-		"prefix="+pat.TokenPrefix)
+		fmt.Sprintf("prefix=%s expires=%s", pat.TokenPrefix, patExpiry))
 
 	// Respond with the record + the raw token (only time it's visible).
 	c.JSON(http.StatusCreated, gin.H{
@@ -101,7 +106,7 @@ func DeletePAT(c *gin.Context) {
 	database.DB.Delete(&pat)
 
 	auditLog(c, "token.delete", "admin", pat.ID, pat.Name,
-		"prefix="+pat.TokenPrefix)
+		fmt.Sprintf("prefix=%s revoked=true", pat.TokenPrefix))
 
 	c.JSON(http.StatusOK, gin.H{"message": "token revoked"})
 }
