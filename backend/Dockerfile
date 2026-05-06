@@ -8,7 +8,11 @@ COPY go.mod ./
 RUN GOFLAGS=-mod=mod go mod download
 
 COPY . .
-RUN GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o velar ./cmd/server
+
+ARG VERSION=dev
+RUN GOFLAGS=-mod=mod CGO_ENABLED=0 GOOS=linux go build \
+    -ldflags="-s -w -X github.com/AlexArtaud-Dev/velar/backend/internal/config.AppVersion=${VERSION}" \
+    -o velar ./cmd/server
 
 FROM alpine:3.19
 

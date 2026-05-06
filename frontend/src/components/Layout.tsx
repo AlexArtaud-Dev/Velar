@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Network, Users, Settings, LogOut,
-  Shield, Wifi, WifiOff, Key, ChevronDown, Check, Server,
+  Shield, Wifi, WifiOff, Key, ChevronDown, Check, Server, ClipboardList,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, THEMES, type Theme } from '@/stores/theme'
@@ -22,6 +22,7 @@ const navItems = [
   { to: '/clients',    label: 'Clients',    icon: Users },
   { to: '/instances',  label: 'Instances',  icon: Server },
   { to: '/tokens',     label: 'API Keys',   icon: Key },
+  { to: '/audit',      label: 'Audit Log',  icon: ClipboardList },
   { to: '/settings',   label: 'Settings',   icon: Settings },
 ]
 

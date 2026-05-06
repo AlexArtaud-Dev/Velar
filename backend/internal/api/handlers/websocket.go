@@ -17,7 +17,14 @@ import (
 )
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		// Same-origin requests (e.g. same-host Nginx proxy) have no Origin header.
+		if origin == "" {
+			return true
+		}
+		return origin == config.C.CORSOrigin
+	},
 }
 
 type WSHub struct {
