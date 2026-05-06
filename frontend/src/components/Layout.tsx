@@ -16,15 +16,48 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
-const navItems = [
-  { to: '/',           label: 'Dashboard',  icon: LayoutDashboard, end: true },
-  { to: '/interfaces', label: 'Interfaces', icon: Network },
-  { to: '/clients',    label: 'Clients',    icon: Users },
-  { to: '/instances',  label: 'Instances',  icon: Server },
-  { to: '/tokens',     label: 'API Keys',   icon: Key },
-  { to: '/audit',      label: 'Audit Log',  icon: ClipboardList },
-  { to: '/settings',   label: 'Settings',   icon: Settings },
+// Grouped nav definition for the desktop sidebar
+const navGroups = [
+  {
+    label: null, // no section header for the first entry
+    items: [
+      { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
+    ],
+  },
+  {
+    label: 'Network',
+    items: [
+      { to: '/interfaces', label: 'Interfaces', icon: Network },
+      { to: '/clients',    label: 'Clients',    icon: Users },
+    ],
+  },
+  {
+    label: 'Federation',
+    items: [
+      { to: '/instances', label: 'Instances', icon: Server },
+    ],
+  },
+  {
+    label: 'Access',
+    items: [
+      { to: '/tokens', label: 'API Keys',  icon: Key },
+      { to: '/audit',  label: 'Audit Log', icon: ClipboardList },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { to: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ]
+
+// Flat list (all items) used for mobile bottom nav — limit to 5 core items
+// to avoid cramming 7 icons into a small bar.
+const navItems = navGroups.flatMap((g) => g.items)
+const mobileNavItems = navItems.filter((i) =>
+  ['/', '/interfaces', '/clients', '/instances', '/settings'].includes(i.to),
+)
 
 const THEME_META: Record<Theme, { label: string; emoji: string; dot: string }> = {
   dark:      { label: 'Dark',      emoji: '🌙', dot: 'bg-slate-600' },
@@ -171,28 +204,45 @@ export default function Layout() {
         </div>
 
         {/* Nav */}
-        <nav className="flex-1 py-3 px-2 space-y-0.5">
-          {navItems.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-all duration-150',
-                  'border-l-2',
-                  isActive
-                    ? cn(
-                        'border-primary bg-accent text-foreground',
-                        isCyber && 'bg-[rgba(0,255,255,0.07)] border-[hsl(180,100%,50%)] text-[hsl(180,60%,85%)] [text-shadow:0_0_12px_rgba(0,255,255,0.4)]',
+        <nav className="flex-1 py-3 px-2 overflow-y-auto space-y-4">
+          {navGroups.map((group, gi) => (
+            <div key={gi}>
+              {group.label && (
+                <p className={cn(
+                  'px-3 mb-1 text-[10px] font-semibold uppercase tracking-widest select-none',
+                  isCyber ? 'text-[hsl(180,60%,50%)]' : 'text-muted-foreground/50',
+                )}>
+                  {group.label}
+                </p>
+              )}
+              <div className="space-y-0.5">
+                {group.items.map(({ to, label, icon: Icon, end }) => (
+                  <NavLink
+                    key={to}
+                    to={to}
+                    end={end}
+                    className={({ isActive }) =>
+                      cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-[var(--radius)] text-sm font-medium transition-all duration-150',
+                        'border-l-2',
+                        isActive
+                          ? cn(
+                              'border-primary bg-accent text-foreground',
+                              isCyber && 'bg-[rgba(0,255,255,0.07)] border-[hsl(180,100%,50%)] text-[hsl(180,60%,85%)] [text-shadow:0_0_12px_rgba(0,255,255,0.4)]',
+                            )
+                          : cn(
+                              'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                              isCyber && 'hover:text-[hsl(180,60%,80%)] hover:bg-[rgba(0,255,255,0.04)]',
+                            ),
                       )
-                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                )
-              }
-            >
-              <Icon className="h-4 w-4 shrink-0" />
-              {label}
-            </NavLink>
+                    }
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {label}
+                  </NavLink>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
 
@@ -262,7 +312,7 @@ export default function Layout() {
           'lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border',
           isCyber && 'border-t-[rgba(0,255,255,0.15)]',
         )}>
-          {navItems.map(({ to, label, icon: Icon, end }) => (
+          {mobileNavItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}

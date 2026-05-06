@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
@@ -52,6 +54,14 @@ func (h *ClientHandler) BulkEnable(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+	}
+	auditLog(c, "client.bulk_enable", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d names=%s", len(clients), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
 }
 
@@ -85,6 +95,14 @@ func (h *ClientHandler) BulkDisable(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+	}
+	auditLog(c, "client.bulk_disable", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d names=%s", len(clients), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
 }
 
@@ -124,5 +142,13 @@ func (h *ClientHandler) BulkDelete(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+	}
+	auditLog(c, "client.bulk_delete", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d names=%s", len(clients), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"deleted": len(clients)})
 }

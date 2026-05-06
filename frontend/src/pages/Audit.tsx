@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { ClipboardList, ChevronLeft, ChevronRight, Search } from 'lucide-react'
+import { ClipboardList, ChevronLeft, ChevronRight, Search, RefreshCw } from 'lucide-react'
 import { listAuditLogs, type AuditLog } from '@/api/audit'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -66,10 +66,11 @@ export default function Audit() {
   const [category, setCategory] = useState('')
   const [search, setSearch]     = useState('')
 
-  const { data, isLoading, isFetching } = useQuery({
+  const { data, isLoading, isFetching, refetch } = useQuery({
     queryKey: ['audit', page],
     queryFn: () => listAuditLogs({ page, limit: LIMIT }),
     placeholderData: (prev) => prev,
+    refetchInterval: 30_000,
   })
 
   const items: AuditLog[] = data?.items ?? []
@@ -100,14 +101,26 @@ export default function Audit() {
   return (
     <div className="p-4 sm:p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <ClipboardList className="h-5 w-5 text-muted-foreground shrink-0" />
-        <div>
-          <h1 className="text-2xl font-bold">Audit Log</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">
-            Admin-initiated changes, newest first
-          </p>
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <ClipboardList className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div>
+            <h1 className="text-2xl font-bold">Audit Log</h1>
+            <p className="text-muted-foreground text-sm mt-0.5">
+              Admin-initiated changes, newest first
+            </p>
+          </div>
         </div>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => refetch()}
+          disabled={isFetching}
+          className="gap-2 shrink-0"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+          Refresh
+        </Button>
       </div>
 
       {/* Filters */}

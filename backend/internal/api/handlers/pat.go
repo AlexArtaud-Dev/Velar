@@ -72,6 +72,9 @@ func CreatePAT(c *gin.Context) {
 		return
 	}
 
+	auditLog(c, "token.create", "admin", pat.ID, pat.Name,
+		"prefix="+pat.TokenPrefix)
+
 	// Respond with the record + the raw token (only time it's visible).
 	c.JSON(http.StatusCreated, gin.H{
 		"id":           pat.ID,
@@ -96,6 +99,10 @@ func DeletePAT(c *gin.Context) {
 	}
 
 	database.DB.Delete(&pat)
+
+	auditLog(c, "token.delete", "admin", pat.ID, pat.Name,
+		"prefix="+pat.TokenPrefix)
+
 	c.JSON(http.StatusOK, gin.H{"message": "token revoked"})
 }
 

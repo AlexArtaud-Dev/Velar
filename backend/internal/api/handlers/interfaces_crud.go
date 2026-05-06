@@ -296,6 +296,9 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 			"allowed_ips", newAllowedIPs, "clients", len(allClients))
 	}
 
+	auditLog(c, "interface.update", "interface", iface.ID, iface.Name,
+		fmt.Sprintf("port=%d subnet=%s dns=%s lan_access=%v", iface.Port, iface.Subnet, iface.DNSServer, iface.LanAccess))
+
 	// Notify enabled clients by email when subnet or DNS changes require
 	// re-importing the VPN profile.
 	if subnetChanged || dnsChanged {

@@ -346,6 +346,9 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		mailer.HTMLAdminClientUpdated(client.Name, client.AssignedIP, client.Interface.Name),
 	)
 
+	auditLog(c, "client.update", "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s", client.Interface.Name, client.AssignedIP))
+
 	c.JSON(http.StatusOK, client)
 }
 

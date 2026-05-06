@@ -171,6 +171,9 @@ func TOTPActivate() gin.HandlerFunc {
 		}
 
 		database.DB.Model(&admin).Update("totp_enabled", true)
+
+		auditLog(c, "admin.totp_enable", "admin", admin.ID, admin.Username, "")
+
 		c.JSON(http.StatusOK, gin.H{"message": "TOTP activated"})
 	}
 }
@@ -220,6 +223,9 @@ func ChangePassword() gin.HandlerFunc {
 			"password_hash":        hash,
 			"must_change_password": false,
 		})
+
+		auditLog(c, "admin.password_change", "admin", admin.ID, admin.Username, "")
+
 		c.JSON(http.StatusOK, gin.H{"message": "password updated"})
 	}
 }
@@ -251,6 +257,9 @@ func TOTPDisable() gin.HandlerFunc {
 			"totp_enabled": false,
 			"totp_secret":  "",
 		})
+
+		auditLog(c, "admin.totp_disable", "admin", admin.ID, admin.Username, "")
+
 		c.JSON(http.StatusOK, gin.H{"message": "TOTP disabled"})
 	}
 }
@@ -325,6 +334,8 @@ func RestoreDB() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "restored but migration failed: " + err.Error()})
 			return
 		}
+
+		auditLog(c, "admin.db_restore", "admin", 0, "database", "backup restored successfully")
 
 		c.JSON(http.StatusOK, gin.H{"message": "database restored successfully"})
 	}

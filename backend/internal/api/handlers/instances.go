@@ -87,6 +87,10 @@ func (h *InstanceHandler) Register(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
+	auditLog(c, "instance.register", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("url=%s", instance.URL))
+
 	c.JSON(http.StatusCreated, instance)
 }
 
@@ -101,6 +105,10 @@ func (h *InstanceHandler) Delete(c *gin.Context) {
 		return
 	}
 	database.DB.Delete(&instance)
+
+	auditLog(c, "instance.delete", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("url=%s", instance.URL))
+
 	c.JSON(http.StatusOK, gin.H{"message": "instance removed"})
 }
 
