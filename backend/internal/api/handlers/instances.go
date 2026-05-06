@@ -200,6 +200,13 @@ func (h *InstanceHandler) Proxy(c *gin.Context) {
 	respBody, _ := io.ReadAll(resp.Body)
 	ct := resp.Header.Get("Content-Type")
 
+	// Master-side audit for all mutating slave proxy calls
+	if method != http.MethodGet && resp.StatusCode < 400 {
+		action := inferSlaveAction(method, req.Path)
+		auditLog(c, action, "instance", instance.ID, instance.Name,
+			fmt.Sprintf("slave=%s method=%s path=%s status=%d", instance.Name, method, req.Path, resp.StatusCode))
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":       resp.StatusCode,
 		"status_text":  resp.Status,
@@ -207,6 +214,49 @@ func (h *InstanceHandler) Proxy(c *gin.Context) {
 		"body":         string(respBody),
 		"duration_ms":  durationMS,
 	})
+}
+
+// inferSlaveAction converts a proxy method+path into a human-readable audit action.
+// Examples:
+//
+//	POST   /api/v1/interfaces          → "slave.interface.create"
+//	PUT    /api/v1/interfaces/3        → "slave.interface.update"
+//	DELETE /api/v1/clients/7          → "slave.client.delete"
+//	POST   /api/v1/interfaces/3/up    → "slave.interface.up"
+//	POST   /api/v1/clients/7/enable   → "slave.client.enable"
+func inferSlaveAction(method, path string) string {
+	// Strip leading /api/v1/ or /api/ prefix
+	p := path
+	for _, prefix := range []string{"/api/v1/", "/api/"} {
+		if strings.HasPrefix(p, prefix) {
+			p = strings.TrimPrefix(p, prefix)
+			break
+		}
+	}
+	parts := strings.Split(strings.Trim(p, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		return "slave.proxy"
+	}
+
+	// Singularise the resource name (interfaces→interface, clients→client)
+	resource := strings.TrimSuffix(parts[0], "s")
+
+	// /resource/:id/<action>  e.g. interfaces/3/up, clients/7/enable
+	if len(parts) >= 3 {
+		return "slave." + resource + "." + parts[2]
+	}
+
+	// /resource  or  /resource/:id
+	switch strings.ToUpper(method) {
+	case http.MethodPost:
+		return "slave." + resource + ".create"
+	case http.MethodPut, http.MethodPatch:
+		return "slave." + resource + ".update"
+	case http.MethodDelete:
+		return "slave." + resource + ".delete"
+	default:
+		return "slave.proxy"
+	}
 }
 
 // slaveClient is a minimal subset of the slave's client JSON used by SendSlaveClientConfig.
