@@ -163,23 +163,16 @@ export default function Audit() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
-        {/* Category pills */}
-        <div className="flex flex-wrap gap-1.5">
+        {/* Category selector */}
+        <select
+          value={category}
+          onChange={(e) => handleCategoryChange(e.target.value)}
+          className="h-8 pl-3 pr-8 text-xs rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
+        >
           {CATEGORIES.map((c) => (
-            <button
-              key={c.label}
-              onClick={() => handleCategoryChange(c.prefix)}
-              className={cn(
-                'px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-                category === c.prefix
-                  ? 'bg-primary text-primary-foreground border-primary'
-                  : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
-              )}
-            >
-              {c.label}
-            </button>
+            <option key={c.label} value={c.prefix}>{c.label}</option>
           ))}
-        </div>
+        </select>
 
         {/* Search */}
         <div className="relative flex-1 min-w-48">
