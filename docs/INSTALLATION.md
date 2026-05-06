@@ -252,7 +252,60 @@ server {
 
 ---
 
-## 10. Updating Velar
+## 10. Deploying a slave node
+
+> For a full explanation of the federation model, see the **[Federation Guide](./FEDERATION.md)**.
+
+A slave is a second Velar server that the master controls. It runs the backend only (no web UI) and is secured by a one-time MasterToken instead of JWT.
+
+### On the slave server
+
+```bash
+git clone https://github.com/AlexArtaud-Dev/Velar.git
+cd Velar
+cp .env.slave.example .env
+nano .env
+```
+
+Minimum required settings for a slave:
+
+```env
+VELAR_MODE=slave
+APP_SECRET=<32+ char random secret — unique to this slave>
+WG_HOST=<this slave's public IP or DDNS hostname>
+APP_URL=https://master.example.com   # master's URL, used for email links
+APP_PORT=8080
+```
+
+Start the slave (API only — no UI container needed):
+
+```bash
+docker compose -f docker-compose.slave.yml up -d
+```
+
+The slave token is printed **once** to stdout on first boot:
+
+```bash
+docker compose -f docker-compose.slave.yml logs api | grep -A2 "SLAVE TOKEN"
+```
+
+Copy the `vs_...` token — it will not be shown again.
+
+### On the master
+
+1. Go to **Instances** in the sidebar
+2. Click **Register instance**
+3. Fill in:
+   - **Name** — a label for this slave (e.g. `Raspberry Pi`)
+   - **URL** — the slave's internal or public URL (e.g. `http://192.168.1.12:8080`)
+   - **Token** — the `vs_...` token from the slave logs
+4. Click **Register** — the master pings the slave to verify connectivity
+
+The slave's interfaces and clients will now appear in the master UI under **Interfaces** and **Clients**, and its stats will be included in the dashboard.
+
+---
+
+## 11. Updating Velar
 
 ```bash
 git pull
@@ -264,7 +317,7 @@ Your data (SQLite database, WireGuard configs) is stored in Docker named volumes
 
 ---
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 See the full **[Troubleshooting Guide](./TROUBLESHOOTING.md)** for common issues including stale peers, delete failures, interface down after reboot, bandwidth limits not applying, and more.
 

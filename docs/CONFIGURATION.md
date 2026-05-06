@@ -58,6 +58,25 @@ All SMTP variables are optional. If `SMTP_HOST` is not set, email features are s
 
 ---
 
+## Federation / Slave Mode
+
+| Variable | Default | Description |
+|---|---|---|
+| `VELAR_MODE` | `standalone` | Set to `slave` to run in slave mode. The web UI, JWT auth, and admin endpoints are disabled; all routes are secured by a MasterToken instead. |
+| `SLAVE_TOKEN_RESET` | `false` | Set to `true` to force regeneration of the slave's MasterToken on next boot. The new token is printed once to stdout. Reset back to `false` after copying the token. |
+
+### Slave-specific notes
+
+- A slave **does not need** `SMTP_*` variables — all email delivery is handled by the master.
+- `APP_URL` is still required on the slave so that internally generated paths are correct when the master constructs download/portal links.
+- `WG_HOST` must be set to the **slave's own public IP** (not the master's). Each slave has an independent WireGuard termination point.
+- `ADGUARD_*` variables are ignored in slave mode (AdGuard is not initialised).
+- All other variables (`APP_SECRET`, `APP_PORT`, `WG_*`, `DB_PATH`) behave identically to standalone mode.
+
+> See the **[Federation Guide](./FEDERATION.md)** for full setup instructions.
+
+---
+
 ## Security Notes
 
 - `APP_SECRET` is the most sensitive value in the config. Without it, encrypted WireGuard private keys in the database cannot be decrypted.

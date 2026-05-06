@@ -141,6 +141,63 @@ Backup format is versioned (`"version": "2"`). Attempting to restore an older fo
 
 ---
 
+## Federation (Master / Slave)
+
+Velar supports a multi-instance deployment model. One node acts as the **master** (full UI + SMTP + admin); any number of remote nodes run as **slaves** (stripped API, no UI, no email).
+
+### Topology
+
+```
+Browser
+  │
+  ▼
+┌─────────────────────────┐
+│   Master (standalone)   │   Full UI, JWT auth, SMTP, AdGuard
+│   Velar + ui container  │
+└──────────┬──────────────┘
+           │  HTTPS  (server-side proxy — never exposes slave URL to browser)
+           │
+    ┌──────▼──────┐    ┌─────────────┐
+    │  Slave A    │    │  Slave B    │   Stripped API only
+    │  MasterToken│    │  MasterToken│   No web UI, no SMTP
+    └─────────────┘    └─────────────┘
+```
+
+### Slave router
+
+When `VELAR_MODE=slave` the entire JWT/auth/UI layer is stripped. A single `MasterToken` middleware gates all API routes. The slave exposes:
+
+- Full client & interface CRUD
+- `GET /api/v1/stats` — live WireGuard peer stats (same payload as master's WebSocket)
+- `GET /api/v1/interfaces/overview` — interface up/down + enabled client counts
+- `GET /dl/:token` and `GET /api/v1/public/client/:token` — public routes for config download and portal (no auth)
+
+### Proxy layer (master side)
+
+`POST /api/v1/instances/:id/proxy` accepts `{method, path, body}` and executes the request server-side against the slave using the stored token. The browser never sees the slave's internal URL or token.
+
+Additional master endpoints for slave operations:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /dl/s/:instanceId/:token` | Proxy config download from slave through master |
+| `GET /api/v1/public/client/s/:instanceId/:token` | Proxy portal data from slave |
+| `POST /api/v1/instances/:id/clients/notify` | Unified lifecycle email handler (create/update/delete/enable/disable) |
+| `POST /api/v1/instances/:id/clients/:clientId/send-config` | Send config email for a slave client via master SMTP |
+
+### Email routing
+
+Slaves have no SMTP. All emails (lifecycle events, config delivery, download links, portal links) are sent by the master. Download links use the master URL pattern `/dl/s/:instanceId/:token`; portal links use `/portal/s/:instanceId/:token`. The master fetches the config from the slave transparently before emailing.
+
+### Live stats
+
+The master polls each slave's `GET /api/v1/stats` every 5 seconds via the proxy layer. This enables:
+- Live connected/total peer counts per slave interface
+- RX/TX updates on client cards (same cadence as the local WebSocket)
+- Slave traffic contributions to the live bandwidth chart
+
+---
+
 ## Docker
 
 The `api` service runs with `network_mode: host` and `cap_add: [NET_ADMIN, SYS_MODULE]` — required for WireGuard and `tc` operations.
