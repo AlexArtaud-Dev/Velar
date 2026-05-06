@@ -3,6 +3,7 @@ import { api } from './client'
 export interface AuditLog {
   id: number
   admin_id: number
+  admin_username: string
   action: string
   target_type: string
   target_id: number

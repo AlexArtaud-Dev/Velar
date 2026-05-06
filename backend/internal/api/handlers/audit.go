@@ -74,10 +74,37 @@ func ListAuditLogs(c *gin.Context) {
 	var logs []models.AuditLog
 	q.Offset(offset).Limit(limit).Find(&logs)
 
+	// Resolve admin usernames in one extra query (avoids N+1).
+	adminIDs := make([]uint, 0, len(logs))
+	seen := make(map[uint]bool, len(logs))
+	for _, l := range logs {
+		if !seen[l.AdminID] {
+			adminIDs = append(adminIDs, l.AdminID)
+			seen[l.AdminID] = true
+		}
+	}
+	adminNames := make(map[uint]string, len(adminIDs))
+	if len(adminIDs) > 0 {
+		var admins []models.Admin
+		database.DB.Select("id, username").Where("id IN ?", adminIDs).Find(&admins)
+		for _, a := range admins {
+			adminNames[a.ID] = a.Username
+		}
+	}
+
+	type auditItem struct {
+		models.AuditLog
+		AdminUsername string `json:"admin_username"`
+	}
+	items := make([]auditItem, len(logs))
+	for i, l := range logs {
+		items[i] = auditItem{AuditLog: l, AdminUsername: adminNames[l.AdminID]}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"total": total,
 		"page":  page,
 		"limit": limit,
-		"items": logs,
+		"items": items,
 	})
 }

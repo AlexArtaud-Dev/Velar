@@ -9,12 +9,38 @@ const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100] as const
 
 // ── Action badge colour ───────────────────────────────────────────────────────
 function actionVariant(action: string): string {
-  if (action.endsWith('.create'))   return 'bg-green-500/15 text-green-400 border-green-500/30'
-  if (action.endsWith('.delete'))   return 'bg-red-500/15 text-red-400 border-red-500/30'
-  if (action.endsWith('.enable'))   return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
-  if (action.endsWith('.disable'))  return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
-  if (action.endsWith('.update'))   return 'bg-blue-500/15 text-blue-400 border-blue-500/30'
-  if (action.startsWith('admin.'))  return 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+  // Destructive
+  if (action.endsWith('.delete'))         return 'bg-red-500/15 text-red-400 border-red-500/30'
+  if (action.endsWith('.bulk_delete'))    return 'bg-red-500/15 text-red-400 border-red-500/30'
+  if (action === 'interface.down')        return 'bg-red-500/15 text-red-400 border-red-500/30'
+  // Constructive
+  if (action.endsWith('.create'))         return 'bg-green-500/15 text-green-400 border-green-500/30'
+  if (action === 'interface.up')          return 'bg-green-500/15 text-green-400 border-green-500/30'
+  if (action.endsWith('.restore'))        return 'bg-green-500/15 text-green-400 border-green-500/30'
+  // Enable / re-enable
+  if (action.endsWith('.enable'))         return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+  if (action.endsWith('.bulk_enable'))    return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+  if (action.endsWith('.quota_reset'))    return 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
+  // Disable / suspend
+  if (action.endsWith('.disable'))        return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+  if (action.endsWith('.bulk_disable'))   return 'bg-amber-500/15 text-amber-400 border-amber-500/30'
+  // Update / sync
+  if (action.endsWith('.update'))         return 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+  if (action === 'admin.sync')            return 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+  // Config / download
+  if (action.endsWith('.send_config'))    return 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  if (action.endsWith('.download_link'))  return 'bg-sky-500/15 text-sky-400 border-sky-500/30'
+  // Export / backup
+  if (action.endsWith('.export'))         return 'bg-teal-500/15 text-teal-400 border-teal-500/30'
+  // Admin / auth
+  if (action.startsWith('admin.'))        return 'bg-purple-500/15 text-purple-400 border-purple-500/30'
+  // Token management
+  if (action.startsWith('token.'))        return 'bg-orange-500/15 text-orange-400 border-orange-500/30'
+  // Federation / slave
+  if (action.startsWith('instance.'))     return 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+  if (action.startsWith('slave.'))        return 'bg-indigo-500/15 text-indigo-400 border-indigo-500/30'
+  // Backup
+  if (action.startsWith('backup.'))       return 'bg-teal-500/15 text-teal-400 border-teal-500/30'
   return 'bg-muted text-muted-foreground border-border'
 }
 
@@ -171,9 +197,10 @@ export default function Audit() {
       {/* Table */}
       <div className="rounded-lg border border-border overflow-hidden">
         {/* Table header */}
-        <div className="hidden sm:grid grid-cols-[7rem_8rem_1fr_1fr_2fr] gap-3 px-4 py-2.5 bg-muted/50 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border">
+        <div className="hidden sm:grid grid-cols-[7rem_8rem_6rem_1fr_1fr_2fr] gap-3 px-4 py-2.5 bg-muted/50 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground border-b border-border">
           <span>Time</span>
           <span>Action</span>
+          <span>By</span>
           <span>Type</span>
           <span>Target</span>
           <span>Detail</span>
@@ -196,7 +223,7 @@ export default function Audit() {
               return (
                 <div
                   key={log.id}
-                  className="grid sm:grid-cols-[7rem_8rem_1fr_1fr_2fr] gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm hover:bg-muted/30 transition-colors"
+                  className="grid sm:grid-cols-[7rem_8rem_6rem_1fr_1fr_2fr] gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm hover:bg-muted/30 transition-colors"
                 >
                   {/* Time */}
                   <span
@@ -216,6 +243,11 @@ export default function Audit() {
                     >
                       {actionLabel(log.action)}
                     </span>
+                  </span>
+
+                  {/* Admin who performed the action */}
+                  <span className="self-center text-xs font-mono text-muted-foreground truncate" title={log.admin_username}>
+                    {log.admin_username || <span className="opacity-40">system</span>}
                   </span>
 
                   {/* Target type */}
