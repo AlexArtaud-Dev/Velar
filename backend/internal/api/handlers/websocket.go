@@ -138,6 +138,15 @@ func (h *WSHub) collectStats() StatsPayload {
 	return payload
 }
 
+// StatsHandler serves a one-shot JSON snapshot of the same peer statistics the
+// WebSocket loop broadcasts. Intended for REST polling by the master on behalf
+// of slaves (no WebSocket connection to slaves).
+func StatsHandler(hub *WSHub) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		c.JSON(http.StatusOK, hub.collectStats())
+	}
+}
+
 func WSHandler(hub *WSHub) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Accept token via query param for WS (browsers can't set headers on WS)

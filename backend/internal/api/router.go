@@ -46,7 +46,7 @@ func NewRouter(
 
 	// ── Slave mode — stripped router, all routes under MasterToken ────────────
 	if config.C.VelarMode == "slave" {
-		buildSlaveRoutes(r, wg, nft, ag, ddnsSvc)
+		buildSlaveRoutes(r, wg, nft, ag, ddnsSvc, hub)
 		return r
 	}
 
@@ -169,6 +169,7 @@ func NewRouter(
 		extAPI.GET("/audit", handlers.ListAuditLogs)
 		extAPI.GET("/interfaces/overview", ifaceHandler.StatusOverview)
 		extAPI.GET("/interfaces/:id/check", ifaceHandler.Check)
+		extAPI.GET("/stats", handlers.StatsHandler(hub))
 	}
 
 	return r
@@ -182,6 +183,7 @@ func buildSlaveRoutes(
 	nft nftquota.Service,
 	ag *adguard.Client,
 	ddnsSvc *ddns.Service,
+	hub *handlers.WSHub,
 ) {
 	// Public routes — no auth (same as master)
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
@@ -234,4 +236,5 @@ func buildSlaveRoutes(
 
 	slave.GET("/metrics", handlers.GetMetrics)
 	slave.GET("/audit", handlers.ListAuditLogs)
+	slave.GET("/stats", handlers.StatsHandler(hub))
 }

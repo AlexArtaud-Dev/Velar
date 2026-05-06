@@ -5,7 +5,7 @@ import { ArrowLeft, Server, Network } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWebSocket, type StatsPayload } from '@/hooks/useWebSocket'
 import { ClientCard } from '@/components/clients/ClientCard'
 import { BulkBar } from '@/components/clients/BulkBar'
 import { CreateClientDialog } from '@/components/clients/CreateClientDialog'
@@ -247,6 +247,16 @@ function SlaveClientsSection({ instance }: { instance: RemoteInstance }) {
       }),
     refetchInterval: 10_000,
   })
+  // Live peer stats for RX/TX and connected status (same as WS but polled)
+  const { data: slaveStats } = useQuery({
+    queryKey: ['slave-stats', instance.id],
+    queryFn: () =>
+      proxyToInstance(instance.id, 'GET', '/api/v1/stats').then((r) => JSON.parse(r.body) as StatsPayload),
+    refetchInterval: 5_000,
+  })
+  const peerMap = new Map(
+    (slaveStats?.interfaces ?? []).flatMap((i) => i.peers ?? []).map((p) => [p.client_id, p]),
+  )
   function invalidate() { qc.invalidateQueries({ queryKey: ['slave-clients', instance.id] }) }
 
   return (
@@ -266,6 +276,7 @@ function SlaveClientsSection({ instance }: { instance: RemoteInstance }) {
           <ClientCard
             key={c.id}
             client={c}
+            peer={peerMap.get(c.id)}
             isSelected={false}
             anySelected={false}
             onToggleSelect={() => {}}
@@ -316,6 +327,17 @@ function SlaveClientsList({
     refetchInterval: 10_000,
   })
 
+  // Live peer stats (same 5 s cadence as local WebSocket)
+  const { data: slaveStats } = useQuery({
+    queryKey: ['slave-stats', instance.id],
+    queryFn: () =>
+      proxyToInstance(instance.id, 'GET', '/api/v1/stats').then((r) => JSON.parse(r.body) as StatsPayload),
+    refetchInterval: 5_000,
+  })
+  const peerMap = new Map(
+    (slaveStats?.interfaces ?? []).flatMap((i) => i.peers ?? []).map((p) => [p.client_id, p]),
+  )
+
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const toggleSelect   = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
   const selectAll      = () => setSelected(new Set(clients.map((c) => c.id)))
@@ -362,6 +384,7 @@ function SlaveClientsList({
             <ClientCard
               key={cl.id}
               client={cl}
+              peer={peerMap.get(cl.id)}
               isSelected={selected.has(cl.id)}
               anySelected={selected.size > 0}
               onToggleSelect={() => toggleSelect(cl.id)}

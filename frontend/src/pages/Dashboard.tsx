@@ -4,9 +4,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { listInterfaces } from '@/api/interfaces'
 import { getPublicIP } from '@/api/settings'
-import { getDashboardStats, getDashboardSnapshots, type SnapshotPoint } from '@/api/dashboard'
+import { getDashboardStats, getDashboardSnapshots, type DashboardStats, type SnapshotPoint } from '@/api/dashboard'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
-import { useWebSocket } from '@/hooks/useWebSocket'
+import { useWebSocket, type StatsPayload } from '@/hooks/useWebSocket'
 import { useThemeStore } from '@/stores/theme'
 import { formatBytes, formatBytesShort, timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -44,7 +44,7 @@ export default function Dashboard() {
   })
   const { data: instances = [] } = useQuery({ queryKey: ['instances'], queryFn: listInstances })
 
-  // Per-slave interface overview (polled every 30 s)
+  // Per-slave interface overview (for static info + fallback counts)
   const slaveOverviewResults = useQueries({
     queries: instances.map((inst) => ({
       queryKey: ['slave-overview', inst.id] as const,
@@ -63,9 +63,62 @@ export default function Dashboard() {
       isLoading: slaveOverviewResults[i]?.isLoading ?? true,
     }))
 
+  // Per-slave live stats — same payload as WebSocket, polled every 5 s
+  const slaveStatsResults = useQueries({
+    queries: instances.map((inst) => ({
+      queryKey: ['slave-stats', inst.id] as const,
+      queryFn: () =>
+        proxyToInstance(inst.id, 'GET', '/api/v1/stats').then((r) => JSON.parse(r.body) as StatsPayload),
+      refetchInterval: 5_000,
+    })),
+  })
+  const slaveStatsList: { instance: RemoteInstance; data: StatsPayload | undefined }[] =
+    instances.map((inst, i) => ({ instance: inst, data: slaveStatsResults[i]?.data }))
+
+  // Per-slave dashboard data — for recent events
+  const slaveDashResults = useQueries({
+    queries: instances.map((inst) => ({
+      queryKey: ['slave-dashboard', inst.id] as const,
+      queryFn: () =>
+        proxyToInstance(inst.id, 'GET', '/api/v1/dashboard').then((r) => JSON.parse(r.body) as DashboardStats),
+      refetchInterval: 30_000,
+    })),
+  })
+
   const slaveIfaceUp    = slaveOverviews.reduce((sum, s) => sum + s.ifaces.filter((f) => f.interface_up).length, 0)
   const slaveIfaceTotal = slaveOverviews.reduce((sum, s) => sum + s.ifaces.length, 0)
-  const slaveClientTotal = slaveOverviews.reduce((sum, s) => sum + s.ifaces.reduce((a, f) => a + f.client_count, 0), 0)
+  // Fallback client count from overview (used before stats endpoint loads)
+  const slaveClientTotalOverview = slaveOverviews.reduce(
+    (sum, s) => sum + s.ifaces.reduce((a, f) => a + Number(f.client_count), 0),
+    0,
+  )
+
+  // Slave traffic totals from dashboard data
+  const slaveRx24h = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_24h.rx ?? 0), 0)
+  const slaveTx24h = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_24h.tx ?? 0), 0)
+  const slaveRx7d  = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_7d.rx ?? 0), 0)
+  const slaveTx7d  = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_7d.tx ?? 0), 0)
+
+  const slaveConnectedPeers = slaveStatsList.reduce(
+    (sum, s) =>
+      sum + (s.data?.interfaces ?? []).reduce((a, i) => a + (i.peers ?? []).filter((p) => p.connected).length, 0),
+    0,
+  )
+  const slaveTotalPeers = slaveStatsList.reduce(
+    (sum, s) => sum + (s.data?.interfaces ?? []).reduce((a, i) => a + (i.peers ?? []).length, 0),
+    0,
+  )
+
+  // Merge recent events (local + slave), newest first, cap at 20
+  const allRecentEvents = [
+    ...(dashStats?.recent_events ?? []).map((e) => ({ ...e, origin: 'Local' as string })),
+    ...slaveDashResults.flatMap((r, i) =>
+      (r.data?.recent_events ?? []).map((e) => ({ ...e, origin: instances[i]?.name ?? 'Slave' })),
+    ),
+  ]
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 20)
+
   const [historyRange, setHistoryRange] = useState<'24h' | '7d'>('24h')
   const { data: historyData = [] } = useQuery({
     queryKey: ['dashboard-snapshots', historyRange],
@@ -80,13 +133,26 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (!stats) return
-    const totals = stats.interfaces.reduce(
+
+    // Local WS totals
+    const localTotals = stats.interfaces.reduce(
       (acc, iface) => {
         iface.peers?.forEach((p) => { acc.rx += p.bytes_rx; acc.tx += p.bytes_tx })
         return acc
       },
       { rx: 0, tx: 0 },
     )
+
+    // Sample latest slave totals at each local WS tick
+    const slaveTotals = { rx: 0, tx: 0 }
+    slaveStatsResults.forEach((r) => {
+      r.data?.interfaces?.forEach((i) => {
+        ;(i.peers ?? []).forEach((p) => { slaveTotals.rx += p.bytes_rx; slaveTotals.tx += p.bytes_tx })
+      })
+    })
+
+    const totals = { rx: localTotals.rx + slaveTotals.rx, tx: localTotals.tx + slaveTotals.tx }
+
     if (prevStatsRef.current) {
       const deltaRx = Math.max(0, totals.rx - prevStatsRef.current.rx)
       const deltaTx = Math.max(0, totals.tx - prevStatsRef.current.tx)
@@ -96,6 +162,7 @@ export default function Dashboard() {
       ])
     }
     prevStatsRef.current = totals
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stats])
 
   const ifaces = stats?.interfaces ?? []
@@ -109,7 +176,6 @@ export default function Dashboard() {
     tx: p.bytes_tx,
   }))
 
-  // Theme-aware chart colors
   const isCyber = theme === 'cyberpunk'
   const rxColor = isCyber ? '#00f5ff' : '#3b82f6'
   const txColor = isCyber ? '#ff00c8' : '#10b981'
@@ -118,6 +184,8 @@ export default function Dashboard() {
     theme === 'apple'     && 'apple-glass',
     theme === 'cyberpunk' && 'cyber-card',
   )
+
+  const anyConnected = connectedPeers > 0 || slaveConnectedPeers > 0
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
@@ -138,7 +206,7 @@ export default function Dashboard() {
         {/* Live pill */}
         <div className={cn(
           'flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border mt-0.5',
-          connectedPeers > 0
+          anyConnected
             ? isCyber
               ? 'bg-[rgba(0,255,255,0.08)] border-[rgba(0,255,255,0.3)] text-[hsl(180,100%,60%)]'
               : 'bg-green-500/10 border-green-500/20 text-green-600 dark:text-green-400'
@@ -146,11 +214,13 @@ export default function Dashboard() {
         )}>
           <span className={cn(
             'h-1.5 w-1.5 rounded-full',
-            connectedPeers > 0
+            anyConnected
               ? isCyber ? 'bg-[hsl(180,100%,50%)] animate-pulse' : 'bg-green-500 animate-pulse'
               : 'bg-muted-foreground',
           )} />
-          {connectedPeers > 0 ? `${connectedPeers} online` : 'No peers'}
+          {anyConnected
+            ? `${connectedPeers + slaveConnectedPeers} online`
+            : 'No peers'}
         </div>
       </div>
 
@@ -167,24 +237,24 @@ export default function Dashboard() {
         <StatCard
           icon={<Users className="h-5 w-5" />}
           label="Clients"
-          value={`${connectedPeers} / ${totalPeers + slaveClientTotal}`}
-          sub={instances.length > 0 ? 'online (local) / total' : 'connected'}
-          accent={connectedPeers > 0 ? 'blue' : 'default'}
+          value={`${connectedPeers + slaveConnectedPeers} / ${totalPeers + (slaveTotalPeers || slaveClientTotalOverview)}`}
+          sub={instances.length > 0 ? 'online / total (all)' : 'connected'}
+          accent={(connectedPeers + slaveConnectedPeers) > 0 ? 'blue' : 'default'}
           theme={theme}
         />
         <StatCard
           icon={<ArrowDown className="h-5 w-5" />}
           label="Downloaded"
-          value={formatBytes(dashStats?.traffic_24h.rx ?? 0)}
-          sub="last 24 h"
+          value={formatBytes((dashStats?.traffic_24h.rx ?? 0) + slaveRx24h)}
+          sub={instances.length > 0 ? 'last 24 h (all)' : 'last 24 h'}
           accent="blue"
           theme={theme}
         />
         <StatCard
           icon={<ArrowUp className="h-5 w-5" />}
           label="Uploaded"
-          value={formatBytes(dashStats?.traffic_24h.tx ?? 0)}
-          sub="last 24 h"
+          value={formatBytes((dashStats?.traffic_24h.tx ?? 0) + slaveTx24h)}
+          sub={instances.length > 0 ? 'last 24 h (all)' : 'last 24 h'}
           accent="emerald"
           theme={theme}
         />
@@ -197,7 +267,9 @@ export default function Dashboard() {
             <Activity className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-blue-500')} />
             <CardTitle className="text-base">Live bandwidth</CardTitle>
           </div>
-          <CardDescription>Bytes/s — updated every 5 s via WebSocket</CardDescription>
+          <CardDescription>
+            Bytes/s — updated every 5 s via WebSocket{instances.length > 0 ? ' + slave polling' : ''}
+          </CardDescription>
         </CardHeader>
         <CardContent>
           {liveBandwidth.length === 0 ? (
@@ -290,8 +362,9 @@ export default function Dashboard() {
           )}
           {dashStats && (
             <div className="flex gap-6 mt-3 text-xs text-muted-foreground border-t border-border pt-3">
-              <span><span className="text-foreground font-medium">7d ↓</span>{' '}{formatBytes(dashStats.traffic_7d.rx)}</span>
-              <span><span className="text-foreground font-medium">7d ↑</span>{' '}{formatBytes(dashStats.traffic_7d.tx)}</span>
+              <span><span className="text-foreground font-medium">7d ↓</span>{' '}{formatBytes((dashStats.traffic_7d.rx) + slaveRx7d)}</span>
+              <span><span className="text-foreground font-medium">7d ↑</span>{' '}{formatBytes((dashStats.traffic_7d.tx) + slaveTx7d)}</span>
+              {instances.length > 0 && <span className="text-muted-foreground/50">all instances</span>}
             </div>
           )}
         </CardContent>
@@ -308,8 +381,8 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent className="space-y-1.5">
             {/* Local interfaces (from WebSocket) */}
-            {ifaces.length > 0 && instances.length > 0 && (
-              <div className="flex items-center gap-1.5 pb-1">
+            {instances.length > 0 && (
+              <div className="flex items-center gap-1.5 pb-1 mb-1">
                 <Network className="h-3 w-3 text-muted-foreground/60" />
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Local</span>
               </div>
@@ -347,49 +420,59 @@ export default function Dashboard() {
             )}
 
             {/* Slave instance sections */}
-            {slaveOverviews.map(({ instance, ifaces: sIfaces, isLoading: sLoading }) => (
-              <div key={instance.id} className="pt-1">
-                <div className="flex items-center gap-1.5 pb-1.5 mt-1 border-t border-border/50">
-                  <Server className="h-3 w-3 text-muted-foreground/60" />
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{instance.name}</span>
-                  <span className="text-[10px] text-muted-foreground/40 font-mono truncate">{instance.url}</span>
-                </div>
-                {sLoading ? (
-                  <div className="h-9 bg-muted/40 rounded animate-pulse" />
-                ) : sIfaces.length === 0 ? (
-                  <p className="text-xs text-muted-foreground/60 py-1 px-2">No interfaces</p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {sIfaces.map((sf) => (
-                      <div key={sf.id} className={cn(
-                        'flex items-center justify-between px-3 py-2 rounded-[var(--radius)] border border-border transition-colors',
-                        sf.interface_up
-                          ? isCyber
-                            ? 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.15)]'
-                            : 'bg-green-500/5 border-green-500/20'
-                          : 'bg-muted/40',
-                      )}>
-                        <div className="flex items-center gap-2.5">
-                          <span className={cn(
-                            'h-2 w-2 rounded-full shrink-0',
-                            sf.interface_up
-                              ? isCyber ? 'bg-[hsl(180,100%,50%)] animate-pulse' : 'bg-green-500 animate-pulse'
-                              : 'bg-muted-foreground/30',
-                          )} />
-                          <span className="font-mono text-sm font-medium">{sf.name}</span>
-                          <Badge variant={sf.interface_up ? 'success' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">
-                            {sf.interface_up ? 'UP' : 'DOWN'}
-                          </Badge>
-                        </div>
-                        <span className="text-xs text-muted-foreground tabular-nums">
-                          {sf.client_count} enabled
-                        </span>
-                      </div>
-                    ))}
+            {slaveOverviews.map(({ instance, ifaces: sIfaces, isLoading: sLoading }) => {
+              const sStats = slaveStatsList.find((s) => s.instance.id === instance.id)?.data
+              return (
+                <div key={instance.id} className="pt-4">
+                  <div className="flex items-center gap-1.5 pb-2 border-t border-border/50 pt-3">
+                    <Server className="h-3 w-3 text-muted-foreground/60" />
+                    <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{instance.name}</span>
+                    <span className="text-[10px] text-muted-foreground/40 font-mono truncate">{instance.url}</span>
                   </div>
-                )}
-              </div>
-            ))}
+                  {sLoading ? (
+                    <div className="h-9 bg-muted/40 rounded animate-pulse" />
+                  ) : sIfaces.length === 0 ? (
+                    <p className="text-xs text-muted-foreground/60 py-1 px-2">No interfaces</p>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {sIfaces.map((sf) => {
+                        const sfStats = sStats?.interfaces?.find((si) => si.name === sf.name)
+                        const connected = sfStats?.peers?.filter((p) => p.connected).length ?? 0
+                        const total = sfStats?.peers?.length ?? sf.client_count
+                        return (
+                          <div key={sf.id} className={cn(
+                            'flex items-center justify-between px-3 py-2 rounded-[var(--radius)] border border-border transition-colors',
+                            sf.interface_up
+                              ? isCyber
+                                ? 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.15)]'
+                                : 'bg-green-500/5 border-green-500/20'
+                              : 'bg-muted/40',
+                          )}>
+                            <div className="flex items-center gap-2.5">
+                              <span className={cn(
+                                'h-2 w-2 rounded-full shrink-0',
+                                sf.interface_up
+                                  ? isCyber ? 'bg-[hsl(180,100%,50%)] animate-pulse' : 'bg-green-500 animate-pulse'
+                                  : 'bg-muted-foreground/30',
+                              )} />
+                              <span className="font-mono text-sm font-medium">{sf.name}</span>
+                              <Badge variant={sf.interface_up ? 'success' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">
+                                {sf.interface_up ? 'UP' : 'DOWN'}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {connected}
+                              <span className="text-muted-foreground/50 mx-0.5">/</span>
+                              {total}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </CardContent>
         </Card>
 
@@ -400,17 +483,19 @@ export default function Dashboard() {
               <Wifi className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-blue-500')} />
               <div>
                 <CardTitle className="text-base">Recent connections</CardTitle>
-                <CardDescription>Connect / disconnect events</CardDescription>
+                <CardDescription>
+                  Connect / disconnect events{instances.length > 0 ? ' — all instances' : ''}
+                </CardDescription>
               </div>
             </div>
           </CardHeader>
           <CardContent>
-            {(dashStats?.recent_events.length ?? 0) === 0 ? (
+            {allRecentEvents.length === 0 ? (
               <p className="text-sm text-muted-foreground">No events yet.</p>
             ) : (
               <div className="space-y-1 max-h-56 overflow-y-auto">
-                {dashStats?.recent_events.map((e) => (
-                  <div key={e.id} className={cn(
+                {allRecentEvents.map((e) => (
+                  <div key={`${e.origin}-${e.id}`} className={cn(
                     'flex items-center gap-2.5 text-xs px-2 py-1.5 rounded-[calc(var(--radius)-2px)] transition-colors',
                     e.event_type === 'connected'
                       ? isCyber ? 'bg-[rgba(0,255,255,0.04)]' : 'bg-green-500/5'
@@ -423,6 +508,14 @@ export default function Dashboard() {
                     {e.interface_name && (
                       <span className="font-mono text-muted-foreground shrink-0">{e.interface_name}</span>
                     )}
+                    {instances.length > 0 && (
+                      <span className={cn(
+                        'text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0',
+                        e.origin === 'Local'
+                          ? 'bg-muted text-muted-foreground'
+                          : 'bg-blue-500/10 text-blue-500',
+                      )}>{e.origin}</span>
+                    )}
                     <span className="text-muted-foreground shrink-0">{timeAgo(new Date(e.timestamp).getTime() / 1000)}</span>
                   </div>
                 ))}
@@ -432,8 +525,8 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      {/* Connected peers */}
-      {ifaces.flatMap((i) => i.peers ?? []).some((p) => p.connected) && (
+      {/* Connected peers — local + slave */}
+      {anyConnected && (
         <Card className={cardClass}>
           <CardHeader>
             <div className="flex items-center gap-2">
@@ -446,6 +539,13 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-1">
+              {/* Local peers — show section label only when slaves are present */}
+              {connectedPeers > 0 && instances.length > 0 && (
+                <div className="flex items-center gap-1.5 pb-1 mb-0.5">
+                  <Network className="h-3 w-3 text-muted-foreground/60" />
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">Local</span>
+                </div>
+              )}
               {ifaces.flatMap((iface) =>
                 (iface.peers ?? []).filter((p) => p.connected).map((p) => (
                   <div key={p.client_id} className={cn(
@@ -468,6 +568,42 @@ export default function Dashboard() {
                   </div>
                 )),
               )}
+
+              {/* Slave peers */}
+              {slaveStatsList.map(({ instance, data: sd }) => {
+                const connectedPeersForSlave = (sd?.interfaces ?? []).flatMap(
+                  (i) => (i.peers ?? []).filter((p) => p.connected).map((p) => ({ ...p, ifaceName: i.name })),
+                )
+                if (connectedPeersForSlave.length === 0) return null
+                return (
+                  <div key={instance.id}>
+                    <div className="flex items-center gap-1.5 pt-2 pb-1 border-t border-border/40 mt-1">
+                      <Server className="h-3 w-3 text-muted-foreground/60" />
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">{instance.name}</span>
+                    </div>
+                    {connectedPeersForSlave.map((p) => (
+                      <div key={p.client_id} className={cn(
+                        'flex items-center justify-between text-sm px-3 py-2 rounded-[calc(var(--radius)-2px)]',
+                        isCyber ? 'bg-[rgba(0,255,255,0.04)] border border-[rgba(0,255,255,0.08)]' : 'bg-muted/40',
+                      )}>
+                        <div className="flex items-center gap-2.5">
+                          <span className={cn(
+                            'h-2 w-2 rounded-full shrink-0',
+                            isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500',
+                          )} />
+                          <span className="font-medium">{p.name}</span>
+                          <span className="text-muted-foreground font-mono text-xs">{p.ifaceName}</span>
+                        </div>
+                        <div className="flex items-center gap-3 text-muted-foreground text-xs tabular-nums">
+                          <span>↓ {formatBytes(p.bytes_rx)}</span>
+                          <span>↑ {formatBytes(p.bytes_tx)}</span>
+                          <span className="hidden sm:inline">{timeAgo(p.last_handshake)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              })}
             </div>
           </CardContent>
         </Card>
