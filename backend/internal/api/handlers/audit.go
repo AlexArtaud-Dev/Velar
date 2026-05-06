@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
@@ -29,9 +30,10 @@ func auditLog(c *gin.Context, action, targetType string, targetID uint, targetNa
 
 // ListAuditLogs returns a paginated list of audit log entries, newest first.
 // Query params:
-//   - page  (default 1)
-//   - limit (default 50, max 200)
-//   - action — optional filter, e.g. "client.create"
+//   - page   (default 1)
+//   - limit  (default 50, max 200)
+//   - action — prefix filter, e.g. "client." matches all client.* actions
+//   - search — free-text filter across action, target_name, and detail
 func ListAuditLogs(c *gin.Context) {
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "50"))
@@ -44,10 +46,26 @@ func ListAuditLogs(c *gin.Context) {
 	offset := (page - 1) * limit
 
 	action := c.Query("action")
+	search := strings.TrimSpace(c.Query("search"))
 
 	q := database.DB.Model(&models.AuditLog{}).Order("created_at DESC")
+
+	// Prefix match: "client." → all client.* actions; exact match otherwise.
 	if action != "" {
-		q = q.Where("action = ?", action)
+		if strings.HasSuffix(action, ".") {
+			q = q.Where("action LIKE ?", action+"%")
+		} else {
+			q = q.Where("action LIKE ?", action+"%")
+		}
+	}
+
+	// Free-text search across the three most useful columns.
+	if search != "" {
+		like := "%" + search + "%"
+		q = q.Where(
+			"action LIKE ? OR target_name LIKE ? OR detail LIKE ?",
+			like, like, like,
+		)
 	}
 
 	var total int64
@@ -57,9 +75,9 @@ func ListAuditLogs(c *gin.Context) {
 	q.Offset(offset).Limit(limit).Find(&logs)
 
 	c.JSON(http.StatusOK, gin.H{
-		"total":  total,
-		"page":   page,
-		"limit":  limit,
-		"items":  logs,
+		"total": total,
+		"page":  page,
+		"limit": limit,
+		"items": logs,
 	})
 }

@@ -18,5 +18,5 @@ export interface AuditLogResponse {
   items: AuditLog[]
 }
 
-export const listAuditLogs = (params?: { page?: number; limit?: number; action?: string }) =>
+export const listAuditLogs = (params?: { page?: number; limit?: number; action?: string; search?: string }) =>
   api.get<AuditLogResponse>('/audit', { params }).then((r) => r.data)

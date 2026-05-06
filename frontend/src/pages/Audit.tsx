@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { ClipboardList, ChevronLeft, ChevronRight, Search, RefreshCw } from 'lucide-react'
 import { listAuditLogs, type AuditLog } from '@/api/audit'
@@ -57,45 +57,51 @@ const CATEGORIES: { label: string; prefix: string }[] = [
   { label: 'All',        prefix: '' },
   { label: 'Clients',    prefix: 'client.' },
   { label: 'Interfaces', prefix: 'interface.' },
+  { label: 'Instances',  prefix: 'instance.' },
+  { label: 'Slave',      prefix: 'slave.' },
   { label: 'Admin',      prefix: 'admin.' },
+  { label: 'Backup',     prefix: 'backup.' },
+  { label: 'Tokens',     prefix: 'token.' },
 ]
 
 /** Audit Log page */
 export default function Audit() {
-  const [page, setPage]         = useState(1)
-  const [limit, setLimit]       = useState<number>(50)
-  const [category, setCategory] = useState('')
-  const [search, setSearch]     = useState('')
+  const [page, setPage]           = useState(1)
+  const [limit, setLimit]         = useState<number>(50)
+  const [category, setCategory]   = useState('')
+  const [search, setSearch]       = useState('')
+  const [debouncedSearch, setDebouncedSearch] = useState('')
+
+  // Debounce search input — wait 400 ms after last keystroke before querying.
+  // Also reset to page 1 so results aren't truncated.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedSearch(search)
+      setPage(1)
+    }, 400)
+    return () => clearTimeout(t)
+  }, [search])
 
   const { data, isLoading, isFetching, refetch } = useQuery({
-    queryKey: ['audit', page, limit],
-    queryFn: () => listAuditLogs({ page, limit }),
+    queryKey: ['audit', page, limit, category, debouncedSearch],
+    queryFn: () => listAuditLogs({
+      page,
+      limit,
+      action: category || undefined,
+      search: debouncedSearch || undefined,
+    }),
     placeholderData: (prev) => prev,
     refetchInterval: 30_000,
   })
 
-  const items: AuditLog[] = data?.items ?? []
+  const filtered: AuditLog[] = data?.items ?? []
   const total = data?.total ?? 0
   const totalPages = Math.max(1, Math.ceil(total / limit))
-
-  // Client-side category + text filter (applied to the current page slice)
-  const filtered = items.filter((log) => {
-    if (category && !log.action.startsWith(category)) return false
-    if (search) {
-      const q = search.toLowerCase()
-      if (
-        !log.action.toLowerCase().includes(q) &&
-        !log.target_name.toLowerCase().includes(q) &&
-        !log.target_type.toLowerCase().includes(q) &&
-        !log.detail.toLowerCase().includes(q)
-      ) return false
-    }
-    return true
-  })
 
   function handleCategoryChange(prefix: string) {
     setCategory(prefix)
     setSearch('')
+    setDebouncedSearch('')
     setPage(1)
   }
 
@@ -154,7 +160,7 @@ export default function Audit() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
             type="text"
-            placeholder="Search current page…"
+            placeholder="Search all logs…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/60"
