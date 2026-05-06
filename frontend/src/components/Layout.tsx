@@ -216,7 +216,7 @@ export default function Layout() {
                 </p>
               )}
               <div className="space-y-0.5">
-                {group.items.map(({ to, label, icon: Icon, end }) => (
+                {group.items.map(({ to, label, icon: Icon, end = false }) => (
                   <NavLink
                     key={to}
                     to={to}
@@ -312,7 +312,7 @@ export default function Layout() {
           'lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border',
           isCyber && 'border-t-[rgba(0,255,255,0.15)]',
         )}>
-          {mobileNavItems.map(({ to, label, icon: Icon, end }) => (
+          {mobileNavItems.map(({ to, label, icon: Icon, end = false }) => (
             <NavLink
               key={to}
               to={to}
