@@ -1,6 +1,10 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"log/slog"
 	mrand "math/rand"
 	"net/http"
@@ -42,8 +46,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Seed admin if none exists
-	seedAdmin()
+	// Slave mode: generate/display master token instead of seeding a human admin
+	if config.C.VelarMode == "slave" {
+		slog.Info("starting in slave mode — web UI disabled")
+		ensureSlaveSystemAdmin()
+		ensureSlaveToken()
+	} else {
+		// Seed admin if none exists (standalone / master mode only)
+		seedAdmin()
+	}
 
 	// System setup (best effort — requires NET_ADMIN)
 	if !config.C.WGMock {
@@ -69,7 +80,11 @@ func main() {
 		restoreQuotas(nft)
 	}
 
-	ag := adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
+	// AdGuard client — not used in slave mode (no AdGuard on slave nodes)
+	var ag *adguard.Client
+	if config.C.VelarMode != "slave" {
+		ag = adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
+	}
 	ddnsSvc := ddns.NewService()
 
 	// Initial DDNS fetch (best effort)
@@ -93,7 +108,7 @@ func main() {
 		WriteTimeout: 30 * time.Second,
 	}
 
-	slog.Info("Velar API starting", "port", config.C.AppPort, "env", config.C.AppEnv)
+	slog.Info("Velar API starting", "port", config.C.AppPort, "env", config.C.AppEnv, "mode", config.C.VelarMode)
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("server error", "err", err)
 		os.Exit(1)
@@ -260,6 +275,72 @@ func seedAdmin() {
 	slog.Info("│  password : "+password+"  │")
 	slog.Info("│  Change this password after first login │")
 	slog.Info("└─────────────────────────────────────────┘")
+}
+
+// ensureSlaveToken generates a vs_ master token on first boot in slave mode.
+// The raw token is printed to stdout exactly once; only the SHA-256 hash is
+// persisted. Set SLAVE_TOKEN_RESET=true to force regeneration.
+func ensureSlaveToken() {
+	var count int64
+	database.DB.Model(&models.SlaveToken{}).Count(&count)
+
+	if count > 0 && !config.C.SlaveTokenReset {
+		slog.Info("slave token already configured")
+		return
+	}
+
+	// Wipe existing token if reset is requested
+	if config.C.SlaveTokenReset {
+		database.DB.Exec("DELETE FROM slave_tokens")
+		slog.Info("slave token reset — generating new token")
+	}
+
+	raw := make([]byte, 32)
+	if _, err := rand.Read(raw); err != nil {
+		slog.Error("slave token generation failed", "err", err)
+		os.Exit(1)
+	}
+	token := "vs_" + hex.EncodeToString(raw)
+
+	sum := sha256.Sum256([]byte(token))
+	hash := hex.EncodeToString(sum[:])
+
+	if err := database.DB.Create(&models.SlaveToken{TokenHash: hash}).Error; err != nil {
+		slog.Error("slave token persist failed", "err", err)
+		os.Exit(1)
+	}
+
+	// Print once — this is the only time the token is visible
+	fmt.Println()
+	fmt.Println("╔══════════════════════════════════════════════════════════════════╗")
+	fmt.Println("║  SLAVE TOKEN — copy this into your master instance              ║")
+	fmt.Printf( "║  %-66s║\n", token)
+	fmt.Println("║  This will NOT be shown again. Set SLAVE_TOKEN_RESET=true       ║")
+	fmt.Println("║  to regenerate if lost.                                         ║")
+	fmt.Println("╚══════════════════════════════════════════════════════════════════╝")
+	fmt.Println()
+}
+
+// ensureSlaveSystemAdmin creates a non-loginable system admin on the slave so
+// that MasterToken middleware can set a valid admin_id in the request context.
+// Handlers use this ID for audit logs and ownership — the account has no
+// usable password and is never exposed via the web UI.
+func ensureSlaveSystemAdmin() {
+	var count int64
+	database.DB.Model(&models.Admin{}).Count(&count)
+	if count > 0 {
+		return
+	}
+	admin := models.Admin{
+		Username:           "system",
+		PasswordHash:       "", // intentionally unusable — no login possible
+		MustChangePassword: false,
+	}
+	if err := database.DB.Create(&admin).Error; err != nil {
+		slog.Error("slave: create system admin", "err", err)
+		os.Exit(1)
+	}
+	slog.Info("slave: system admin created", "id", admin.ID)
 }
 
 const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$"

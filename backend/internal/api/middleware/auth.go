@@ -79,6 +79,39 @@ func JWTORPAT() gin.HandlerFunc {
 	}
 }
 
+// MasterToken validates a vs_ slave token.
+// Used for all routes in slave mode — accepts only master-issued slave tokens.
+func MasterToken() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		raw, ok := bearerToken(c)
+		if !ok {
+			return
+		}
+		if !strings.HasPrefix(raw, "vs_") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token format — expected vs_ slave token"})
+			return
+		}
+		sum := sha256.Sum256([]byte(raw))
+		hash := hex.EncodeToString(sum[:])
+
+		var st models.SlaveToken
+		if err := database.DB.Where("token_hash = ?", hash).First(&st).Error; err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or unknown slave token"})
+			return
+		}
+
+		// Use the first admin in DB as the request context identity (audit logs etc.)
+		var admin models.Admin
+		if err := database.DB.First(&admin).Error; err != nil {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "no admin configured on this slave"})
+			return
+		}
+		c.Set("admin_id", admin.ID)
+		c.Set("username", "master")
+		c.Next()
+	}
+}
+
 // bearerToken extracts and validates the "Bearer <token>" header format.
 // Aborts the request with 401 and returns false if the header is missing or malformed.
 func bearerToken(c *gin.Context) (string, bool) {

@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { ToggleRight, ToggleLeft, Trash2, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { bulkEnableClients, bulkDisableClients, bulkDeleteClients } from '@/api/clients'
+import { proxyToInstance } from '@/api/instances'
 
 interface BulkBarProps {
   /** IDs currently selected by the user. */
@@ -10,30 +11,55 @@ interface BulkBarProps {
   totalCount: number
   onSelectAll: () => void
   onClearSelection: () => void
+  /** When set, all bulk calls are proxied through this slave instance. */
+  instanceId?: number
 }
 
 /**
  * BulkBar is a floating action bar that appears when one or more clients are
  * selected. It provides bulk enable / disable / delete operations.
+ * Supports both local and slave instances via the optional instanceId prop.
  */
-export function BulkBar({ selected, totalCount, onSelectAll, onClearSelection }: BulkBarProps) {
+export function BulkBar({ selected, totalCount, onSelectAll, onClearSelection, instanceId }: BulkBarProps) {
   const qc = useQueryClient()
 
   function onSuccess() {
     onClearSelection()
-    qc.invalidateQueries({ queryKey: ['clients'] })
+    if (instanceId) {
+      qc.invalidateQueries({ queryKey: ['slave-clients', instanceId] })
+    } else {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+    }
   }
 
   const bulkEnableMut = useMutation({
-    mutationFn: () => bulkEnableClients([...selected]),
+    mutationFn: async () => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', '/api/v1/clients/bulk/enable', { ids: [...selected] })
+      } else {
+        await bulkEnableClients([...selected])
+      }
+    },
     onSuccess,
   })
   const bulkDisableMut = useMutation({
-    mutationFn: () => bulkDisableClients([...selected]),
+    mutationFn: async () => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', '/api/v1/clients/bulk/disable', { ids: [...selected] })
+      } else {
+        await bulkDisableClients([...selected])
+      }
+    },
     onSuccess,
   })
   const bulkDeleteMut = useMutation({
-    mutationFn: () => bulkDeleteClients([...selected]),
+    mutationFn: async () => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', '/api/v1/clients/bulk/delete', { ids: [...selected] })
+      } else {
+        await bulkDeleteClients([...selected])
+      }
+    },
     onSuccess,
   })
 

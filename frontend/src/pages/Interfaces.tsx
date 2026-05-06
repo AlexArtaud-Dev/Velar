@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi, Globe, Key } from 'lucide-react'
+import { Plus, Trash2, Power, PowerOff, Users, ChevronRight, Network, Pencil, ShieldCheck, CheckCircle2, XCircle, Loader2, Wifi, Globe, Key, Server } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -12,9 +12,10 @@ import {
 } from '@/components/ui/dialog'
 import {
   listInterfaces, createInterface, updateInterface, deleteInterface, bringUp, bringDown, checkInterface,
-  type CreateInterfacePayload, type UpdateInterfacePayload, type WGInterface,
+  type CreateInterfacePayload, type UpdateInterfacePayload, type WGInterface, type InterfaceCheck,
 } from '@/api/interfaces'
 import { getAdguardStatus } from '@/api/settings'
+import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
 import { useThemeStore } from '@/stores/theme'
 import { cn } from '@/lib/utils'
 
@@ -58,10 +59,12 @@ export default function Interfaces() {
     theme === 'cyberpunk' && 'cyber-card',
   )
 
+  const { data: instances = [] } = useQuery({ queryKey: ['instances'], queryFn: listInstances })
+
   if (isLoading) return <PageSkeleton />
 
   return (
-    <div className="p-4 sm:p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-8">
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold">Interfaces</h1>
@@ -69,6 +72,14 @@ export default function Interfaces() {
         </div>
         <CreateInterfaceDialog onCreated={() => qc.invalidateQueries({ queryKey: ['interfaces'] })} />
       </div>
+
+      {/* ── Local section ── */}
+      {instances.length > 0 && (
+        <div className="flex items-center gap-2 pb-1 border-b border-border">
+          <Network className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Local</span>
+        </div>
+      )}
 
       <div className="grid gap-4">
         {ifaces.map((iface) => (
@@ -176,7 +187,7 @@ export default function Interfaces() {
             </CardContent>
           </Card>
         ))}
-        {ifaces.length === 0 && (
+        {ifaces.length === 0 && instances.length === 0 && (
           <div className="text-center py-16 text-muted-foreground">
             <Network className="h-12 w-12 mx-auto mb-3 opacity-20" />
             <p className="font-medium">No interfaces yet</p>
@@ -184,6 +195,11 @@ export default function Interfaces() {
           </div>
         )}
       </div>
+
+      {/* ── Slave sections ── */}
+      {instances.map((inst) => (
+        <SlaveInterfaceSection key={inst.id} instance={inst} />
+      ))}
     </div>
   )
 }
@@ -254,7 +270,10 @@ function CheckButton({ iface }: { iface: WGInterface }) {
 }
 
 function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
+  const qc = useQueryClient()
   const [open, setOpen] = useState(false)
+  const [instanceId, setInstanceId] = useState<number | null>(null) // null = local
+
   const [form, setForm] = useState<CreateInterfacePayload>({
     name: 'wg0',
     port: 51820,
@@ -264,36 +283,62 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
   })
   const [error, setError] = useState('')
 
+  const { data: instances = [] } = useQuery({ queryKey: ['instances'], queryFn: listInstances })
+
+  // AdGuard only makes sense for local
   const { data: adguard } = useQuery({
     queryKey: ['adguard-status'],
     queryFn: getAdguardStatus,
-    enabled: open,
+    enabled: open && instanceId === null,
     retry: false,
   })
 
   const adguardIP = serverIPFromSubnet(form.subnet ?? '10.0.0.0/24')
-  const adguardAvailable = adguard?.running === true
+  const adguardAvailable = instanceId === null && adguard?.running === true
 
   const mutation = useMutation({
-    mutationFn: createInterface,
-    onSuccess: () => { setOpen(false); onCreated() },
+    mutationFn: async () => {
+      if (instanceId !== null) {
+        await proxyToInstance(instanceId, 'POST', '/api/v1/interfaces', form)
+      } else {
+        await createInterface(form)
+      }
+    },
+    onSuccess: () => {
+      if (instanceId !== null) {
+        qc.invalidateQueries({ queryKey: ['slave-interfaces', instanceId] })
+      } else {
+        qc.invalidateQueries({ queryKey: ['interfaces'] })
+      }
+      setOpen(false)
+      onCreated()
+    },
     onError: (e: unknown) => {
       setError((e as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Error')
     },
   })
+
+  function handleOpenChange(v: boolean) {
+    if (v) {
+      setInstanceId(null)
+      setForm({ name: 'wg0', port: 51820, subnet: '10.0.0.0/24', dns_server: '1.1.1.1', lan_access: false })
+      setError('')
+    }
+    setOpen(v)
+  }
 
   function set(key: keyof CreateInterfacePayload) {
     return (e: React.ChangeEvent<HTMLInputElement>) =>
       setForm((f) => ({ ...f, [key]: key === 'port' ? Number(e.target.value) : e.target.value }))
   }
 
-  const allPresets = [
+  const dnsPresets = [
     ...(adguardAvailable ? [{ label: `AdGuard (${adguardIP})`, value: adguardIP }] : []),
     ...DNS_PRESETS,
   ]
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="h-4 w-4 mr-2" />
@@ -306,27 +351,45 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
           <DialogDescription>A new keypair will be generated automatically.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
+
+          {/* Instance selector — only when slaves exist */}
+          {instances.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Instance</Label>
+              <select
+                className="flex h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                value={instanceId ?? ''}
+                onChange={(e) => setInstanceId(e.target.value === '' ? null : Number(e.target.value))}
+              >
+                <option value="">Local</option>
+                {instances.map((inst) => (
+                  <option key={inst.id} value={inst.id}>{inst.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <Field label="Name" id="name" value={form.name} onChange={set('name')} placeholder="wg0" />
           <Field label="Listen port" id="port" type="number" value={String(form.port)} onChange={set('port')} placeholder="51820" />
+
           <div className="space-y-1.5">
-              <Label htmlFor="subnet">Subnet (CIDR)</Label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {SUBNET_PRESETS.map((s) => (
-                  <button key={s} type="button"
-                    onClick={() => setForm((f) => ({ ...f, subnet: s }))}
-                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}
-                  >{s}</button>
-                ))}
-              </div>
-              <Input id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+            <Label htmlFor="subnet">Subnet (CIDR)</Label>
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {SUBNET_PRESETS.map((s) => (
+                <button key={s} type="button"
+                  onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                  className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}
+                >{s}</button>
+              ))}
             </div>
+            <Input id="subnet" value={form.subnet ?? ''} onChange={set('subnet')} placeholder="10.0.0.0/24" />
+          </div>
+
           <div className="space-y-1.5">
             <Label>DNS server</Label>
             <div className="flex flex-wrap gap-1.5 mb-2">
-              {allPresets.map((p) => (
-                <button
-                  key={p.value}
-                  type="button"
+              {dnsPresets.map((p) => (
+                <button key={p.value} type="button"
                   onClick={() => setForm((f) => ({ ...f, dns_server: p.value }))}
                   className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${
                     form.dns_server === p.value
@@ -338,13 +401,9 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
                 </button>
               ))}
             </div>
-            <Input
-              id="dns"
-              value={form.dns_server ?? ''}
-              onChange={set('dns_server')}
-              placeholder="Custom DNS (e.g. 1.1.1.1)"
-            />
+            <Input id="dns" value={form.dns_server ?? ''} onChange={set('dns_server')} placeholder="1.1.1.1" />
           </div>
+
           {/* LAN access */}
           <div
             className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
@@ -353,18 +412,19 @@ function CreateInterfaceDialog({ onCreated }: { onCreated: () => void }) {
             <div>
               <p className="text-sm font-medium">Local network access</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                Clients can reach LAN devices (e.g. 192.168.1.x) — split tunnel, auto-detected subnet
+                Clients can reach LAN devices — split tunnel, auto-detected subnet
               </p>
             </div>
             <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
               <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
             </div>
           </div>
+
           {error && <p className="text-sm text-destructive">{error}</p>}
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => mutation.mutate(form)} disabled={mutation.isPending}>
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>Cancel</Button>
+          <Button onClick={() => mutation.mutate()} disabled={mutation.isPending}>
             {mutation.isPending ? 'Creating…' : 'Create'}
           </Button>
         </DialogFooter>
@@ -543,6 +603,225 @@ function Field({ label, id, ...props }: { label: string; id: string } & React.In
       <Label htmlFor={id}>{label}</Label>
       <Input id={id} {...props} />
     </div>
+  )
+}
+
+// ── Slave interface section ───────────────────────────────────────────────────
+
+function SlaveInterfaceSection({ instance }: { instance: RemoteInstance }) {
+  const navigate = useNavigate()
+  const { theme } = useThemeStore()
+  const isCyber = theme === 'cyberpunk'
+  const isApple = theme === 'apple'
+  const cardExtra = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
+
+  const { data: ifaces = [], isLoading, refetch } = useQuery({
+    queryKey: ['slave-interfaces', instance.id],
+    queryFn: () => proxyToInstance(instance.id, 'GET', '/api/v1/interfaces').then((r) => {
+      const d = JSON.parse(r.body); return (Array.isArray(d) ? d : []) as WGInterface[]
+    }),
+    refetchInterval: 10_000,
+  })
+
+  const upMut     = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'POST',   `/api/v1/interfaces/${id}/up`),  onSuccess: () => refetch() })
+  const downMut   = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'POST',   `/api/v1/interfaces/${id}/down`), onSuccess: () => refetch() })
+  const deleteMut = useMutation({ mutationFn: (id: number) => proxyToInstance(instance.id, 'DELETE', `/api/v1/interfaces/${id}`),      onSuccess: () => refetch() })
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center gap-2 pb-1 border-b border-border">
+        <Server className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{instance.name}</span>
+        <span className="text-xs text-muted-foreground font-mono opacity-60">{instance.url}</span>
+      </div>
+
+      {/* Interface cards */}
+      {isLoading ? (
+        <div className="grid gap-4"><div className="h-32 rounded-lg bg-muted animate-pulse" /></div>
+      ) : ifaces.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground border border-dashed rounded-lg">
+          <Network className="h-8 w-8 mx-auto mb-2 opacity-20" />
+          <p className="text-sm">No interfaces on {instance.name}</p>
+        </div>
+      ) : (
+        <div className="grid gap-4">
+          {ifaces.map((iface) => (
+            <Card key={iface.id} className={cn('overflow-hidden', cardExtra)}>
+              <div className={cn('h-1 w-full', iface.up ? isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500' : 'bg-destructive')} />
+              <CardHeader className="pb-3 pt-4">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-3">
+                      <div className={cn('p-2 rounded-[var(--radius)]', iface.up ? isCyber ? 'bg-[rgba(0,255,255,0.1)]' : 'bg-green-500/10' : 'bg-muted')}>
+                        <Network className={cn('h-4 w-4', iface.up ? isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500' : 'text-muted-foreground')} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CardTitle className="text-base font-mono">{iface.name}</CardTitle>
+                        <Badge variant={iface.up ? 'success' : 'destructive'} className="text-[10px] px-1.5 py-0 h-4">{iface.up ? 'UP' : 'DOWN'}</Badge>
+                        {iface.lan_access && <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 gap-1"><Wifi className="h-2.5 w-2.5" /> LAN</Badge>}
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 pl-12">
+                      <MetaChip icon={<Globe className="h-3 w-3" />} label={iface.subnet} />
+                      <MetaChip icon={<span className="text-[10px] font-bold">UDP</span>} label={`:${iface.port}`} />
+                      <MetaChip icon={<span className="text-[10px] font-bold">DNS</span>} label={iface.dns_server} />
+                      {iface.lan_access && iface.lan_subnet && <MetaChip icon={<Wifi className="h-3 w-3" />} label={iface.lan_subnet} />}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
+                    <Button variant="outline" size="sm" className="h-8 text-xs gap-1.5"
+                      onClick={() => navigate(`/clients?slave=${instance.id}&iface=${iface.id}`)}>
+                      <Users className="h-3 w-3" />{iface.peer_count} clients<ChevronRight className="h-3 w-3 opacity-50" />
+                    </Button>
+                    {iface.up
+                      ? <Button variant="outline" size="icon" className="h-8 w-8" title="Bring down" onClick={() => downMut.mutate(iface.id)}><PowerOff className="h-3.5 w-3.5" /></Button>
+                      : <Button variant="outline" size="icon" className="h-8 w-8" title="Bring up"   onClick={() => upMut.mutate(iface.id)}><Power className="h-3.5 w-3.5 text-green-500" /></Button>
+                    }
+                    <SlaveCheckButton instanceId={instance.id} iface={iface} />
+                    <SlaveEditDialog  instanceId={instance.id} iface={iface} onUpdated={() => refetch()} />
+                    <Button variant="outline" size="icon" className="h-8 w-8" title="Delete"
+                      onClick={() => { if (confirm(`Delete ${iface.name}?`)) deleteMut.mutate(iface.id) }}>
+                      <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-0 pb-3">
+                <div className={cn('flex items-center gap-2 px-3 py-2 rounded-[calc(var(--radius)-2px)] text-xs font-mono text-muted-foreground',
+                  isCyber ? 'bg-[rgba(0,255,255,0.04)] border border-[rgba(0,255,255,0.08)]' : 'bg-muted/40')}>
+                  <Key className="h-3 w-3 shrink-0 opacity-60" />
+                  <span className="truncate">{iface.public_key}</span>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SlaveCheckButton({ instanceId, iface }: { instanceId: number; iface: WGInterface }) {
+  const [open, setOpen] = useState(false)
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ['slave-iface-check', instanceId, iface.id],
+    queryFn: () => proxyToInstance(instanceId, 'GET', `/api/v1/interfaces/${iface.id}/check`)
+      .then((r) => JSON.parse(r.body) as InterfaceCheck),
+    enabled: open, staleTime: 0,
+  })
+  function StatusRow({ label, ok, detail }: { label: string; ok: boolean; detail?: string }) {
+    return (
+      <div className="flex items-center gap-3">
+        {ok ? <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" /> : <XCircle className="h-4 w-4 text-destructive shrink-0" />}
+        <span className="text-sm flex-1">{label}</span>
+        {detail && <span className="text-xs text-muted-foreground font-mono">{detail}</span>}
+      </div>
+    )
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="icon" className="h-8 w-8" title="Check connectivity"><ShieldCheck className="h-3.5 w-3.5" /></Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Connectivity check — {iface.name}</DialogTitle>
+          <DialogDescription>Verifies the interface is up and the port is bound on {instanceId}.</DialogDescription>
+        </DialogHeader>
+        {isFetching ? (
+          <div className="flex items-center justify-center gap-2 py-6 text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Checking…</div>
+        ) : data ? (
+          <div className="space-y-3 py-2">
+            <StatusRow label="Interface is UP" ok={data.interface_up} detail={data.interface} />
+            <StatusRow label="UDP port bound"  ok={data.port_bound}   detail={`:${data.port}`} />
+          </div>
+        ) : null}
+        <div className="flex justify-end">
+          <Button size="sm" variant="outline" onClick={() => refetch()} disabled={isFetching}>{isFetching ? 'Checking…' : 'Re-check'}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+function SlaveEditDialog({ instanceId, iface, onUpdated }: { instanceId: number; iface: WGInterface; onUpdated: () => void }) {
+  const [open, setOpen] = useState(false)
+  const [form, setForm] = useState<UpdateInterfacePayload>({})
+  const [error, setError] = useState('')
+
+  function openDialog() {
+    setForm({ dns_server: iface.dns_server, port: iface.port, subnet: iface.subnet, post_up: iface.post_up, post_down: iface.post_down, lan_access: iface.lan_access })
+    setError('')
+    setOpen(true)
+  }
+
+  const mut = useMutation({
+    mutationFn: () => proxyToInstance(instanceId, 'PUT', `/api/v1/interfaces/${iface.id}`, form),
+    onSuccess: () => { setOpen(false); onUpdated() },
+    onError: (e: unknown) => setError((e as Error)?.message ?? 'Error'),
+  })
+
+  const allPresets = [
+    ...(form.subnet ? [{ label: `AdGuard (${serverIPFromSubnet(form.subnet)})`, value: serverIPFromSubnet(form.subnet) }] : []),
+    ...DNS_PRESETS,
+  ]
+
+  return (
+    <>
+      <Button variant="outline" size="icon" className="h-8 w-8" title="Edit" onClick={openDialog}><Pencil className="h-3.5 w-3.5" /></Button>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit {iface.name}</DialogTitle>
+            <DialogDescription>Changes to port, subnet or PostUp will restart the interface.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Listen port</Label>
+              <Input type="number" value={form.port ?? ''} onChange={(e) => setForm((f) => ({ ...f, port: Number(e.target.value) }))} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Subnet (CIDR)</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {SUBNET_PRESETS.map((s) => (
+                  <button key={s} type="button" onClick={() => setForm((f) => ({ ...f, subnet: s }))}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.subnet === s ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}>{s}</button>
+                ))}
+              </div>
+              <Input value={form.subnet ?? ''} onChange={(e) => setForm((f) => ({ ...f, subnet: e.target.value }))} placeholder="10.0.0.0/24" />
+            </div>
+            <div className="space-y-1.5">
+              <Label>DNS server</Label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {allPresets.map((p) => (
+                  <button key={p.value} type="button" onClick={() => setForm((f) => ({ ...f, dns_server: p.value }))}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${form.dns_server === p.value ? 'bg-primary text-primary-foreground border-primary' : 'bg-muted text-muted-foreground border-border hover:border-primary'}`}>{p.label}</button>
+                ))}
+              </div>
+              <Input value={form.dns_server ?? ''} onChange={(e) => setForm((f) => ({ ...f, dns_server: e.target.value }))} placeholder="1.1.1.1" />
+            </div>
+            <Field label="PostUp"   id="se-pu" value={form.post_up   ?? ''} onChange={(e) => setForm((f) => ({ ...f, post_up:   e.target.value }))} />
+            <Field label="PostDown" id="se-pd" value={form.post_down ?? ''} onChange={(e) => setForm((f) => ({ ...f, post_down: e.target.value }))} />
+            <div className="flex items-center justify-between rounded-lg border border-border px-4 py-3 cursor-pointer select-none"
+              onClick={() => setForm((f) => ({ ...f, lan_access: !f.lan_access }))}>
+              <div>
+                <p className="text-sm font-medium">Local network access</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Clients can reach LAN devices — split tunnel, auto-detected</p>
+              </div>
+              <div className={`w-9 h-5 rounded-full transition-colors shrink-0 ml-4 ${form.lan_access ? 'bg-primary' : 'bg-muted'}`}>
+                <div className={`w-4 h-4 rounded-full bg-white shadow m-0.5 transition-transform ${form.lan_access ? 'translate-x-4' : 'translate-x-0'}`} />
+              </div>
+            </div>
+            {error && <p className="text-sm text-destructive">{error}</p>}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button onClick={() => mut.mutate()} disabled={mut.isPending}>{mut.isPending ? 'Saving…' : 'Save'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 

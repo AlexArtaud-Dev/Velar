@@ -29,8 +29,9 @@ import {
 import {
   getClientConfigText, getClientQR, createDownloadLink, sendConfigEmail,
   updateClient, resetClientQuota, getClientSnapshots, getClientEvents,
-  type Client,
+  type Client, type SnapshotPoint, type ConnectionEvent,
 } from '@/api/clients'
+import { proxyToInstance, sendSlaveClientConfig, notifySlaveClient } from '@/api/instances'
 import { formatBytes } from '@/lib/utils'
 
 // ── Clipboard helper ──────────────────────────────────────────────────────────
@@ -68,14 +69,17 @@ interface ConfigButtonProps {
   name: string
   open: boolean
   onOpenChange: (v: boolean) => void
+  instanceId?: number
 }
 
 /** ConfigButton shows the raw WireGuard config text in a dialog. */
-export function ConfigButton({ clientId, name, open, onOpenChange }: ConfigButtonProps) {
+export function ConfigButton({ clientId, name, open, onOpenChange, instanceId }: ConfigButtonProps) {
   const [copied, setCopied] = useState(false)
   const { data, isFetching } = useQuery({
-    queryKey: ['client-config-text', clientId],
-    queryFn: () => getClientConfigText(clientId),
+    queryKey: ['client-config-text', clientId, instanceId],
+    queryFn: instanceId
+      ? () => proxyToInstance(instanceId, 'GET', `/api/v1/clients/${clientId}/config`).then((r) => r.body)
+      : () => getClientConfigText(clientId),
     enabled: open,
   })
 
@@ -121,12 +125,16 @@ interface SendConfigButtonProps {
   email?: string
   open: boolean
   onOpenChange: (v: boolean) => void
+  instanceId?: number
 }
 
 /** SendConfigButton confirms and sends a one-time config download email. */
-export function SendConfigButton({ clientId, email, open, onOpenChange }: SendConfigButtonProps) {
+export function SendConfigButton({ clientId, email, open, onOpenChange, instanceId }: SendConfigButtonProps) {
   const mut = useMutation({
-    mutationFn: () => sendConfigEmail(clientId),
+    mutationFn: async () => {
+      if (instanceId) await sendSlaveClientConfig(instanceId, clientId)
+      else await sendConfigEmail(clientId)
+    },
     onSuccess: () => { onOpenChange(false) },
   })
 
@@ -162,13 +170,16 @@ interface QRButtonProps {
   name: string
   open: boolean
   onOpenChange: (v: boolean) => void
+  instanceId?: number
 }
 
 /** QRButton fetches and displays the WireGuard QR code for mobile import. */
-export function QRButton({ clientId, name, open, onOpenChange }: QRButtonProps) {
+export function QRButton({ clientId, name, open, onOpenChange, instanceId }: QRButtonProps) {
   const { data, isFetching } = useQuery({
-    queryKey: ['client-qr', clientId],
-    queryFn: () => getClientQR(clientId),
+    queryKey: ['client-qr', clientId, instanceId],
+    queryFn: instanceId
+      ? () => proxyToInstance(instanceId, 'GET', `/api/v1/clients/${clientId}/qr`).then((r) => JSON.parse(r.body) as { qr_code: string })
+      : () => getClientQR(clientId),
     enabled: open,
   })
 
@@ -203,14 +214,18 @@ interface DownloadLinkButtonProps {
   clientId: number
   open: boolean
   onOpenChange: (v: boolean) => void
+  instanceId?: number
+  instanceUrl?: string
 }
 
 /** DownloadLinkButton generates a one-time config download URL and displays it. */
-export function DownloadLinkButton({ clientId, open, onOpenChange }: DownloadLinkButtonProps) {
+export function DownloadLinkButton({ clientId, open, onOpenChange, instanceId, instanceUrl }: DownloadLinkButtonProps) {
   const [url, setUrl] = useState<string | null>(null)
   const mut = useMutation({
-    mutationFn: () => createDownloadLink(clientId),
-    onSuccess: (data) => setUrl(`${window.location.origin}${data.url}`),
+    mutationFn: instanceId
+      ? () => proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/download-link`).then((r) => JSON.parse(r.body) as { token: string; url: string })
+      : () => createDownloadLink(clientId),
+    onSuccess: (data) => setUrl(instanceId && instanceUrl ? `${instanceUrl}${data.url}` : `${window.location.origin}${data.url}`),
   })
 
   useEffect(() => {
@@ -269,10 +284,11 @@ interface EditClientDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onUpdated: () => void
+  instanceId?: number
 }
 
 /** EditClientDialog allows editing a client's name, email, allowed IPs, and expiry. */
-export function EditClientDialog({ client, open, onOpenChange, onUpdated }: EditClientDialogProps) {
+export function EditClientDialog({ client, open, onOpenChange, onUpdated, instanceId }: EditClientDialogProps) {
   const [form, setForm] = useState({
     name: '',
     owner_label: '',
@@ -296,20 +312,25 @@ export function EditClientDialog({ client, open, onOpenChange, onUpdated }: Edit
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open])
 
+  const editPayload = {
+    name: form.name || undefined,
+    owner_label: form.owner_label || undefined,
+    email: form.email,
+    allowed_ips: form.allowed_ips || undefined,
+    ...(form.expires_at
+      ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
+      : { clear_expires_at: true }),
+  }
+
   const mutation = useMutation({
-    mutationFn: () =>
-      updateClient(client.id, {
-        name: form.name || undefined,
-        owner_label: form.owner_label || undefined,
-        email: form.email,
-        allowed_ips: form.allowed_ips || undefined,
-        // If expires_at is empty, send clear_expires_at: true so the backend explicitly
-        // nullifies the column (plain null is indistinguishable from "field omitted" on
-        // a *time.Time pointer in Go).
-        ...(form.expires_at
-          ? { expires_at: new Date(form.expires_at + ':00Z').toISOString() }
-          : { clear_expires_at: true }),
-      }),
+    mutationFn: async () => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, editPayload)
+        notifySlaveClient(instanceId, 'updated', client)
+      } else {
+        await updateClient(client.id, editPayload)
+      }
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(
@@ -415,22 +436,27 @@ interface ClientHistoryDialogProps {
   client: Client
   open: boolean
   onOpenChange: (v: boolean) => void
+  instanceId?: number
 }
 
 /** ClientHistoryDialog shows a bandwidth chart and connection event log. */
-export function ClientHistoryDialog({ client, open, onOpenChange }: ClientHistoryDialogProps) {
+export function ClientHistoryDialog({ client, open, onOpenChange, instanceId }: ClientHistoryDialogProps) {
   const [range, setRange] = useState<'1h' | '24h' | '7d'>('24h')
 
   const { data: snapshots = [], isFetching: loadingSnaps } = useQuery({
-    queryKey: ['client-snapshots', client.id, range],
-    queryFn: () => getClientSnapshots(client.id, range),
+    queryKey: ['client-snapshots', client.id, range, instanceId],
+    queryFn: instanceId
+      ? () => proxyToInstance(instanceId, 'GET', `/api/v1/clients/${client.id}/snapshots?range=${range}`).then((r) => JSON.parse(r.body) as SnapshotPoint[])
+      : () => getClientSnapshots(client.id, range),
     enabled: open,
     refetchInterval: open ? 60_000 : false,
   })
 
   const { data: events = [], isFetching: loadingEvents } = useQuery({
-    queryKey: ['client-events', client.id],
-    queryFn: () => getClientEvents(client.id),
+    queryKey: ['client-events', client.id, instanceId],
+    queryFn: instanceId
+      ? () => proxyToInstance(instanceId, 'GET', `/api/v1/clients/${client.id}/events`).then((r) => JSON.parse(r.body) as ConnectionEvent[])
+      : () => getClientEvents(client.id),
     enabled: open,
     refetchInterval: open ? 30_000 : false,
   })
@@ -566,10 +592,11 @@ interface QuotaDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onUpdated: () => void
+  instanceId?: number
 }
 
 /** QuotaDialog sets the per-client data quota and lets the admin force-reset usage. */
-export function QuotaDialog({ client, open, onOpenChange, onUpdated }: QuotaDialogProps) {
+export function QuotaDialog({ client, open, onOpenChange, onUpdated, instanceId }: QuotaDialogProps) {
   const [quotaGb, setQuotaGb] = useState(0)
   const [period, setPeriod] = useState<'monthly' | 'weekly' | 'total'>('monthly')
   const [error, setError] = useState('')
@@ -588,11 +615,10 @@ export function QuotaDialog({ client, open, onOpenChange, onUpdated }: QuotaDial
   }, [open])
 
   const mutation = useMutation({
-    mutationFn: () =>
-      updateClient(client.id, {
-        data_quota_bytes: Math.round(quotaGb * 1e9),
-        quota_period: period,
-      }),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period })
+      else await updateClient(client.id, { data_quota_bytes: Math.round(quotaGb * 1e9), quota_period: period })
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(
@@ -602,7 +628,10 @@ export function QuotaDialog({ client, open, onOpenChange, onUpdated }: QuotaDial
   })
 
   const resetMut = useMutation({
-    mutationFn: () => resetClientQuota(client.id),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${client.id}/quota-reset`)
+      else await resetClientQuota(client.id)
+    },
     onSuccess: () => onUpdated(),
   })
 
@@ -684,10 +713,11 @@ interface BandwidthDialogProps {
   open: boolean
   onOpenChange: (v: boolean) => void
   onUpdated: () => void
+  instanceId?: number
 }
 
 /** BandwidthDialog sets per-direction tc bandwidth caps (Mbps). */
-export function BandwidthDialog({ client, open, onOpenChange, onUpdated }: BandwidthDialogProps) {
+export function BandwidthDialog({ client, open, onOpenChange, onUpdated, instanceId }: BandwidthDialogProps) {
   const [down, setDown] = useState(0)
   const [up, setUp] = useState(0)
   const [error, setError] = useState('')
@@ -702,11 +732,10 @@ export function BandwidthDialog({ client, open, onOpenChange, onUpdated }: Bandw
   }, [open])
 
   const mutation = useMutation({
-    mutationFn: () =>
-      updateClient(client.id, {
-        bandwidth_limit_down: down,
-        bandwidth_limit_up: up,
-      }),
+    mutationFn: async () => {
+      if (instanceId) await proxyToInstance(instanceId, 'PUT', `/api/v1/clients/${client.id}`, { bandwidth_limit_down: down, bandwidth_limit_up: up })
+      else await updateClient(client.id, { bandwidth_limit_down: down, bandwidth_limit_up: up })
+    },
     onSuccess: () => { onOpenChange(false); onUpdated() },
     onError: (e: unknown) => {
       setError(

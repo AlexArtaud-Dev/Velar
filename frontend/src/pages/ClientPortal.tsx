@@ -1,6 +1,6 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getPortalClient, type PortalClient } from '@/api/portal'
+import { getPortalClient, getSlavePortalClient, type PortalClient } from '@/api/portal'
 import { formatBytes } from '@/lib/utils'
 import {
   Wifi,
@@ -329,11 +329,15 @@ function PortalSkeleton() {
 // ── route component ───────────────────────────────────────────────────────────
 
 export default function ClientPortal() {
-  const { token } = useParams<{ token: string }>()
+  const { token, instanceId } = useParams<{ token: string; instanceId?: string }>()
+  const isSlave = !!instanceId
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['portal', token],
-    queryFn: () => getPortalClient(token!),
+    queryKey: ['portal', instanceId, token],
+    queryFn: () =>
+      isSlave
+        ? getSlavePortalClient(Number(instanceId), token!)
+        : getPortalClient(token!),
     enabled: !!token,
     refetchInterval: 30_000,
     retry: false,

@@ -25,6 +25,10 @@ interface ClientActionsMenuProps {
   client: Client
   /** Called after any mutation that modifies the client (edit, quota, bandwidth). */
   onUpdated: () => void
+  /** When set, all API calls are proxied through this slave instance. */
+  instanceId?: number
+  /** Base URL of the slave instance (used to construct download links). */
+  instanceUrl?: string
 }
 
 /**
@@ -32,7 +36,7 @@ interface ClientActionsMenuProps {
  * Each dialog is controlled independently via local open state so that dialogs
  * survive the dropdown unmounting when it closes.
  */
-export function ClientActionsMenu({ client, onUpdated }: ClientActionsMenuProps) {
+export function ClientActionsMenu({ client, onUpdated, instanceId, instanceUrl }: ClientActionsMenuProps) {
   const [configOpen, setConfigOpen] = useState(false)
   const [sendOpen, setSendOpen] = useState(false)
   const [qrOpen, setQrOpen] = useState(false)
@@ -105,7 +109,12 @@ export function ClientActionsMenu({ client, onUpdated }: ClientActionsMenuProps)
           <DropdownMenuSeparator />
           {client.view_token && (
             <DropdownMenuItem
-              onClick={() => window.open(`${window.location.origin}/portal/${client.view_token}`, '_blank')}
+              onClick={() => {
+                const path = instanceId
+                  ? `/portal/s/${instanceId}/${client.view_token}`
+                  : `/portal/${client.view_token}`
+                window.open(`${window.location.origin}${path}`, '_blank')
+              }}
             >
               <ExternalLink className="h-3.5 w-3.5" /> Open portal
             </DropdownMenuItem>
@@ -122,46 +131,55 @@ export function ClientActionsMenu({ client, onUpdated }: ClientActionsMenuProps)
         name={client.name}
         open={configOpen}
         onOpenChange={setConfigOpen}
+        instanceId={instanceId}
       />
       <SendConfigButton
         clientId={client.id}
         email={client.email}
         open={sendOpen}
         onOpenChange={setSendOpen}
+        instanceId={instanceId}
       />
       <QRButton
         clientId={client.id}
         name={client.name}
         open={qrOpen}
         onOpenChange={setQrOpen}
+        instanceId={instanceId}
       />
       <DownloadLinkButton
         clientId={client.id}
         open={linkOpen}
         onOpenChange={setLinkOpen}
+        instanceId={instanceId}
+        instanceUrl={instanceUrl}
       />
       <ClientHistoryDialog
         client={client}
         open={historyOpen}
         onOpenChange={setHistoryOpen}
+        instanceId={instanceId}
       />
       <QuotaDialog
         client={client}
         open={quotaOpen}
         onOpenChange={setQuotaOpen}
         onUpdated={onUpdated}
+        instanceId={instanceId}
       />
       <BandwidthDialog
         client={client}
         open={bwOpen}
         onOpenChange={setBwOpen}
         onUpdated={onUpdated}
+        instanceId={instanceId}
       />
       <EditClientDialog
         client={client}
         open={editOpen}
         onOpenChange={setEditOpen}
         onUpdated={onUpdated}
+        instanceId={instanceId}
       />
     </>
   )

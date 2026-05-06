@@ -1,10 +1,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Trash2, ToggleLeft, ToggleRight, Clock, Gauge, ArrowDown, ArrowUp, Link, Check } from 'lucide-react'
+import { Trash2, ToggleLeft, ToggleRight, Clock, Gauge, ArrowDown, ArrowUp, Link, Check, PowerOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { enableClient, disableClient, deleteClient, type Client } from '@/api/clients'
+import { proxyToInstance, notifySlaveClient } from '@/api/instances'
 import { type PeerStatOut } from '@/hooks/useWebSocket'
 import { formatBytes, timeAgo } from '@/lib/utils'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,9 @@ interface ClientCardProps {
   onToggleSelect: () => void
   onUpdated: () => void
   anySelected: boolean
+  /** When set, all API calls are proxied through this slave instance. */
+  instanceId?: number
+  instanceUrl?: string
 }
 
 export function ClientCard({
@@ -28,6 +32,8 @@ export function ClientCard({
   onToggleSelect,
   onUpdated,
   anySelected,
+  instanceId,
+  instanceUrl,
 }: ClientCardProps) {
   const qc = useQueryClient()
   const { theme } = useThemeStore()
@@ -47,28 +53,66 @@ export function ClientCard({
   }
 
   function invalidate() {
-    qc.invalidateQueries({ queryKey: ['clients'] })
+    if (instanceId) {
+      qc.invalidateQueries({ queryKey: ['slave-clients', instanceId] })
+    } else {
+      qc.invalidateQueries({ queryKey: ['clients'] })
+    }
     onUpdated()
   }
 
-  const enableMut  = useMutation({ mutationFn: enableClient,  onSuccess: invalidate })
-  const disableMut = useMutation({ mutationFn: disableClient, onSuccess: invalidate })
-  const deleteMut  = useMutation({ mutationFn: deleteClient,  onSuccess: invalidate })
+  const enableMut  = useMutation({
+    mutationFn: async (id: number) => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/enable`)
+        notifySlaveClient(instanceId, 'enabled', client)
+      } else {
+        await enableClient(id)
+      }
+    },
+    onSuccess: invalidate,
+  })
+  const disableMut = useMutation({
+    mutationFn: async (id: number) => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'POST', `/api/v1/clients/${id}/disable`)
+        notifySlaveClient(instanceId, 'disabled', client)
+      } else {
+        await disableClient(id)
+      }
+    },
+    onSuccess: invalidate,
+  })
+  const deleteMut  = useMutation({
+    mutationFn: async (id: number) => {
+      if (instanceId) {
+        await proxyToInstance(instanceId, 'DELETE', `/api/v1/clients/${id}`)
+        notifySlaveClient(instanceId, 'deleted', client)
+      } else {
+        await deleteClient(id)
+      }
+    },
+    onSuccess: invalidate,
+  })
 
   const quotaSet          = client.data_quota_bytes > 0
   const hasBandwidthLimit = client.bandwidth_limit_down > 0 || client.bandwidth_limit_up > 0
+
+  const isDisabled = !client.enabled
 
   return (
     <Card
       className={cn(
         'group/card transition-all duration-200',
         isSelected && 'ring-2 ring-primary bg-primary/5',
+        isDisabled && !isCyber && 'border-2 border-dashed border-slate-300 dark:border-slate-600 bg-muted/20 opacity-80',
+        isDisabled && isCyber  && 'border-2 border-dashed border-slate-500/60 opacity-65',
         isApple  && 'apple-glass hover:shadow-md',
         isCyber  && cn(
           'cyber-card',
           isOnline && 'border-[rgba(0,255,255,0.3)]',
         ),
-        !isApple && !isCyber && 'hover:shadow-md',
+        !isApple && !isCyber && !isDisabled && 'hover:shadow-md',
       )}
     >
       <CardHeader className="pb-2">
@@ -86,14 +130,17 @@ export function ClientCard({
                 'absolute inset-0 flex items-center justify-center transition-opacity',
                 isSelected || anySelected ? 'opacity-0' : 'opacity-100 group-hover/card:opacity-0',
               )}>
-                <span className={cn(
-                  'h-2.5 w-2.5 rounded-full transition-colors',
-                  isOnline
-                    ? isCyber
-                      ? 'bg-[hsl(180,100%,50%)] shadow-[0_0_6px_rgba(0,255,255,0.6)]'
-                      : 'bg-green-500'
-                    : 'bg-muted-foreground/25',
-                )} />
+                {isDisabled
+                ? <PowerOff className="h-3 w-3 text-slate-400 dark:text-slate-500" />
+                : <span className={cn(
+                    'h-2.5 w-2.5 rounded-full transition-colors',
+                    isOnline
+                      ? isCyber
+                        ? 'bg-[hsl(180,100%,50%)] shadow-[0_0_6px_rgba(0,255,255,0.6)]'
+                        : 'bg-green-500'
+                      : 'bg-muted-foreground/25',
+                  )} />
+              }
               </span>
               <span className={cn(
                 'absolute inset-0 flex items-center justify-center transition-opacity',
@@ -114,13 +161,25 @@ export function ClientCard({
 
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-1.5">
-                <CardTitle className="text-sm leading-none">{client.name}</CardTitle>
+                <CardTitle className={cn('text-sm leading-none', isDisabled && 'text-muted-foreground')}>
+                  {client.name}
+                </CardTitle>
                 {client.owner_label && (
                   <span className="text-xs text-muted-foreground">{client.owner_label}</span>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                {!client.enabled && <Badge variant="secondary" className="h-4 text-[10px] px-1.5">Disabled</Badge>}
+                {isDisabled && (
+                  <span className={cn(
+                    'inline-flex items-center gap-1 rounded-md border px-1.5 py-0.5 text-[10px] font-semibold',
+                    isCyber
+                      ? 'border-slate-500/40 bg-slate-800/60 text-slate-400'
+                      : 'border-slate-300 bg-slate-100 text-slate-500 dark:border-slate-600 dark:bg-slate-800/80 dark:text-slate-400',
+                  )}>
+                    <PowerOff className="h-2.5 w-2.5" />
+                    Disabled
+                  </span>
+                )}
                 {client.quota_suspended && <Badge variant="destructive" className="h-4 text-[10px] px-1.5">Suspended</Badge>}
                 {client.expires_at && (
                   <Badge variant="warning" className="h-4 text-[10px] px-1.5 gap-1">
@@ -147,7 +206,7 @@ export function ClientCard({
                 ? <Check className="h-3.5 w-3.5 text-green-500" />
                 : <Link className="h-3.5 w-3.5 text-muted-foreground" />}
             </Button>
-            <ClientActionsMenu client={client} onUpdated={invalidate} />
+            <ClientActionsMenu client={client} onUpdated={invalidate} instanceId={instanceId} instanceUrl={instanceUrl} />
             <Button
               variant="ghost"
               size="icon"

@@ -1,0 +1,19 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    volumes:
+      - wireguard_configs:/etc/wireguard
+      - sqlite_data:/data
+    env_file:
+      - .env.slave
+
+volumes:
+  wireguard_configs:
+  sqlite_data:
