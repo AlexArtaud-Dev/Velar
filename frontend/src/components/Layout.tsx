@@ -1,3 +1,4 @@
+import React from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Network, Users, Settings, LogOut,
@@ -16,8 +17,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 
+type NavItem = { to: string; label: string; icon: React.ComponentType<{ className?: string }>; end: boolean }
+type NavGroup = { label: string | null; items: NavItem[] }
+
 // Grouped nav definition for the desktop sidebar
-const navGroups = [
+const navGroups: NavGroup[] = [
   {
     label: null, // no section header for the first entry
     items: [
@@ -27,27 +31,27 @@ const navGroups = [
   {
     label: 'Network',
     items: [
-      { to: '/interfaces', label: 'Interfaces', icon: Network },
-      { to: '/clients',    label: 'Clients',    icon: Users },
+      { to: '/interfaces', label: 'Interfaces', icon: Network,    end: false },
+      { to: '/clients',    label: 'Clients',    icon: Users,      end: false },
     ],
   },
   {
     label: 'Federation',
     items: [
-      { to: '/instances', label: 'Instances', icon: Server },
+      { to: '/instances', label: 'Instances', icon: Server, end: false },
     ],
   },
   {
     label: 'Access',
     items: [
-      { to: '/tokens', label: 'API Keys',  icon: Key },
-      { to: '/audit',  label: 'Audit Log', icon: ClipboardList },
+      { to: '/tokens', label: 'API Keys',  icon: Key,         end: false },
+      { to: '/audit',  label: 'Audit Log', icon: ClipboardList, end: false },
     ],
   },
   {
     label: 'System',
     items: [
-      { to: '/settings', label: 'Settings', icon: Settings },
+      { to: '/settings', label: 'Settings', icon: Settings, end: false },
     ],
   },
 ]
@@ -216,7 +220,7 @@ export default function Layout() {
                 </p>
               )}
               <div className="space-y-0.5">
-                {group.items.map(({ to, label, icon: Icon, end = false }) => (
+                {group.items.map(({ to, label, icon: Icon, end }) => (
                   <NavLink
                     key={to}
                     to={to}
@@ -312,7 +316,7 @@ export default function Layout() {
           'lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border',
           isCyber && 'border-t-[rgba(0,255,255,0.15)]',
         )}>
-          {mobileNavItems.map(({ to, label, icon: Icon, end = false }) => (
+          {mobileNavItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
