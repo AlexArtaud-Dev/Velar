@@ -595,13 +595,16 @@ export default function Dashboard() {
                     agTotalBlocked > 0 ? (isCyber ? 'text-[hsl(180,100%,60%)]' : 'text-blue-500') : '',
                   )}>
                     {agTotalBlocked.toLocaleString()}
-                    {agTotalQueries > 0 && (
-                      <span className="text-xs font-normal text-muted-foreground ml-1">
-                        ({Math.round(agTotalBlocked / agTotalQueries * 100)}%)
-                      </span>
-                    )}
                   </p>
                 </div>
+                {agTotalQueries > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Block rate</p>
+                    <p className="text-lg font-bold tabular-nums text-muted-foreground">
+                      {Math.round(agTotalBlocked / agTotalQueries * 100)}%
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </CardHeader>
@@ -627,21 +630,26 @@ export default function Dashboard() {
                       <span className="font-medium flex-1 truncate">{node.name}</span>
                       {node.stats ? (
                         <>
-                          <span className="text-xs text-muted-foreground tabular-nums">
+                          <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
                             {node.stats.num_dns_queries.toLocaleString()} queries
                           </span>
                           <span className={cn(
-                            'text-xs font-medium tabular-nums min-w-[4rem] text-right',
+                            'text-xs font-medium tabular-nums w-24 text-right',
                             node.stats.num_blocked_filtering > 0
                               ? isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-blue-500'
                               : 'text-muted-foreground',
                           )}>
                             {node.stats.num_blocked_filtering.toLocaleString()} blocked
                           </span>
-                          <span className="text-[11px] text-muted-foreground w-10 text-right tabular-nums">
+                          <span className={cn(
+                            'text-xs tabular-nums w-10 text-right font-medium',
+                            pct > 0
+                              ? isCyber ? 'text-[hsl(180,60%,55%)]' : 'text-muted-foreground'
+                              : 'text-muted-foreground/50',
+                          )}>
                             {pct}%
                           </span>
-                          <span className="text-[11px] text-muted-foreground hidden sm:inline tabular-nums">
+                          <span className="text-[11px] text-muted-foreground hidden sm:inline tabular-nums w-16 text-right">
                             {(node.stats.avg_processing_time * 1000).toFixed(1)} ms
                           </span>
                         </>
