@@ -99,27 +99,38 @@ export default function Adguard() {
   const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
 
   return (
-    <div className="p-4 sm:p-6 space-y-5">
-      {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
+    <div className="p-4 sm:p-6 space-y-4 pb-20 lg:pb-6">
+      {/* Header — title left, controls right, single row on all sizes */}
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <Shield className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div>
-            <h1 className="text-2xl font-bold">AdGuard Home</h1>
-            <p className="text-muted-foreground text-sm mt-0.5">DNS-level ad blocking and filtering</p>
+          <div className="min-w-0">
+            <h1 className="text-xl sm:text-2xl font-bold leading-tight">AdGuard Home</h1>
+            <p className="text-muted-foreground text-xs sm:text-sm hidden sm:block mt-0.5">DNS-level ad blocking and filtering</p>
           </div>
         </div>
 
-        {/* Instance selector + pull */}
-        <div className="flex items-center gap-2">
+        {/* Instance selector + pull — always on the right of the title */}
+        <div className="flex items-center gap-1.5 shrink-0">
           <Button
             size="sm" variant="outline"
             onClick={pullFromAdguard}
             disabled={refreshing}
             title="Pull current state from AdGuard"
+            className="hidden sm:flex"
           >
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', refreshing && 'animate-spin')} />
             Pull from AdGuard
+          </Button>
+          {/* Icon-only on mobile */}
+          <Button
+            size="sm" variant="outline"
+            onClick={pullFromAdguard}
+            disabled={refreshing}
+            title="Pull current state from AdGuard"
+            className="sm:hidden h-9 w-9 p-0"
+          >
+            <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
           </Button>
 
           {/* Custom instance selector */}
@@ -160,11 +171,13 @@ export default function Adguard() {
             {selectorOpen && (
               <div className={cn(
                 'absolute right-0 top-full mt-1.5 z-50 min-w-[180px]',
-                'rounded-xl border shadow-lg overflow-hidden',
+                'rounded-xl border shadow-xl overflow-hidden',
                 isCyber
                   ? 'bg-[rgb(7,12,23)] border-[rgba(0,255,255,0.2)]'
-                  : 'bg-popover border-border shadow-md',
-              )}>
+                  : 'border-border',
+              )}
+              style={isCyber ? undefined : { backgroundColor: 'hsl(var(--popover))' }}
+              >
                 {/* Master */}
                 <div className={cn(
                   'px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest',
@@ -231,14 +244,14 @@ export default function Adguard() {
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className={cn('flex gap-1 border-b', borderClass)}>
+      {/* Tabs — scrollable on mobile */}
+      <div className={cn('flex gap-1 border-b overflow-x-auto scrollbar-none -mx-4 px-4 sm:mx-0 sm:px-0', borderClass)}>
         {TABS.map((t) => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={cn(
-              'px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px',
+              'px-3 sm:px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px whitespace-nowrap shrink-0',
               tab === t.id
                 ? isCyber
                   ? 'border-[hsl(180,100%,50%)] text-[hsl(180,60%,85%)]'
@@ -382,7 +395,7 @@ function OverviewTab({ source, sourceName, cardClass, isCyber }: {
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <StatCell label="DNS Queries"   value={stats.num_dns_queries.toLocaleString()} isCyber={isCyber} />
-              <StatCell label="Blocked"       value={`${stats.num_blocked_filtering.toLocaleString()} (${blockedPct}%)`} ok={stats.num_blocked_filtering > 0} isCyber={isCyber} />
+              <StatCell label="Blocked"       value={`${stats.num_blocked_filtering.toLocaleString()} · ${blockedPct}%`} ok={stats.num_blocked_filtering > 0} isCyber={isCyber} />
               <StatCell label="Safe Browsing" value={stats.num_replaced_safebrowsing.toLocaleString()} isCyber={isCyber} />
               <StatCell label="Avg Response"  value={`${(stats.avg_processing_time * 1000).toFixed(1)} ms`} isCyber={isCyber} />
             </div>
