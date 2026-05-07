@@ -159,3 +159,84 @@ func (h *AdguardHandler) DeleteRewrite(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+func (h *AdguardHandler) SetProtection(c *gin.Context) {
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ag.SetProtection(req.Enabled); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *AdguardHandler) GetSafeBrowsingStatus(c *gin.Context) {
+	enabled, err := h.ag.GetSafeBrowsingStatus()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
+}
+
+func (h *AdguardHandler) SetSafeBrowsing(c *gin.Context) {
+	var req struct{ Enabled bool `json:"enabled"` }
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ag.SetSafeBrowsing(req.Enabled); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *AdguardHandler) GetParentalStatus(c *gin.Context) {
+	enabled, err := h.ag.GetParentalStatus()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"enabled": enabled})
+}
+
+func (h *AdguardHandler) SetParental(c *gin.Context) {
+	var req struct{ Enabled bool `json:"enabled"` }
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ag.SetParental(req.Enabled); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *AdguardHandler) GetSafeSearchStatus(c *gin.Context) {
+	settings, err := h.ag.GetSafeSearchStatus()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, settings)
+}
+
+func (h *AdguardHandler) SetSafeSearch(c *gin.Context) {
+	var req adguard.SafeSearchSettings
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ag.SetSafeSearch(req); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

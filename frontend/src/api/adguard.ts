@@ -9,6 +9,18 @@ export interface AdguardStatus {
   dns_addresses: string[]
   dns_port: number
   querylog_enabled: boolean
+  protection_enabled: boolean
+}
+
+export interface SafeSearchSettings {
+  enabled: boolean
+  bing: boolean
+  duckduckgo: boolean
+  ecosia: boolean
+  google: boolean
+  pixabay: boolean
+  yandex: boolean
+  youtube: boolean
 }
 
 export interface AdguardStats {
@@ -111,3 +123,24 @@ export const addRewrite = (src: AdguardSource, domain: string, answer: string) =
 
 export const deleteRewrite = (src: AdguardSource, domain: string, answer: string) =>
   call<void>(src, 'DELETE', '/rewrites', { domain, answer })
+
+export const setProtection = (src: AdguardSource, enabled: boolean) =>
+  call<void>(src, 'POST', '/protection', { enabled })
+
+export const getSafeBrowsingStatus = (src: AdguardSource) =>
+  call<{ enabled: boolean }>(src, 'GET', '/safebrowsing')
+
+export const setSafeBrowsing = (src: AdguardSource, enabled: boolean) =>
+  call<void>(src, 'PUT', '/safebrowsing', { enabled })
+
+export const getParentalStatus = (src: AdguardSource) =>
+  call<{ enabled: boolean }>(src, 'GET', '/parental')
+
+export const setParental = (src: AdguardSource, enabled: boolean) =>
+  call<void>(src, 'PUT', '/parental', { enabled })
+
+export const getSafeSearchStatus = (src: AdguardSource) =>
+  call<SafeSearchSettings>(src, 'GET', '/safesearch')
+
+export const setSafeSearch = (src: AdguardSource, settings: SafeSearchSettings) =>
+  call<void>(src, 'PUT', '/safesearch', settings)

@@ -130,6 +130,7 @@ func NewRouter(
 		{
 			agGroup.GET("/status", agHandler.GetStatus)
 			agGroup.GET("/stats", agHandler.GetStats)
+			agGroup.POST("/protection", agHandler.SetProtection)
 			agGroup.GET("/filtering", agHandler.GetFilteringStatus)
 			agGroup.PUT("/filtering/config", agHandler.SetFilteringConfig)
 			agGroup.POST("/filtering/add", agHandler.AddFilter)
@@ -140,6 +141,12 @@ func NewRouter(
 			agGroup.GET("/rewrites", agHandler.GetRewrites)
 			agGroup.POST("/rewrites", agHandler.AddRewrite)
 			agGroup.DELETE("/rewrites", agHandler.DeleteRewrite)
+			agGroup.GET("/safebrowsing", agHandler.GetSafeBrowsingStatus)
+			agGroup.PUT("/safebrowsing", agHandler.SetSafeBrowsing)
+			agGroup.GET("/parental", agHandler.GetParentalStatus)
+			agGroup.PUT("/parental", agHandler.SetParental)
+			agGroup.GET("/safesearch", agHandler.GetSafeSearchStatus)
+			agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
 		}
 
 		adminHandler := handlers.NewAdminHandler(wg)

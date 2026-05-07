@@ -4,14 +4,17 @@ import {
   Shield, RefreshCw, Plus, Trash2, AlertTriangle,
   Loader2, Check, ToggleLeft, ToggleRight,
 } from 'lucide-react'
-import { useQuery as useInstancesQuery } from '@tanstack/react-query'
 import { listInstances } from '@/api/instances'
 import {
   getStatus, getStats, getFilteringStatus, setFilteringEnabled,
   addFilter, removeFilter, refreshFilters,
   getUserRules, setUserRules,
   getRewrites, addRewrite, deleteRewrite,
-  type AdguardSource,
+  setProtection,
+  getSafeBrowsingStatus, setSafeBrowsing,
+  getParentalStatus, setParental,
+  getSafeSearchStatus, setSafeSearch,
+  type AdguardSource, type SafeSearchSettings,
 } from '@/api/adguard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -20,10 +23,11 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
-type Tab = 'overview' | 'blocklists' | 'rules' | 'rewrites'
+type Tab = 'overview' | 'protection' | 'blocklists' | 'rules' | 'rewrites'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',   label: 'Overview'    },
+  { id: 'protection', label: 'Protection'  },
   { id: 'blocklists', label: 'Blocklists'  },
   { id: 'rules',      label: 'Custom Rules'},
   { id: 'rewrites',   label: 'DNS Rewrites'},
@@ -42,7 +46,7 @@ export default function Adguard() {
     queryFn: listInstances,
   })
 
-  const enabledSlaves = instances.filter((i) => i.adguard_enabled)
+  const enabledSlaves = instances.filter((i: { adguard_enabled: boolean }) => i.adguard_enabled)
   const sourceName =
     source === null
       ? 'Master'
@@ -97,10 +101,11 @@ export default function Adguard() {
       </div>
 
       {/* Tab content */}
-      {tab === 'overview'   && <OverviewTab   source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
-      {tab === 'blocklists' && <BlocklistsTab source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
-      {tab === 'rules'      && <RulesTab      source={source} cardClass={cardClass} isCyber={isCyber} />}
-      {tab === 'rewrites'   && <RewritesTab   source={source} cardClass={cardClass} borderClass={borderClass} />}
+      {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
+      {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+      {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+      {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
+      {tab === 'rewrites'   && <RewritesTab    source={source} cardClass={cardClass} borderClass={borderClass} />}
     </div>
   )
 }
@@ -110,6 +115,7 @@ export default function Adguard() {
 function OverviewTab({ source, sourceName, cardClass, isCyber }: {
   source: AdguardSource; sourceName: string; cardClass: string; isCyber: boolean
 }) {
+  const qc = useQueryClient()
   const qk = ['adguard-status', source]
   const sqk = ['adguard-stats', source]
 
@@ -124,6 +130,11 @@ function OverviewTab({ source, sourceName, cardClass, isCyber }: {
     retry: 1,
   })
 
+  const protectionMut = useMutation({
+    mutationFn: (enabled: boolean) => setProtection(source, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk }),
+  })
+
   const blockedPct = stats && stats.num_dns_queries > 0
     ? ((stats.num_blocked_filtering / stats.num_dns_queries) * 100).toFixed(1)
     : '0.0'
@@ -133,15 +144,36 @@ function OverviewTab({ source, sourceName, cardClass, isCyber }: {
       {/* Status card */}
       <Card className={cardClass}>
         <CardHeader className="pb-2">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             <CardTitle className="text-sm flex items-center gap-2">
               <Shield className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
               Status — {sourceName}
             </CardTitle>
-            <Button variant="outline" size="sm" onClick={() => refetchStatus()} disabled={loadingStatus}>
-              <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', loadingStatus && 'animate-spin')} />
-              Refresh
-            </Button>
+            <div className="flex items-center gap-2">
+              {status && (
+                <button
+                  onClick={() => protectionMut.mutate(!status.protection_enabled)}
+                  disabled={protectionMut.isPending}
+                  className={cn(
+                    'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
+                    status.protection_enabled
+                      ? 'bg-green-500/10 border-green-500/30 text-green-600 dark:text-green-400 hover:bg-green-500/20'
+                      : 'bg-red-500/10 border-red-500/30 text-red-500 hover:bg-red-500/20',
+                  )}
+                >
+                  {protectionMut.isPending
+                    ? <Loader2 className="h-3 w-3 animate-spin" />
+                    : status.protection_enabled
+                      ? <ToggleRight className="h-3.5 w-3.5" />
+                      : <ToggleLeft className="h-3.5 w-3.5" />}
+                  {status.protection_enabled ? 'Protection on' : 'Protection off'}
+                </button>
+              )}
+              <Button variant="outline" size="sm" onClick={() => refetchStatus()} disabled={loadingStatus}>
+                <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', loadingStatus && 'animate-spin')} />
+                Refresh
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>
@@ -155,10 +187,10 @@ function OverviewTab({ source, sourceName, cardClass, isCyber }: {
             </p>
           ) : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <StatCell label="Running"  value={status.running ? 'Yes' : 'No'} ok={status.running} isCyber={isCyber} />
-              <StatCell label="Version"  value={status.version} isCyber={isCyber} />
-              <StatCell label="DNS Port" value={String(status.dns_port)} isCyber={isCyber} />
-              <StatCell label="Query Log" value={status.querylog_enabled ? 'Enabled' : 'Disabled'} isCyber={isCyber} />
+              <StatCell label="Running"    value={status.running ? 'Yes' : 'No'} ok={status.running} isCyber={isCyber} />
+              <StatCell label="Version"    value={status.version} isCyber={isCyber} />
+              <StatCell label="DNS Port"   value={String(status.dns_port)} isCyber={isCyber} />
+              <StatCell label="Query Log"  value={status.querylog_enabled ? 'Enabled' : 'Disabled'} isCyber={isCyber} />
             </div>
           )}
         </CardContent>
@@ -188,6 +220,147 @@ function OverviewTab({ source, sourceName, cardClass, isCyber }: {
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+// ── Protection ────────────────────────────────────────────────────────────────
+
+const SAFE_SEARCH_ENGINES: { key: keyof SafeSearchSettings; label: string }[] = [
+  { key: 'bing',       label: 'Bing'       },
+  { key: 'duckduckgo', label: 'DuckDuckGo' },
+  { key: 'ecosia',     label: 'Ecosia'     },
+  { key: 'google',     label: 'Google'     },
+  { key: 'pixabay',    label: 'Pixabay'    },
+  { key: 'yandex',     label: 'Yandex'     },
+  { key: 'youtube',    label: 'YouTube'    },
+]
+
+function ProtectionTab({ source, cardClass, isCyber, borderClass }: {
+  source: AdguardSource; cardClass: string; isCyber: boolean; borderClass: string
+}) {
+  const qc = useQueryClient()
+
+  const sbQk  = ['adguard-safebrowsing', source]
+  const parQk = ['adguard-parental', source]
+  const ssQk  = ['adguard-safesearch', source]
+
+  const { data: sbData }  = useQuery({ queryKey: sbQk,  queryFn: () => getSafeBrowsingStatus(source), retry: 1 })
+  const { data: parData } = useQuery({ queryKey: parQk, queryFn: () => getParentalStatus(source),     retry: 1 })
+  const { data: ssData }  = useQuery({ queryKey: ssQk,  queryFn: () => getSafeSearchStatus(source),   retry: 1 })
+
+  const sbMut = useMutation({
+    mutationFn: (enabled: boolean) => setSafeBrowsing(source, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: sbQk }),
+  })
+  const parMut = useMutation({
+    mutationFn: (enabled: boolean) => setParental(source, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: parQk }),
+  })
+  const ssMut = useMutation({
+    mutationFn: (s: SafeSearchSettings) => setSafeSearch(source, s),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ssQk }),
+  })
+
+  function toggleEngine(key: keyof SafeSearchSettings) {
+    if (!ssData) return
+    const updated = { ...ssData, [key]: !ssData[key] }
+    ssMut.mutate(updated)
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Safe browsing */}
+      <Card className={cardClass}>
+        <CardContent className="pt-4">
+          <ProtectionRow
+            title="Safe Browsing"
+            description="Block domains known to host malware or phishing content using AdGuard's privacy-respecting lookup service."
+            enabled={sbData?.enabled ?? false}
+            loading={sbMut.isPending}
+            onToggle={(v) => sbMut.mutate(v)}
+            isCyber={isCyber}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Parental control */}
+      <Card className={cardClass}>
+        <CardContent className="pt-4">
+          <ProtectionRow
+            title="Parental Control"
+            description="Block adult content domains using AdGuard's parental control service."
+            enabled={parData?.enabled ?? false}
+            loading={parMut.isPending}
+            onToggle={(v) => parMut.mutate(v)}
+            isCyber={isCyber}
+          />
+        </CardContent>
+      </Card>
+
+      {/* Safe search */}
+      <Card className={cardClass}>
+        <CardContent className="pt-4 space-y-4">
+          <ProtectionRow
+            title="Safe Search"
+            description="Force safe search mode on supported search engines."
+            enabled={ssData?.enabled ?? false}
+            loading={ssMut.isPending}
+            onToggle={(v) => ssData && ssMut.mutate({ ...ssData, enabled: v })}
+            isCyber={isCyber}
+          />
+          {ssData?.enabled && (
+            <div className={cn('grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t', borderClass)}>
+              {SAFE_SEARCH_ENGINES.map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => toggleEngine(key)}
+                  disabled={ssMut.isPending}
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors',
+                    ssData[key]
+                      ? isCyber
+                        ? 'bg-[rgba(0,255,255,0.1)] border-[rgba(0,255,255,0.3)] text-[hsl(180,80%,70%)]'
+                        : 'bg-primary/10 border-primary/30 text-primary'
+                      : 'bg-muted border-border text-muted-foreground hover:border-primary/30',
+                  )}
+                >
+                  <span className={cn(
+                    'h-1.5 w-1.5 rounded-full shrink-0',
+                    ssData[key] ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-primary') : 'bg-muted-foreground/40',
+                  )} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function ProtectionRow({ title, description, enabled, loading, onToggle, isCyber }: {
+  title: string; description: string; enabled: boolean
+  loading: boolean; onToggle: (v: boolean) => void; isCyber: boolean
+}) {
+  return (
+    <div className="flex items-start justify-between gap-4">
+      <div className="flex-1">
+        <p className="text-sm font-semibold">{title}</p>
+        <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
+      </div>
+      <button
+        onClick={() => onToggle(!enabled)}
+        disabled={loading}
+        className="shrink-0 mt-0.5"
+      >
+        {loading
+          ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          : enabled
+            ? <ToggleRight className={cn('h-6 w-6', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500')} />
+            : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
+      </button>
     </div>
   )
 }

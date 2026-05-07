@@ -12,11 +12,27 @@ import (
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 type Status struct {
-	Running         bool     `json:"running"`
-	Version         string   `json:"version"`
-	DNSAddresses    []string `json:"dns_addresses"`
-	DNSPort         int      `json:"dns_port"`
-	QueryLogEnabled bool     `json:"querylog_enabled"`
+	Running           bool     `json:"running"`
+	Version           string   `json:"version"`
+	DNSAddresses      []string `json:"dns_addresses"`
+	DNSPort           int      `json:"dns_port"`
+	QueryLogEnabled   bool     `json:"querylog_enabled"`
+	ProtectionEnabled bool     `json:"protection_enabled"`
+}
+
+type SafeSearchSettings struct {
+	Enabled    bool `json:"enabled"`
+	Bing       bool `json:"bing"`
+	DuckDuckGo bool `json:"duckduckgo"`
+	Ecosia     bool `json:"ecosia"`
+	Google     bool `json:"google"`
+	Pixabay    bool `json:"pixabay"`
+	Yandex     bool `json:"yandex"`
+	YouTube    bool `json:"youtube"`
+}
+
+type EnabledStatus struct {
+	Enabled bool `json:"enabled"`
 }
 
 type Stats struct {
@@ -236,4 +252,41 @@ func (c *Client) AddDNSRewrite(domain, answer string) error {
 
 func (c *Client) DeleteDNSRewrite(domain, answer string) error {
 	return c.delete("/control/rewrite/delete", DNSRewrite{Domain: domain, Answer: answer})
+}
+
+func (c *Client) SetProtection(enabled bool) error {
+	return c.post("/control/protection", map[string]any{"enabled": enabled, "duration": 0})
+}
+
+func (c *Client) GetSafeBrowsingStatus() (bool, error) {
+	var s EnabledStatus
+	return s.Enabled, c.get("/control/safebrowsing/status", &s)
+}
+
+func (c *Client) SetSafeBrowsing(enabled bool) error {
+	if enabled {
+		return c.post("/control/safebrowsing/enable", nil)
+	}
+	return c.post("/control/safebrowsing/disable", nil)
+}
+
+func (c *Client) GetParentalStatus() (bool, error) {
+	var s EnabledStatus
+	return s.Enabled, c.get("/control/parental/status", &s)
+}
+
+func (c *Client) SetParental(enabled bool) error {
+	if enabled {
+		return c.post("/control/parental/enable", nil)
+	}
+	return c.post("/control/parental/disable", nil)
+}
+
+func (c *Client) GetSafeSearchStatus() (*SafeSearchSettings, error) {
+	var s SafeSearchSettings
+	return &s, c.get("/control/safesearch/status", &s)
+}
+
+func (c *Client) SetSafeSearch(settings SafeSearchSettings) error {
+	return c.post("/control/safesearch/settings", settings)
 }
