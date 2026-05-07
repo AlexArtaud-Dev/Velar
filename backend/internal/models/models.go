@@ -115,14 +115,22 @@ type SlaveToken struct {
 
 // RemoteInstance represents a registered slave node on the master instance.
 // The full vs_ token is AES-encrypted at rest; only the prefix is shown in the UI.
+// AdGuard credentials are stored encrypted; AdguardEnabled signals whether AdGuard
+// is configured on this slave and ready to proxy.
 type RemoteInstance struct {
-	ID             uint       `gorm:"primaryKey" json:"id"`
-	Name           string     `gorm:"not null" json:"name"`
-	URL            string     `gorm:"not null" json:"url"`
-	TokenEncrypted string     `gorm:"not null;default:''" json:"-"`
-	TokenPrefix    string     `gorm:"not null" json:"token_prefix"`
-	LastSeenAt     *time.Time `json:"last_seen_at"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ID                   uint       `gorm:"primaryKey" json:"id"`
+	Name                 string     `gorm:"not null" json:"name"`
+	URL                  string     `gorm:"not null" json:"url"`
+	TokenEncrypted       string     `gorm:"not null;default:''" json:"-"`
+	TokenPrefix          string     `gorm:"not null" json:"token_prefix"`
+	LastSeenAt           *time.Time `json:"last_seen_at"`
+	// AdGuard credentials for this slave (optional; empty = no AdGuard configured)
+	AdguardURL           string     `gorm:"default:''" json:"adguard_url"`
+	AdguardUserEncrypted string     `gorm:"default:''" json:"-"`
+	AdguardPassEncrypted string     `gorm:"default:''" json:"-"`
+	AdguardEnabled       bool       `gorm:"default:false" json:"adguard_enabled"`
+	AdguardSyncEnabled   bool       `gorm:"default:false" json:"adguard_sync_enabled"`
+	CreatedAt            time.Time  `json:"created_at"`
 }
 
 // AuditLog records admin-initiated mutations for lightweight change tracking.

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/ddns"
 	nftquota "github.com/AlexArtaud-Dev/velar/backend/internal/services/nftquota"
 	wgsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/wireguard"
@@ -23,7 +24,7 @@ const (
 
 // Start registers all background jobs and begins the scheduler.
 // It should be called once at application startup.
-func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service) {
+func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service, ag *adguard.Client) {
 	c := cron.New()
 
 	// Peer expiry — disable peers that have passed their expires_at date.
@@ -50,6 +51,11 @@ func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service) {
 
 	// Quota enforcement — detect nftables-exceeded quotas, update DB, send emails.
 	c.AddFunc("@every 15s", func() { checkQuotas(wg, nft) })
+
+	// AdGuard sync — push master config to slaves that have sync enabled.
+	if ag != nil {
+		c.AddFunc("@every 5m", func() { syncAllAdguardSlaves(ag) })
+	}
 
 	c.Start()
 	slog.Info("background jobs started")

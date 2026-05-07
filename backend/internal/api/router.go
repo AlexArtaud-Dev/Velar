@@ -54,7 +54,7 @@ func NewRouter(
 
 	// Public endpoints
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
-	instanceHandler := handlers.NewInstanceHandler()
+	instanceHandler := handlers.NewInstanceHandler(ag)
 	r.GET("/dl/s/:instanceId/:token", instanceHandler.DownloadSlaveConfig)
 	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
 	r.GET("/api/v1/public/client/s/:instanceId/:token", instanceHandler.GetSlaveClientPortal)
@@ -125,6 +125,32 @@ func NewRouter(
 			settings.GET("/notifications", settingsHandler.GetNotificationStatus)
 		}
 
+		agHandler := handlers.NewAdguardHandler(ag)
+		agGroup := api.Group("/adguard")
+		{
+			agGroup.GET("/status", agHandler.GetStatus)
+			agGroup.GET("/stats", agHandler.GetStats)
+			agGroup.POST("/protection", agHandler.SetProtection)
+			agGroup.GET("/filtering", agHandler.GetFilteringStatus)
+			agGroup.PUT("/filtering/config", agHandler.SetFilteringConfig)
+			agGroup.POST("/filtering/add", agHandler.AddFilter)
+			agGroup.POST("/filtering/remove", agHandler.RemoveFilter)
+			agGroup.POST("/filtering/refresh", agHandler.RefreshFilters)
+			agGroup.GET("/rules", agHandler.GetUserRules)
+			agGroup.PUT("/rules", agHandler.SetUserRules)
+			agGroup.GET("/rewrites", agHandler.GetRewrites)
+			agGroup.POST("/rewrites", agHandler.AddRewrite)
+			agGroup.DELETE("/rewrites", agHandler.DeleteRewrite)
+			agGroup.GET("/safebrowsing", agHandler.GetSafeBrowsingStatus)
+			agGroup.PUT("/safebrowsing", agHandler.SetSafeBrowsing)
+			agGroup.GET("/parental", agHandler.GetParentalStatus)
+			agGroup.PUT("/parental", agHandler.SetParental)
+			agGroup.GET("/safesearch", agHandler.GetSafeSearchStatus)
+			agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
+			agGroup.GET("/services", agHandler.GetServices)
+			agGroup.PUT("/services", agHandler.SetServices)
+		}
+
 		adminHandler := handlers.NewAdminHandler(wg)
 		backupHandler := handlers.NewBackupHandler(wg)
 		admin := api.Group("/admin")
@@ -156,9 +182,14 @@ func NewRouter(
 		{
 			instances.GET("", instanceHandler.List)
 			instances.POST("", instanceHandler.Register)
+			instances.PUT("/:id", instanceHandler.Update)
 			instances.DELETE("/:id", instanceHandler.Delete)
 			instances.GET("/:id/ping", instanceHandler.Ping)
 			instances.POST("/:id/proxy", proxyRL.Middleware(), instanceHandler.Proxy)
+			instances.PUT("/:id/adguard", instanceHandler.UpdateAdguardCredentials)
+			instances.PATCH("/:id/adguard/sync", instanceHandler.ToggleAdguardSync)
+			instances.POST("/:id/adguard/sync", instanceHandler.TriggerAdguardSync)
+			instances.POST("/:id/adguard/proxy", proxyRL.Middleware(), instanceHandler.ProxyAdguard)
 			instances.POST("/:id/clients/:clientId/send-config", instanceHandler.SendSlaveClientConfig)
 			instances.POST("/:id/clients/notify", instanceHandler.NotifySlaveClient)
 		}
@@ -234,6 +265,31 @@ func buildSlaveRoutes(
 	{
 		settings.GET("/public-ip", settingsHandler.GetPublicIP)
 		settings.GET("/adguard", settingsHandler.GetAdguardStatus)
+	}
+
+	agHandler := handlers.NewAdguardHandler(ag)
+	agGroup := slave.Group("/adguard")
+	{
+		agGroup.GET("/status", agHandler.GetStatus)
+		agGroup.GET("/stats", agHandler.GetStats)
+		agGroup.GET("/filtering", agHandler.GetFilteringStatus)
+		agGroup.PUT("/filtering/config", agHandler.SetFilteringConfig)
+		agGroup.POST("/filtering/add", agHandler.AddFilter)
+		agGroup.POST("/filtering/remove", agHandler.RemoveFilter)
+		agGroup.POST("/filtering/refresh", agHandler.RefreshFilters)
+		agGroup.GET("/rules", agHandler.GetUserRules)
+		agGroup.PUT("/rules", agHandler.SetUserRules)
+		agGroup.GET("/rewrites", agHandler.GetRewrites)
+		agGroup.POST("/rewrites", agHandler.AddRewrite)
+		agGroup.DELETE("/rewrites", agHandler.DeleteRewrite)
+		agGroup.GET("/safebrowsing", agHandler.GetSafeBrowsingStatus)
+		agGroup.PUT("/safebrowsing", agHandler.SetSafeBrowsing)
+		agGroup.GET("/parental", agHandler.GetParentalStatus)
+		agGroup.PUT("/parental", agHandler.SetParental)
+		agGroup.GET("/safesearch", agHandler.GetSafeSearchStatus)
+		agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
+		agGroup.GET("/services", agHandler.GetServices)
+		agGroup.PUT("/services", agHandler.SetServices)
 	}
 
 	slave.GET("/metrics", handlers.GetMetrics)

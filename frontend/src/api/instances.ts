@@ -6,6 +6,9 @@ export interface RemoteInstance {
   url: string
   token_prefix: string
   last_seen_at: string | null
+  adguard_url: string
+  adguard_enabled: boolean
+  adguard_sync_enabled: boolean
   created_at: string
 }
 
@@ -39,6 +42,27 @@ export function listInstances(): Promise<RemoteInstance[]> {
 
 export function registerInstance(name: string, url: string, token: string): Promise<RemoteInstance> {
   return api.post('/instances', { name, url, token }).then((r) => r.data)
+}
+
+export function updateInstance(id: number, name: string, url: string, token?: string): Promise<RemoteInstance> {
+  return api.put(`/instances/${id}`, { name, url, token: token ?? '' }).then((r) => r.data)
+}
+
+export function updateAdguardCredentials(
+  id: number,
+  adguard_url: string,
+  adguard_user: string,
+  adguard_pass: string,
+): Promise<{ message: string }> {
+  return api.put(`/instances/${id}/adguard`, { adguard_url, adguard_user, adguard_pass }).then((r) => r.data)
+}
+
+export function toggleAdguardSync(id: number, enabled: boolean): Promise<{ adguard_sync_enabled: boolean }> {
+  return api.patch(`/instances/${id}/adguard/sync`, { enabled }).then((r) => r.data)
+}
+
+export function triggerAdguardSync(id: number): Promise<{ message: string }> {
+  return api.post(`/instances/${id}/adguard/sync`).then((r) => r.data)
 }
 
 export function deleteInstance(id: number): Promise<void> {

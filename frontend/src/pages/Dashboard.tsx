@@ -1,11 +1,12 @@
 import { useQuery, useQueries } from '@tanstack/react-query'
-import { Network, Users, ArrowDown, ArrowUp, Wifi, WifiOff, TrendingUp, Activity, Server } from 'lucide-react'
+import { Network, Users, ArrowDown, ArrowUp, Wifi, WifiOff, TrendingUp, Activity, Server, Shield } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { listInterfaces } from '@/api/interfaces'
 import { getPublicIP } from '@/api/settings'
 import { getDashboardStats, getDashboardSnapshots, type DashboardStats, type SnapshotPoint } from '@/api/dashboard'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
+import { getStats as getAgStats, getStatus as getAgStatus, type AdguardStats, type AdguardStatus } from '@/api/adguard'
 import { useWebSocket, type StatsPayload } from '@/hooks/useWebSocket'
 import { useThemeStore } from '@/stores/theme'
 import { formatBytes, formatBytesShort, timeAgo } from '@/lib/utils'
@@ -98,6 +99,49 @@ export default function Dashboard() {
   const slaveTx24h = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_24h.tx ?? 0), 0)
   const slaveRx7d  = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_7d.rx ?? 0), 0)
   const slaveTx7d  = slaveDashResults.reduce((sum, r) => sum + (r.data?.traffic_7d.tx ?? 0), 0)
+
+  // AdGuard aggregate — master + adguard-enabled slaves
+  const agSlaves = instances.filter((i) => i.adguard_enabled)
+  const { data: masterAgStats } = useQuery({
+    queryKey: ['adguard-stats', null],
+    queryFn: () => getAgStats(null),
+    retry: false,
+    refetchInterval: 30_000,
+  })
+  const { data: masterAgStatus } = useQuery({
+    queryKey: ['adguard-status', null],
+    queryFn: () => getAgStatus(null),
+    retry: false,
+    refetchInterval: 30_000,
+  })
+  const slaveAgStatsResults = useQueries({
+    queries: agSlaves.map((inst) => ({
+      queryKey: ['adguard-stats', inst.id] as const,
+      queryFn: () => getAgStats(inst.id),
+      retry: false,
+      refetchInterval: 30_000,
+    })),
+  })
+  const slaveAgStatusResults = useQueries({
+    queries: agSlaves.map((inst) => ({
+      queryKey: ['adguard-status', inst.id] as const,
+      queryFn: () => getAgStatus(inst.id),
+      retry: false,
+      refetchInterval: 30_000,
+    })),
+  })
+
+  const agNodes: { name: string; stats: AdguardStats | undefined; status: AdguardStatus | undefined }[] = [
+    { name: 'Master', stats: masterAgStats, status: masterAgStatus },
+    ...agSlaves.map((inst, i) => ({
+      name: inst.name,
+      stats: slaveAgStatsResults[i]?.data,
+      status: slaveAgStatusResults[i]?.data,
+    })),
+  ].filter((n) => n.stats !== undefined || n.status !== undefined)
+
+  const agTotalQueries = agNodes.reduce((s, n) => s + (n.stats?.num_dns_queries ?? 0), 0)
+  const agTotalBlocked = agNodes.reduce((s, n) => s + (n.stats?.num_blocked_filtering ?? 0), 0)
 
   const slaveConnectedPeers = slaveStatsList.reduce(
     (sum, s) =>
@@ -524,6 +568,102 @@ export default function Dashboard() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AdGuard aggregate */}
+      {agNodes.length > 0 && (
+        <Card className={cardClass}>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Shield className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-blue-500')} />
+                <div>
+                  <CardTitle className="text-base">AdGuard Home</CardTitle>
+                  <CardDescription>
+                    DNS stats — last 24 h{agNodes.length > 1 ? ` · ${agNodes.length} instances` : ''}
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-4 text-right">
+                <div>
+                  <p className="text-xs text-muted-foreground">Total queries</p>
+                  <p className="text-lg font-bold tabular-nums">{agTotalQueries.toLocaleString()}</p>
+                </div>
+                <div>
+                  <p className="text-xs text-muted-foreground">Blocked</p>
+                  <p className={cn(
+                    'text-lg font-bold tabular-nums',
+                    agTotalBlocked > 0 ? (isCyber ? 'text-[hsl(180,100%,60%)]' : 'text-blue-500') : '',
+                  )}>
+                    {agTotalBlocked.toLocaleString()}
+                  </p>
+                </div>
+                {agTotalQueries > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Block rate</p>
+                    <p className="text-lg font-bold tabular-nums text-muted-foreground">
+                      {Math.round(agTotalBlocked / agTotalQueries * 100)}%
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {agNodes.length > 1 && (
+            <CardContent>
+              <div className="space-y-1">
+                {agNodes.map((node) => {
+                  const pct = node.stats && node.stats.num_dns_queries > 0
+                    ? Math.round(node.stats.num_blocked_filtering / node.stats.num_dns_queries * 100)
+                    : 0
+                  const isUp = node.status?.running ?? false
+                  return (
+                    <div key={node.name} className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-[var(--radius)] border text-sm',
+                      isCyber ? 'border-[rgba(0,255,255,0.1)] bg-[rgba(0,255,255,0.02)]' : 'border-border bg-muted/20',
+                    )}>
+                      <span className={cn(
+                        'h-2 w-2 rounded-full shrink-0',
+                        isUp
+                          ? isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500'
+                          : 'bg-muted-foreground/30',
+                      )} />
+                      <span className="font-medium flex-1 truncate">{node.name}</span>
+                      {node.stats ? (
+                        <>
+                          <span className="text-xs text-muted-foreground tabular-nums hidden sm:inline">
+                            {node.stats.num_dns_queries.toLocaleString()} queries
+                          </span>
+                          <span className={cn(
+                            'text-xs font-medium tabular-nums w-24 text-right',
+                            node.stats.num_blocked_filtering > 0
+                              ? isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-blue-500'
+                              : 'text-muted-foreground',
+                          )}>
+                            {node.stats.num_blocked_filtering.toLocaleString()} blocked
+                          </span>
+                          <span className={cn(
+                            'text-xs tabular-nums w-10 text-right font-medium',
+                            pct > 0
+                              ? isCyber ? 'text-[hsl(180,60%,55%)]' : 'text-muted-foreground'
+                              : 'text-muted-foreground/50',
+                          )}>
+                            {pct}%
+                          </span>
+                          <span className="text-[11px] text-muted-foreground hidden sm:inline tabular-nums w-16 text-right">
+                            {(node.stats.avg_processing_time * 1000).toFixed(1)} ms
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">No data</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
 
       {/* Connected peers — local + slave */}
       {anyConnected && (

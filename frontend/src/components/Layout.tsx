@@ -1,8 +1,9 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Outlet, NavLink, useNavigate } from 'react-router-dom'
 import {
   LayoutDashboard, Network, Users, Settings, LogOut,
   Shield, Wifi, WifiOff, Key, ChevronDown, Check, Server, ClipboardList,
+  MoreHorizontal, X,
 } from 'lucide-react'
 import { useAuthStore } from '@/stores/auth'
 import { useThemeStore, THEMES, type Theme } from '@/stores/theme'
@@ -39,6 +40,7 @@ const navGroups: NavGroup[] = [
     label: 'Federation',
     items: [
       { to: '/instances', label: 'Instances', icon: Server, end: false },
+      { to: '/adguard',   label: 'AdGuard',   icon: Shield, end: false },
     ],
   },
   {
@@ -56,11 +58,13 @@ const navGroups: NavGroup[] = [
   },
 ]
 
-// Flat list (all items) used for mobile bottom nav — limit to 5 core items
-// to avoid cramming 7 icons into a small bar.
 const navItems = navGroups.flatMap((g) => g.items)
-const mobileNavItems = navItems.filter((i) =>
-  ['/', '/interfaces', '/clients', '/instances', '/settings'].includes(i.to),
+// Primary 4 items always in the bar; the rest go into "More"
+const mobilePrimaryItems = navItems.filter((i) =>
+  ['/', '/interfaces', '/clients', '/adguard'].includes(i.to),
+)
+const mobileMoreItems = navItems.filter((i) =>
+  !['/', '/interfaces', '/clients', '/adguard'].includes(i.to),
 )
 
 const THEME_META: Record<Theme, { label: string; emoji: string; dot: string }> = {
@@ -177,6 +181,7 @@ export default function Layout() {
   }
 
   const isCyber = theme === 'cyberpunk'
+  const [moreOpen, setMoreOpen] = useState(false)
 
   return (
     <div className="flex h-screen bg-background">
@@ -316,11 +321,12 @@ export default function Layout() {
           'lg:hidden fixed bottom-0 inset-x-0 z-40 flex bg-background border-t border-border',
           isCyber && 'border-t-[rgba(0,255,255,0.15)]',
         )}>
-          {mobileNavItems.map(({ to, label, icon: Icon, end }) => (
+          {mobilePrimaryItems.map(({ to, label, icon: Icon, end }) => (
             <NavLink
               key={to}
               to={to}
               end={end}
+              onClick={() => setMoreOpen(false)}
               className={({ isActive }) =>
                 cn(
                   'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
@@ -338,7 +344,74 @@ export default function Layout() {
               )}
             </NavLink>
           ))}
+
+          {/* More button */}
+          <button
+            onClick={() => setMoreOpen((o) => !o)}
+            className={cn(
+              'flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+              moreOpen ? 'text-foreground' : 'text-muted-foreground',
+            )}
+          >
+            <span className={cn('p-1 rounded-lg transition-colors', moreOpen ? 'bg-accent' : '')}>
+              {moreOpen ? <X className="h-5 w-5" /> : <MoreHorizontal className="h-5 w-5" />}
+            </span>
+            More
+          </button>
         </nav>
+
+        {/* ── More drawer ── */}
+        {moreOpen && (
+          <>
+            {/* Backdrop */}
+            <div
+              className="lg:hidden fixed inset-0 z-30 bg-black/30"
+              onClick={() => setMoreOpen(false)}
+            />
+            {/* Sheet */}
+            <div className={cn(
+              'lg:hidden fixed bottom-14 inset-x-0 z-40 rounded-t-2xl border-t border-x border-border bg-background pb-2 shadow-xl',
+              isCyber && 'border-[rgba(0,255,255,0.15)] bg-[rgba(7,12,23,0.97)]',
+            )}>
+              <div className={cn(
+                'px-4 pt-3 pb-2 text-[10px] font-semibold uppercase tracking-widest',
+                isCyber ? 'text-[hsl(180,50%,45%)]' : 'text-muted-foreground',
+              )}>
+                More
+              </div>
+              {mobileMoreItems.map(({ to, label, icon: Icon, end }) => (
+                <NavLink
+                  key={to}
+                  to={to}
+                  end={end}
+                  onClick={() => setMoreOpen(false)}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex items-center gap-3 px-5 py-3 text-sm font-medium transition-colors',
+                      isActive
+                        ? isCyber ? 'text-[hsl(180,80%,70%)]' : 'text-foreground'
+                        : isCyber ? 'text-foreground/70 hover:text-[hsl(180,60%,75%)]' : 'text-muted-foreground hover:text-foreground',
+                    )
+                  }
+                >
+                  {({ isActive }) => (
+                    <>
+                      <span className={cn(
+                        'p-1.5 rounded-lg',
+                        isActive
+                          ? isCyber ? 'bg-[rgba(0,255,255,0.1)]' : 'bg-accent'
+                          : 'bg-muted',
+                      )}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      {label}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
+          </>
+        )}
 
       </div>
     </div>

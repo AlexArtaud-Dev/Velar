@@ -13,15 +13,19 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/jobs"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	"github.com/gin-gonic/gin"
 )
 
 // InstanceHandler manages remote slave instances from the master.
-type InstanceHandler struct{}
+type InstanceHandler struct {
+	ag *adguard.Client
+}
 
-func NewInstanceHandler() *InstanceHandler { return &InstanceHandler{} }
+func NewInstanceHandler(ag *adguard.Client) *InstanceHandler { return &InstanceHandler{ag: ag} }
 
 // registerInstanceRequest is the JSON body for POST /api/v1/instances.
 type registerInstanceRequest struct {
@@ -92,6 +96,65 @@ func (h *InstanceHandler) Register(c *gin.Context) {
 		fmt.Sprintf("url=%s token_prefix=%s", instance.URL, instance.TokenPrefix))
 
 	c.JSON(http.StatusCreated, instance)
+}
+
+// updateInstanceRequest is the JSON body for PUT /api/v1/instances/:id.
+// Token is optional — omit or leave blank to keep the existing token.
+type updateInstanceRequest struct {
+	Name  string `json:"name" binding:"required"`
+	URL   string `json:"url" binding:"required"`
+	Token string `json:"token"` // optional — blank = keep existing
+}
+
+// Update edits name, URL and optionally the slave token for a registered instance.
+//
+// Route: PUT /api/v1/instances/:id
+func (h *InstanceHandler) Update(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req updateInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	updates := map[string]any{
+		"name": req.Name,
+		"url":  strings.TrimRight(req.URL, "/"),
+	}
+
+	if req.Token != "" {
+		if !strings.HasPrefix(req.Token, "vs_") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "token must start with vs_"})
+			return
+		}
+		encToken, err := auth.Encrypt(req.Token, config.C.AppSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "token encryption failed"})
+			return
+		}
+		updates["token_encrypted"] = encToken
+		updates["token_prefix"] = req.Token[:8]
+	}
+
+	if err := database.DB.Model(&instance).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Reload to return the full updated record
+	database.DB.First(&instance, id)
+
+	auditLog(c, "instance.update", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("url=%s token_changed=%v", instance.URL, req.Token != ""))
+
+	c.JSON(http.StatusOK, instance)
 }
 
 // Delete removes a slave instance from the master.
@@ -557,6 +620,202 @@ func (h *InstanceHandler) GetSlaveClientPortal(c *gin.Context) {
 
 	body, _ := io.ReadAll(resp.Body)
 	c.Data(resp.StatusCode, "application/json", body)
+}
+
+// updateAdguardRequest is the body for PUT /api/v1/instances/:id/adguard.
+type updateAdguardRequest struct {
+	AdguardURL  string `json:"adguard_url" binding:"required"`
+	AdguardUser string `json:"adguard_user" binding:"required"`
+	AdguardPass string `json:"adguard_pass" binding:"required"`
+}
+
+// UpdateAdguardCredentials stores (or updates) AdGuard credentials for a slave.
+// Credentials are encrypted at rest using the master's APP_SECRET.
+//
+// Route: PUT /api/v1/instances/:id/adguard
+func (h *InstanceHandler) UpdateAdguardCredentials(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req updateAdguardRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	encUser, err := auth.Encrypt(req.AdguardUser, config.C.AppSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+		return
+	}
+	encPass, err := auth.Encrypt(req.AdguardPass, config.C.AppSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "encryption failed"})
+		return
+	}
+
+	if err := database.DB.Model(&instance).Updates(map[string]any{
+		"adguard_url":            req.AdguardURL,
+		"adguard_user_encrypted": encUser,
+		"adguard_pass_encrypted": encPass,
+		"adguard_enabled":        true,
+	}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	auditLog(c, "instance.adguard_configure", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("adguard_url=%s user=%s", req.AdguardURL, req.AdguardUser))
+
+	c.JSON(http.StatusOK, gin.H{"message": "adguard credentials saved"})
+}
+
+// ProxyAdguard forwards an AdGuard management call to a slave via its Velar API.
+// The slave's Velar API then calls its local AdGuard — the master never contacts
+// AdGuard directly on a slave node.
+//
+// Route: POST /api/v1/instances/:id/adguard/proxy
+func (h *InstanceHandler) ProxyAdguard(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req instanceProxyRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	if !instance.AdguardEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "adguard not configured for this instance"})
+		return
+	}
+
+	token, err := auth.Decrypt(instance.TokenEncrypted, config.C.AppSecret)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "token decryption failed"})
+		return
+	}
+
+	// Route through the slave's Velar /api/v1/adguard/* endpoints
+	path := req.Path
+	if !strings.HasPrefix(path, "/api/v1/adguard") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "path must start with /api/v1/adguard"})
+		return
+	}
+
+	targetURL := instance.URL + path
+	var bodyReader io.Reader
+	if len(req.Body) > 0 && string(req.Body) != "null" {
+		bodyReader = bytes.NewReader(req.Body)
+	}
+
+	method := strings.ToUpper(req.Method)
+	httpReq, err := http.NewRequest(method, targetURL, bodyReader)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "request build failed"})
+		return
+	}
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	if bodyReader != nil {
+		httpReq.Header.Set("Content-Type", "application/json")
+	}
+
+	hc := &http.Client{Timeout: 15 * time.Second}
+	resp, err := hc.Do(httpReq)
+	if err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": "slave unreachable: " + err.Error()})
+		return
+	}
+	defer resp.Body.Close()
+
+	now := time.Now()
+	database.DB.Model(&instance).Update("last_seen_at", &now)
+
+	respBody, _ := io.ReadAll(resp.Body)
+	ct := resp.Header.Get("Content-Type")
+
+	if method != http.MethodGet && resp.StatusCode < 400 {
+		auditLog(c, "slave.adguard"+strings.TrimPrefix(path, "/api/v1/adguard"), "instance", instance.ID, instance.Name,
+			fmt.Sprintf("slave=%s method=%s path=%s", instance.Name, method, path))
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":       resp.StatusCode,
+		"content_type": ct,
+		"body":         string(respBody),
+	})
+}
+
+// toggleAdguardSyncRequest is the body for PATCH /api/v1/instances/:id/adguard/sync.
+type toggleAdguardSyncRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// ToggleAdguardSync enables or disables automatic AdGuard config sync for a slave.
+//
+// Route: PATCH /api/v1/instances/:id/adguard/sync
+func (h *InstanceHandler) ToggleAdguardSync(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req toggleAdguardSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+	if !instance.AdguardEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "adguard not configured for this instance"})
+		return
+	}
+
+	if err := database.DB.Model(&instance).Update("adguard_sync_enabled", req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	action := "instance.adguard_sync_enabled"
+	if !req.Enabled {
+		action = "instance.adguard_sync_disabled"
+	}
+	auditLog(c, action, "instance", instance.ID, instance.Name, "")
+	c.JSON(http.StatusOK, gin.H{"adguard_sync_enabled": req.Enabled})
+}
+
+// TriggerAdguardSync immediately syncs master AdGuard config to a specific slave.
+//
+// Route: POST /api/v1/instances/:id/adguard/sync
+func (h *InstanceHandler) TriggerAdguardSync(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	if h.ag == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "adguard not configured on master"})
+		return
+	}
+
+	if err := jobs.SyncInstance(uint(id), h.ag); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	database.DB.First(&instance, id)
+	auditLog(c, "instance.adguard_sync_manual", "instance", uint(id), instance.Name, "")
+	c.JSON(http.StatusOK, gin.H{"message": "synced"})
 }
 
 // DownloadSlaveConfig proxies a one-time config download from a slave instance
