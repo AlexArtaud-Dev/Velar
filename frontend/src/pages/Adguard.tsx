@@ -47,10 +47,12 @@ export default function Adguard() {
   })
 
   const enabledSlaves = instances.filter((i) => i.adguard_enabled)
+  const selectedInstance = source !== null ? instances.find((i) => i.id === source) : null
+  const isSynced = selectedInstance?.adguard_sync_enabled === true
   const sourceName =
     source === null
       ? 'Master'
-      : instances.find((i) => i.id === source)?.name ?? `Instance #${source}`
+      : selectedInstance?.name ?? `Instance #${source}`
 
   const cardClass = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
   const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
@@ -119,12 +121,29 @@ export default function Adguard() {
         ))}
       </div>
 
+      {/* Sync banner */}
+      {isSynced && (
+        <div className={cn(
+          'flex items-center gap-2.5 px-4 py-2.5 rounded-lg border text-sm',
+          isCyber
+            ? 'bg-[rgba(0,255,255,0.06)] border-[rgba(0,255,255,0.2)] text-[hsl(180,60%,70%)]'
+            : 'bg-muted border-border text-muted-foreground',
+        )}>
+          <Shield className="h-4 w-4 shrink-0" />
+          <span>
+            <span className="font-semibold text-foreground">{sourceName}</span> is synced with master — settings are managed automatically and read-only here.
+          </span>
+        </div>
+      )}
+
       {/* Tab content */}
-      {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
-      {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
-      {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
-      {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
-      {tab === 'rewrites'   && <RewritesTab    source={source} cardClass={cardClass} borderClass={borderClass} />}
+      <div className={cn(isSynced && 'opacity-50 pointer-events-none select-none')}>
+        {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
+        {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+        {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+        {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
+        {tab === 'rewrites'   && <RewritesTab    source={source} cardClass={cardClass} borderClass={borderClass} />}
+      </div>
     </div>
   )
 }

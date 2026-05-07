@@ -555,7 +555,12 @@ function InstancePanel({
                     <span className="text-[11px] text-green-500">Synced</span>
                   )}
                   {syncNowMut.isError && (
-                    <span className="text-[11px] text-destructive">Failed</span>
+                    <span
+                      className="text-[11px] text-destructive cursor-help"
+                      title={(syncNowMut.error as Error)?.message}
+                    >
+                      Failed — {(syncNowMut.error as Error)?.message}
+                    </span>
                   )}
                   <Button
                     size="sm" variant="outline"
