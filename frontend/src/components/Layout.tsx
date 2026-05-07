@@ -39,6 +39,7 @@ const navGroups: NavGroup[] = [
     label: 'Federation',
     items: [
       { to: '/instances', label: 'Instances', icon: Server, end: false },
+      { to: '/adguard',   label: 'AdGuard',   icon: Shield, end: false },
     ],
   },
   {
