@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { refreshToken } from '@/api/auth'
@@ -57,11 +57,64 @@ function AuthInit({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a']
+
 export default function App() {
   const { isAuthenticated, admin } = useAuthStore()
+  const konamiSeq = useRef<string[]>([])
+  const [surrealist, setSurrealist] = useState(false)
+  const [konamiFlash, setKonamiFlash] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      konamiSeq.current = [...konamiSeq.current, e.key].slice(-KONAMI.length)
+      if (konamiSeq.current.join(',') === KONAMI.join(',')) {
+        konamiSeq.current = []
+        setSurrealist((prev) => {
+          const next = !prev
+          if (next) document.documentElement.classList.add('surrealist')
+          else document.documentElement.classList.remove('surrealist')
+          return next
+        })
+        setKonamiFlash(true)
+        setTimeout(() => setKonamiFlash(false), 3200)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <BrowserRouter>
+      {konamiFlash && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 999999,
+          pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            padding: '1.75rem 3rem',
+            borderRadius: '1.5rem',
+            background: 'linear-gradient(135deg, #ff0055, #ff8800, #ffee00, #00ee88, #00aaff, #8800ff, #ff00cc)',
+            backgroundSize: '300% 300%',
+            animation: 'sr-pop 3.2s ease-out forwards, sr-shift 1.8s ease infinite',
+            color: '#fff',
+            fontWeight: 900,
+            fontSize: '2rem',
+            textAlign: 'center',
+            lineHeight: 1.35,
+            letterSpacing: '0.03em',
+            textShadow: '0 2px 10px rgba(0,0,0,0.45)',
+            boxShadow: '0 0 60px rgba(200,0,255,0.55), 0 0 120px rgba(0,180,255,0.3)',
+          }}>
+            {surrealist ? (
+              <><div>🌈 SURREALIST MODE</div><div>ACTIVATED 🦄</div></>
+            ) : (
+              <><div>🌑 REALITY</div><div>RESTORED 🌑</div></>
+            )}
+          </div>
+        </div>
+      )}
       <AuthInit>
         <Routes>
           <Route
