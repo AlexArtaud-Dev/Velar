@@ -294,21 +294,11 @@
   75%       { transform: skewX(2.5deg); }
 }
 
-/* Emoji parade pinned at the top */
-.surrealist body::after {
-  content: '🌈  🦄  ✨  💫  🔮  🎠  🌀  💥  🎆  🍭  🎡  👾  🌈  🦄  ✨  💫';
-  position: fixed;
-  top: 8px;
-  left: 0;
-  right: 0;
-  text-align: center;
-  font-size: 17px;
-  letter-spacing: 6px;
-  pointer-events: none;
-  z-index: 99996;
-  opacity: 0.5;
-  animation: sr-float 9s ease-in-out infinite;
-  filter: drop-shadow(0 0 5px rgba(255, 200, 0, 0.65));
+@keyframes sr-rain-fall {
+  0%   { transform: translateY(-60px) rotate(0deg)   scale(0.8); opacity: 0;   }
+  6%   { opacity: 1; }
+  88%  { opacity: 0.85; }
+  100% { transform: translateY(108vh) rotate(600deg) scale(1.1); opacity: 0;   }
 }
 
 /* Body: full-spectrum rainbow animated background */

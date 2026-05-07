@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { refreshToken } from '@/api/auth'
@@ -57,6 +57,43 @@ function AuthInit({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+const RAIN_EMOJIS = ['🌈','🦄','✨','💫','🔮','🎠','🌀','💥','🎆','🍭','🎡','👾','🌟','🎇','🎉','🌸','💎','🍄','🎊','🏳️‍🌈','⚡','🫧','🎐','🪩','🌊']
+
+function RainbowRain() {
+  const drops = useMemo(() =>
+    Array.from({ length: 55 }, (_, i) => ({
+      id: i,
+      emoji: RAIN_EMOJIS[Math.floor(Math.random() * RAIN_EMOJIS.length)],
+      left: Math.random() * 100,
+      delay: -(Math.random() * 9),
+      duration: 2.8 + Math.random() * 4,
+      size: 15 + Math.random() * 20,
+    }))
+  , [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99994, overflow: 'hidden' }}>
+      {drops.map((d) => (
+        <span
+          key={d.id}
+          style={{
+            position: 'absolute',
+            left: `${d.left}%`,
+            top: 0,
+            fontSize: `${d.size}px`,
+            lineHeight: 1,
+            userSelect: 'none',
+            animation: `sr-rain-fall ${d.duration}s ${d.delay}s linear infinite`,
+            filter: 'drop-shadow(0 0 4px rgba(255,200,0,0.5))',
+          }}
+        >
+          {d.emoji}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a']
 
 export default function App() {
@@ -86,6 +123,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {surrealist && <RainbowRain />}
       {konamiFlash && (
         <div style={{
           position: 'fixed', inset: 0, zIndex: 999999,
