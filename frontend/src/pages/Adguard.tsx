@@ -41,12 +41,12 @@ export default function Adguard() {
   const [source, setSource] = useState<AdguardSource>(null)
   const [tab, setTab] = useState<Tab>('overview')
 
-  const { data: instances = [] } = useInstancesQuery({
+  const { data: instances = [] } = useQuery({
     queryKey: ['instances'],
     queryFn: listInstances,
   })
 
-  const enabledSlaves = instances.filter((i: { adguard_enabled: boolean }) => i.adguard_enabled)
+  const enabledSlaves = instances.filter((i) => i.adguard_enabled)
   const sourceName =
     source === null
       ? 'Master'
