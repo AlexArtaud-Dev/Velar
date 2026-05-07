@@ -54,7 +54,7 @@ export default function Instances() {
   const showRegister = showAdd || instances.length === 0
 
   return (
-    <div className="flex h-[calc(100vh-57px)]">
+    <div className="flex h-full">
 
       {/* ── Sidebar ── */}
       <aside className={cn(
