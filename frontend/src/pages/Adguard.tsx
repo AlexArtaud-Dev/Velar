@@ -761,6 +761,7 @@ function ServicesTab({ source, isCyber, borderClass }: {
   const qc = useQueryClient()
   const qk = ['adguard-services', source]
   const [search, setSearch] = useState('')
+  const [openCats, setOpenCats] = useState<Set<string>>(new Set())
 
   const { data, isLoading, isError } = useQuery({
     queryKey: qk,
@@ -837,48 +838,116 @@ function ServicesTab({ source, isCyber, borderClass }: {
       </div>
 
       {/* Categories */}
-      {categorised.map((cat) => (
-        <div key={cat.id} className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{cat.label}</h3>
-          <div className={cn('rounded-lg border overflow-hidden divide-y', borderClass)}>
-            {cat.services.map((id) => {
-              const svc = serviceMap[id]
-              const isBlocked = blocked.has(id)
-              return (
-                <ServiceRow
-                  key={id}
-                  name={svc.name}
-                  iconSvg={svc.icon_svg}
-                  blocked={isBlocked}
-                  pending={setMut.isPending}
-                  onToggle={() => toggle(id)}
-                  isCyber={isCyber}
-                />
-              )
-            })}
+      {categorised.map((cat) => {
+        const isOpen = search.length > 0 || openCats.has(cat.id)
+        const blockedCount = cat.services.filter((id) => blocked.has(id)).length
+        const toggleCat = () => setOpenCats((prev) => {
+          const next = new Set(prev)
+          if (next.has(cat.id)) next.delete(cat.id)
+          else next.add(cat.id)
+          return next
+        })
+        return (
+          <div key={cat.id} className={cn('rounded-lg border overflow-hidden', borderClass)}>
+            <button
+              onClick={toggleCat}
+              className={cn(
+                'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                isCyber ? 'hover:bg-[rgba(0,255,255,0.04)]' : 'hover:bg-muted/40',
+              )}
+            >
+              <span className="flex-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                {cat.label}
+              </span>
+              {blockedCount > 0 && (
+                <span className={cn(
+                  'text-[10px] font-medium px-1.5 py-0.5 rounded-full',
+                  isCyber
+                    ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,65%)]'
+                    : 'bg-destructive/10 text-destructive',
+                )}>
+                  {blockedCount} blocked
+                </span>
+              )}
+              <ChevronDown className={cn(
+                'h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0',
+                isOpen && 'rotate-180',
+              )} />
+            </button>
+            {isOpen && (
+              <div className={cn('divide-y', borderClass)}>
+                {cat.services.map((id) => {
+                  const svc = serviceMap[id]
+                  return (
+                    <ServiceRow
+                      key={id}
+                      name={svc.name}
+                      iconSvg={svc.icon_svg}
+                      blocked={blocked.has(id)}
+                      pending={setMut.isPending}
+                      onToggle={() => toggle(id)}
+                      isCyber={isCyber}
+                    />
+                  )
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      ))}
+        )
+      })}
 
       {/* Other / uncategorised */}
-      {other.length > 0 && (
-        <div className="space-y-2">
-          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Other</h3>
-          <div className={cn('rounded-lg border overflow-hidden divide-y', borderClass)}>
-            {other.map((svc) => (
-              <ServiceRow
-                key={svc.id}
-                name={svc.name}
-                iconSvg={svc.icon_svg}
-                blocked={blocked.has(svc.id)}
-                pending={setMut.isPending}
-                onToggle={() => toggle(svc.id)}
-                isCyber={isCyber}
-              />
-            ))}
+      {other.length > 0 && (() => {
+        const isOpen = search.length > 0 || openCats.has('__other__')
+        const blockedCount = other.filter((s) => blocked.has(s.id)).length
+        return (
+          <div className={cn('rounded-lg border overflow-hidden', borderClass)}>
+            <button
+              onClick={() => setOpenCats((prev) => {
+                const next = new Set(prev)
+                if (next.has('__other__')) next.delete('__other__')
+                else next.add('__other__')
+                return next
+              })}
+              className={cn(
+                'w-full flex items-center gap-3 px-4 py-3 text-left transition-colors',
+                isCyber ? 'hover:bg-[rgba(0,255,255,0.04)]' : 'hover:bg-muted/40',
+              )}
+            >
+              <span className="flex-1 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Other</span>
+              {blockedCount > 0 && (
+                <span className={cn(
+                  'text-[10px] font-medium px-1.5 py-0.5 rounded-full',
+                  isCyber
+                    ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,65%)]'
+                    : 'bg-destructive/10 text-destructive',
+                )}>
+                  {blockedCount} blocked
+                </span>
+              )}
+              <ChevronDown className={cn(
+                'h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0',
+                isOpen && 'rotate-180',
+              )} />
+            </button>
+            {isOpen && (
+              <div className={cn('divide-y', borderClass)}>
+                {other.map((svc) => (
+                  <ServiceRow
+                    key={svc.id}
+                    name={svc.name}
+                    iconSvg={svc.icon_svg}
+                    blocked={blocked.has(svc.id)}
+                    pending={setMut.isPending}
+                    onToggle={() => toggle(svc.id)}
+                    isCyber={isCyber}
+                  />
+                ))}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {categorised.length === 0 && other.length === 0 && (
         <p className="text-sm text-muted-foreground py-8 text-center">No services found.</p>
