@@ -13,7 +13,19 @@ services:
       - sqlite_data:/data
     env_file:
       - .env.slave
+    depends_on:
+      - adguard
+
+  adguard:
+    image: adguard/adguardhome:latest
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - adguard_work:/opt/adguardhome/work
+      - adguard_conf:/opt/adguardhome/conf
 
 volumes:
   wireguard_configs:
   sqlite_data:
+  adguard_work:
+  adguard_conf:

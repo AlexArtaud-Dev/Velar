@@ -80,11 +80,10 @@ func main() {
 		restoreQuotas(nft)
 	}
 
-	// AdGuard client — not used in slave mode (no AdGuard on slave nodes)
-	var ag *adguard.Client
-	if config.C.VelarMode != "slave" {
-		ag = adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
-	}
+	// AdGuard client — initialised on both master and slave nodes.
+	// On slaves, the handler exposes /api/v1/adguard/* under MasterToken so the
+	// master can proxy all AdGuard management calls through the slave API.
+	ag := adguard.NewClient(config.C.AdguardURL, config.C.AdguardUser, config.C.AdguardPass)
 	ddnsSvc := ddns.NewService()
 
 	// Initial DDNS fetch (best effort)
