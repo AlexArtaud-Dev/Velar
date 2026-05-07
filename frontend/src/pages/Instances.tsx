@@ -4,7 +4,7 @@ import {
   Server, Plus, Trash2, RefreshCw,
   WifiOff, AlertTriangle, Check, Loader2,
   Network, Users, Activity, ChevronRight,
-  Pencil, Shield,
+  Pencil, Shield, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
   listInstances, registerInstance, updateInstance, updateAdguardCredentials,
+  toggleAdguardSync, triggerAdguardSync,
   deleteInstance, pingInstance, proxyToInstance,
   type RemoteInstance,
 } from '@/api/instances'
@@ -327,6 +328,15 @@ function InstancePanel({
     },
   })
 
+  const syncToggleMut = useMutation({
+    mutationFn: (enabled: boolean) => toggleAdguardSync(instanceId, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['instances'] }),
+  })
+
+  const syncNowMut = useMutation({
+    mutationFn: () => triggerAdguardSync(instanceId),
+  })
+
   const health    = pingData?.health
   const reachable = pingData?.reachable
 
@@ -523,13 +533,57 @@ function InstancePanel({
           </div>
         </CardHeader>
         {(instance.adguard_enabled || agOpen) && (
-          <CardContent>
+          <CardContent className="space-y-3">
             {!agOpen && instance.adguard_enabled && (
               <div className="text-xs text-muted-foreground space-y-0.5">
                 <p><span className="font-medium text-foreground">URL:</span> {instance.adguard_url}</p>
                 <p className="opacity-60">Credentials stored encrypted.</p>
               </div>
             )}
+
+            {/* Sync controls — visible when configured and form is closed */}
+            {!agOpen && instance.adguard_enabled && (
+              <div className={cn('flex items-center justify-between pt-2 border-t', borderClass)}>
+                <div>
+                  <p className="text-xs font-medium">Sync with master</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Push master config to this instance every 5 min
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {syncNowMut.isSuccess && (
+                    <span className="text-[11px] text-green-500">Synced</span>
+                  )}
+                  {syncNowMut.isError && (
+                    <span className="text-[11px] text-destructive">Failed</span>
+                  )}
+                  <Button
+                    size="sm" variant="outline"
+                    disabled={syncNowMut.isPending}
+                    onClick={() => syncNowMut.mutate()}
+                    className="h-7 text-xs px-2.5"
+                  >
+                    {syncNowMut.isPending
+                      ? <Loader2 className="h-3 w-3 animate-spin" />
+                      : <RefreshCw className="h-3 w-3" />}
+                    <span className="ml-1.5">Sync now</span>
+                  </Button>
+                  <button
+                    onClick={() => syncToggleMut.mutate(!instance.adguard_sync_enabled)}
+                    disabled={syncToggleMut.isPending}
+                    className="shrink-0"
+                    title={instance.adguard_sync_enabled ? 'Disable auto-sync' : 'Enable auto-sync'}
+                  >
+                    {syncToggleMut.isPending
+                      ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                      : instance.adguard_sync_enabled
+                        ? <ToggleRight className={cn('h-6 w-6', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500')} />
+                        : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {agOpen && (
               <div className="space-y-3">
                 <div className="space-y-1.5">

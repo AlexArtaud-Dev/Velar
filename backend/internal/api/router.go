@@ -54,7 +54,7 @@ func NewRouter(
 
 	// Public endpoints
 	r.GET("/dl/:token", handlers.DownloadConfig(wg))
-	instanceHandler := handlers.NewInstanceHandler()
+	instanceHandler := handlers.NewInstanceHandler(ag)
 	r.GET("/dl/s/:instanceId/:token", instanceHandler.DownloadSlaveConfig)
 	r.GET("/api/v1/public/client/:token", handlers.GetClientPortal)
 	r.GET("/api/v1/public/client/s/:instanceId/:token", instanceHandler.GetSlaveClientPortal)
@@ -185,6 +185,8 @@ func NewRouter(
 			instances.GET("/:id/ping", instanceHandler.Ping)
 			instances.POST("/:id/proxy", proxyRL.Middleware(), instanceHandler.Proxy)
 			instances.PUT("/:id/adguard", instanceHandler.UpdateAdguardCredentials)
+			instances.PATCH("/:id/adguard/sync", instanceHandler.ToggleAdguardSync)
+			instances.POST("/:id/adguard/sync", instanceHandler.TriggerAdguardSync)
 			instances.POST("/:id/adguard/proxy", proxyRL.Middleware(), instanceHandler.ProxyAdguard)
 			instances.POST("/:id/clients/:clientId/send-config", instanceHandler.SendSlaveClientConfig)
 			instances.POST("/:id/clients/notify", instanceHandler.NotifySlaveClient)
@@ -278,6 +280,12 @@ func buildSlaveRoutes(
 		agGroup.GET("/rewrites", agHandler.GetRewrites)
 		agGroup.POST("/rewrites", agHandler.AddRewrite)
 		agGroup.DELETE("/rewrites", agHandler.DeleteRewrite)
+		agGroup.GET("/safebrowsing", agHandler.GetSafeBrowsingStatus)
+		agGroup.PUT("/safebrowsing", agHandler.SetSafeBrowsing)
+		agGroup.GET("/parental", agHandler.GetParentalStatus)
+		agGroup.PUT("/parental", agHandler.SetParental)
+		agGroup.GET("/safesearch", agHandler.GetSafeSearchStatus)
+		agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
 	}
 
 	slave.GET("/metrics", handlers.GetMetrics)

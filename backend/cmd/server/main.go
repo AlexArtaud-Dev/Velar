@@ -95,7 +95,7 @@ func main() {
 	hub := handlers.NewWSHub(wg)
 
 	// Background jobs
-	jobs.Start(wg, nft, ddnsSvc)
+	jobs.Start(wg, nft, ddnsSvc, ag)
 
 	// HTTP router
 	router := api.NewRouter(wg, nft, ag, ddnsSvc, hub)

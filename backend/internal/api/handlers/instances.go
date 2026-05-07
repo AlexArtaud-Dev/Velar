@@ -13,15 +13,19 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/jobs"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/mailer"
 	"github.com/gin-gonic/gin"
 )
 
 // InstanceHandler manages remote slave instances from the master.
-type InstanceHandler struct{}
+type InstanceHandler struct {
+	ag *adguard.Client
+}
 
-func NewInstanceHandler() *InstanceHandler { return &InstanceHandler{} }
+func NewInstanceHandler(ag *adguard.Client) *InstanceHandler { return &InstanceHandler{ag: ag} }
 
 // registerInstanceRequest is the JSON body for POST /api/v1/instances.
 type registerInstanceRequest struct {
@@ -750,6 +754,68 @@ func (h *InstanceHandler) ProxyAdguard(c *gin.Context) {
 		"content_type": ct,
 		"body":         string(respBody),
 	})
+}
+
+// toggleAdguardSyncRequest is the body for PATCH /api/v1/instances/:id/adguard/sync.
+type toggleAdguardSyncRequest struct {
+	Enabled bool `json:"enabled"`
+}
+
+// ToggleAdguardSync enables or disables automatic AdGuard config sync for a slave.
+//
+// Route: PATCH /api/v1/instances/:id/adguard/sync
+func (h *InstanceHandler) ToggleAdguardSync(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req toggleAdguardSyncRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+	if !instance.AdguardEnabled {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "adguard not configured for this instance"})
+		return
+	}
+
+	if err := database.DB.Model(&instance).Update("adguard_sync_enabled", req.Enabled).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	action := "instance.adguard_sync_enabled"
+	if !req.Enabled {
+		action = "instance.adguard_sync_disabled"
+	}
+	auditLog(c, action, "instance", instance.ID, instance.Name, "")
+	c.JSON(http.StatusOK, gin.H{"adguard_sync_enabled": req.Enabled})
+}
+
+// TriggerAdguardSync immediately syncs master AdGuard config to a specific slave.
+//
+// Route: POST /api/v1/instances/:id/adguard/sync
+func (h *InstanceHandler) TriggerAdguardSync(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	if h.ag == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "adguard not configured on master"})
+		return
+	}
+
+	if err := jobs.SyncInstance(uint(id), h.ag); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	database.DB.First(&instance, id)
+	auditLog(c, "instance.adguard_sync_manual", "instance", uint(id), instance.Name, "")
+	c.JSON(http.StatusOK, gin.H{"message": "synced"})
 }
 
 // DownloadSlaveConfig proxies a one-time config download from a slave instance

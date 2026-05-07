@@ -129,6 +129,7 @@ type RemoteInstance struct {
 	AdguardUserEncrypted string     `gorm:"default:''" json:"-"`
 	AdguardPassEncrypted string     `gorm:"default:''" json:"-"`
 	AdguardEnabled       bool       `gorm:"default:false" json:"adguard_enabled"`
+	AdguardSyncEnabled   bool       `gorm:"default:false" json:"adguard_sync_enabled"`
 	CreatedAt            time.Time  `json:"created_at"`
 }
 

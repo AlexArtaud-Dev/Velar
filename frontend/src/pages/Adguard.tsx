@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Shield, RefreshCw, Plus, Trash2, AlertTriangle,
+  Shield, Server, RefreshCw, Plus, Trash2, AlertTriangle,
   Loader2, Check, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import { listInstances } from '@/api/instances'
@@ -67,17 +67,40 @@ export default function Adguard() {
           </div>
         </div>
 
-        {/* Instance selector */}
-        <select
-          value={source === null ? '__master__' : String(source)}
-          onChange={(e) => setSource(e.target.value === '__master__' ? null : Number(e.target.value))}
-          className="h-8 pl-3 pr-8 text-xs rounded-lg bg-muted border border-border text-foreground focus:outline-none focus:ring-1 focus:ring-primary appearance-none cursor-pointer"
-        >
-          <option value="__master__">Master</option>
+        {/* Instance selector — pill buttons */}
+        <div className="flex flex-wrap gap-1.5">
+          <button
+            onClick={() => setSource(null)}
+            className={cn(
+              'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
+              source === null
+                ? isCyber
+                  ? 'bg-[rgba(0,255,255,0.15)] border-[rgba(0,255,255,0.4)] text-[hsl(180,80%,70%)]'
+                  : 'bg-primary border-primary text-primary-foreground'
+                : 'bg-muted border-border text-muted-foreground hover:text-foreground hover:border-primary/40',
+            )}
+          >
+            <Shield className="h-3 w-3" />
+            Master
+          </button>
           {enabledSlaves.map((i) => (
-            <option key={i.id} value={i.id}>{i.name}</option>
+            <button
+              key={i.id}
+              onClick={() => setSource(i.id)}
+              className={cn(
+                'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
+                source === i.id
+                  ? isCyber
+                    ? 'bg-[rgba(0,255,255,0.15)] border-[rgba(0,255,255,0.4)] text-[hsl(180,80%,70%)]'
+                    : 'bg-primary border-primary text-primary-foreground'
+                  : 'bg-muted border-border text-muted-foreground hover:text-foreground hover:border-primary/40',
+              )}
+            >
+              <Server className="h-3 w-3" />
+              {i.name}
+            </button>
           ))}
-        </select>
+        </div>
       </div>
 
       {/* Tabs */}
