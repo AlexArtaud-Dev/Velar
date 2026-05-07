@@ -94,6 +94,65 @@ func (h *InstanceHandler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, instance)
 }
 
+// updateInstanceRequest is the JSON body for PUT /api/v1/instances/:id.
+// Token is optional — omit or leave blank to keep the existing token.
+type updateInstanceRequest struct {
+	Name  string `json:"name" binding:"required"`
+	URL   string `json:"url" binding:"required"`
+	Token string `json:"token"` // optional — blank = keep existing
+}
+
+// Update edits name, URL and optionally the slave token for a registered instance.
+//
+// Route: PUT /api/v1/instances/:id
+func (h *InstanceHandler) Update(c *gin.Context) {
+	id, _ := strconv.ParseUint(c.Param("id"), 10, 64)
+
+	var req updateInstanceRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var instance models.RemoteInstance
+	if err := database.DB.First(&instance, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		return
+	}
+
+	updates := map[string]any{
+		"name": req.Name,
+		"url":  strings.TrimRight(req.URL, "/"),
+	}
+
+	if req.Token != "" {
+		if !strings.HasPrefix(req.Token, "vs_") {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "token must start with vs_"})
+			return
+		}
+		encToken, err := auth.Encrypt(req.Token, config.C.AppSecret)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "token encryption failed"})
+			return
+		}
+		updates["token_encrypted"] = encToken
+		updates["token_prefix"] = req.Token[:8]
+	}
+
+	if err := database.DB.Model(&instance).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Reload to return the full updated record
+	database.DB.First(&instance, id)
+
+	auditLog(c, "instance.update", "instance", instance.ID, instance.Name,
+		fmt.Sprintf("url=%s token_changed=%v", instance.URL, req.Token != ""))
+
+	c.JSON(http.StatusOK, instance)
+}
+
 // Delete removes a slave instance from the master.
 //
 // Route: DELETE /api/v1/instances/:id

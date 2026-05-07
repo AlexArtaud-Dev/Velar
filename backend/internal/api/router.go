@@ -173,6 +173,7 @@ func NewRouter(
 		{
 			instances.GET("", instanceHandler.List)
 			instances.POST("", instanceHandler.Register)
+			instances.PUT("/:id", instanceHandler.Update)
 			instances.DELETE("/:id", instanceHandler.Delete)
 			instances.GET("/:id/ping", instanceHandler.Ping)
 			instances.POST("/:id/proxy", proxyRL.Middleware(), instanceHandler.Proxy)

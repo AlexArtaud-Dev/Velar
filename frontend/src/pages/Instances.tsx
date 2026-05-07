@@ -4,6 +4,7 @@ import {
   Server, Plus, Trash2, RefreshCw,
   WifiOff, AlertTriangle, Check, Loader2,
   Network, Users, Activity, ChevronRight,
+  Pencil, Shield,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -11,7 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
-  listInstances, registerInstance, deleteInstance, pingInstance, proxyToInstance,
+  listInstances, registerInstance, updateInstance, updateAdguardCredentials,
+  deleteInstance, pingInstance, proxyToInstance,
   type RemoteInstance,
 } from '@/api/instances'
 import { useThemeStore } from '@/stores/theme'
@@ -252,8 +254,21 @@ function InstancePanel({
   const isCyber = theme === 'cyberpunk'
   const isApple = theme === 'apple'
   const cardClass = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
+  const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
 
   const [lastChecked, setLastChecked] = useState<Date | null>(null)
+  const [editOpen, setEditOpen]       = useState(false)
+  const [agOpen, setAgOpen]           = useState(false)
+
+  // Edit fields
+  const [editName, setEditName]   = useState(instance.name)
+  const [editUrl, setEditUrl]     = useState(instance.url)
+  const [editToken, setEditToken] = useState('')
+
+  // AdGuard fields
+  const [agUrl, setAgUrl]   = useState(instance.adguard_url ?? '')
+  const [agUser, setAgUser] = useState('')
+  const [agPass, setAgPass] = useState('')
 
   const { data: pingData, isLoading: pinging, refetch: reping } = useQuery({
     queryKey: ['instance-ping', instanceId],
@@ -293,13 +308,32 @@ function InstancePanel({
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['instances'] }); onDelete() },
   })
 
+  const editMut = useMutation({
+    mutationFn: () => updateInstance(instanceId, editName.trim(), editUrl.trim(), editToken.trim() || undefined),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instances'] })
+      setEditOpen(false)
+      setEditToken('')
+    },
+  })
+
+  const agMut = useMutation({
+    mutationFn: () => updateAdguardCredentials(instanceId, agUrl.trim(), agUser.trim(), agPass.trim()),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['instances'] })
+      setAgOpen(false)
+      setAgUser('')
+      setAgPass('')
+    },
+  })
+
   const health    = pingData?.health
   const reachable = pingData?.reachable
 
   const statusColor =
-    reachable === undefined   ? 'bg-muted-foreground/40' :
-    !reachable                ? 'bg-red-500' :
-    health?.status === 'ok'   ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') :
+    reachable === undefined       ? 'bg-muted-foreground/40' :
+    !reachable                    ? 'bg-red-500' :
+    health?.status === 'ok'       ? (isCyber ? 'bg-[hsl(180,100%,50%)]' : 'bg-green-500') :
     health?.status === 'degraded' ? 'bg-amber-500' : 'bg-red-500'
 
   return (
@@ -320,6 +354,10 @@ function InstancePanel({
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', pinging && 'animate-spin')} />
             Refresh
           </Button>
+          <Button variant="outline" size="sm" onClick={() => { setEditOpen((o) => !o); setAgOpen(false) }}>
+            <Pencil className="h-3.5 w-3.5 mr-1.5" />
+            Edit
+          </Button>
           <Button
             variant="ghost" size="sm"
             className="text-destructive hover:text-destructive"
@@ -330,6 +368,58 @@ function InstancePanel({
           </Button>
         </div>
       </div>
+
+      {/* Edit form */}
+      {editOpen && (
+        <Card className={cardClass}>
+          <CardHeader className="pb-2">
+            <div className="flex items-center gap-2">
+              <Pencil className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+              <CardTitle className="text-sm">Edit instance</CardTitle>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-name">Name</Label>
+              <Input id="edit-name" value={editName} onChange={(e) => setEditName(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-url">URL</Label>
+              <Input id="edit-url" value={editUrl} onChange={(e) => setEditUrl(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="edit-token">
+                Slave token
+                <span className="ml-2 text-[11px] text-muted-foreground font-normal">leave blank to keep current</span>
+              </Label>
+              <Input
+                id="edit-token"
+                placeholder="vs_… (optional)"
+                value={editToken}
+                onChange={(e) => setEditToken(e.target.value)}
+                className="font-mono text-xs"
+              />
+            </div>
+            {editMut.isError && (
+              <p className="text-sm text-destructive flex items-center gap-1.5">
+                <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                {(editMut.error as Error)?.message ?? 'Update failed'}
+              </p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button
+                size="sm"
+                disabled={!editName.trim() || !editUrl.trim() || editMut.isPending}
+                onClick={() => editMut.mutate()}
+              >
+                {editMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                <span className="ml-1.5">Save</span>
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Health card */}
       <Card className={cardClass}>
@@ -373,7 +463,7 @@ function InstancePanel({
               </div>
 
               {/* Quick stats + navigation */}
-              <div className={cn('grid grid-cols-2 gap-3 pt-3 border-t', isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border')}>
+              <div className={cn('grid grid-cols-2 gap-3 pt-3 border-t', borderClass)}>
                 <button
                   onClick={() => navigate('/interfaces')}
                   className={cn(
@@ -408,6 +498,82 @@ function InstancePanel({
             </>
           )}
         </CardContent>
+      </Card>
+
+      {/* AdGuard credentials card */}
+      <Card className={cardClass}>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Shield className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-primary')} />
+              <CardTitle className="text-sm">AdGuard Home</CardTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              {instance.adguard_enabled && (
+                <span className="text-[11px] text-green-500 font-medium">Configured</span>
+              )}
+              <Button
+                size="sm" variant="outline"
+                onClick={() => { setAgOpen((o) => !o); setEditOpen(false) }}
+              >
+                <Pencil className="h-3.5 w-3.5 mr-1.5" />
+                {instance.adguard_enabled ? 'Update' : 'Configure'}
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        {(instance.adguard_enabled || agOpen) && (
+          <CardContent>
+            {!agOpen && instance.adguard_enabled && (
+              <div className="text-xs text-muted-foreground space-y-0.5">
+                <p><span className="font-medium text-foreground">URL:</span> {instance.adguard_url}</p>
+                <p className="opacity-60">Credentials stored encrypted.</p>
+              </div>
+            )}
+            {agOpen && (
+              <div className="space-y-3">
+                <div className="space-y-1.5">
+                  <Label htmlFor="ag-url">AdGuard URL</Label>
+                  <Input
+                    id="ag-url"
+                    placeholder="http://localhost:3001"
+                    value={agUrl}
+                    onChange={(e) => setAgUrl(e.target.value)}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    Internal URL of AdGuard on the slave (e.g. <code className="bg-muted px-1 rounded">http://localhost:3001</code>)
+                  </p>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ag-user">Username</Label>
+                  <Input id="ag-user" value={agUser} onChange={(e) => setAgUser(e.target.value)} autoComplete="off" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="ag-pass">Password</Label>
+                  <Input id="ag-pass" type="password" value={agPass} onChange={(e) => setAgPass(e.target.value)} autoComplete="new-password" />
+                </div>
+                {agMut.isError && (
+                  <p className="text-sm text-destructive flex items-center gap-1.5">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    {(agMut.error as Error)?.message ?? 'Save failed'}
+                  </p>
+                )}
+                <div className="flex gap-2 pt-1">
+                  <Button
+                    size="sm"
+                    disabled={!agUrl.trim() || !agUser.trim() || !agPass.trim() || agMut.isPending}
+                    onClick={() => agMut.mutate()}
+                  >
+                    {agMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    <span className="ml-1.5">Save credentials</span>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={() => setAgOpen(false)}>Cancel</Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        )}
       </Card>
     </div>
   )
