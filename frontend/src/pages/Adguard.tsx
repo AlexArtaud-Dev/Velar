@@ -55,9 +55,20 @@ export default function Adguard() {
   const { theme } = useThemeStore()
   const isCyber = theme === 'cyberpunk'
   const isApple = theme === 'apple'
+  const qc = useQueryClient()
 
   const [source, setSource] = useState<AdguardSource>(null)
   const [tab, setTab] = useState<Tab>('overview')
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function pullFromAdguard() {
+    setRefreshing(true)
+    await qc.invalidateQueries({ predicate: (q) => {
+      const key = q.queryKey[0] as string
+      return key?.startsWith('adguard-') && q.queryKey[1] === source
+    }})
+    setRefreshing(false)
+  }
 
   const { data: instances = [] } = useQuery({
     queryKey: ['instances'],
@@ -87,7 +98,17 @@ export default function Adguard() {
           </div>
         </div>
 
-        {/* Instance selector */}
+        {/* Instance selector + pull */}
+        <div className="flex items-center gap-2">
+        <Button
+          size="sm" variant="outline"
+          onClick={pullFromAdguard}
+          disabled={refreshing}
+          title="Pull current state from AdGuard"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', refreshing && 'animate-spin')} />
+          Pull from AdGuard
+        </Button>
         <div className="relative">
           <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center">
             {source === null
@@ -116,6 +137,7 @@ export default function Adguard() {
           <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
             <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
           </div>
+        </div>
         </div>
       </div>
 
@@ -759,11 +781,11 @@ function ServicesTab({ source, isCyber, borderClass }: {
   source: AdguardSource; isCyber: boolean; borderClass: string
 }) {
   const qc = useQueryClient()
-  const qk = ['adguard-services', source]
+  const qk: [string, AdguardSource] = ['adguard-services', source]
   const [search, setSearch] = useState('')
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
 
-  const { data, isLoading, isError, isFetching, refetch } = useQuery({
+  const { data, isLoading, isError } = useQuery({
     queryKey: qk,
     queryFn: () => getServices(source),
     retry: 1,
@@ -850,15 +872,6 @@ function ServicesTab({ source, isCyber, borderClass }: {
           onClick={() => setMut.mutate([])}
         >
           Unblock all
-        </Button>
-        <Button
-          size="sm" variant="outline"
-          className="h-8 px-2.5"
-          disabled={isFetching}
-          onClick={() => refetch()}
-          title="Pull current state from AdGuard"
-        >
-          <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
         </Button>
       </div>
 
