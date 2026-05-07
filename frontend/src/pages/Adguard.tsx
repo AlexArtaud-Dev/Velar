@@ -763,7 +763,7 @@ function ServicesTab({ source, isCyber, borderClass }: {
   const [search, setSearch] = useState('')
   const [openCats, setOpenCats] = useState<Set<string>>(new Set())
 
-  const { data, isLoading, isError } = useQuery({
+  const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: qk,
     queryFn: () => getServices(source),
     retry: 1,
@@ -816,8 +816,8 @@ function ServicesTab({ source, isCyber, borderClass }: {
 
   return (
     <div className="space-y-5">
-      {/* Search + stats */}
-      <div className="flex items-center gap-3 flex-wrap">
+      {/* Search + actions */}
+      <div className="flex items-center gap-2 flex-wrap">
         <div className="relative flex-1 min-w-48">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
@@ -831,10 +831,35 @@ function ServicesTab({ source, isCyber, borderClass }: {
           />
         </div>
         {blocked.size > 0 && (
-          <span className="text-xs text-muted-foreground">
-            <span className="font-semibold text-foreground">{blocked.size}</span> service{blocked.size !== 1 ? 's' : ''} blocked
+          <span className="text-xs text-muted-foreground shrink-0">
+            <span className="font-semibold text-foreground">{blocked.size}</span> blocked
           </span>
         )}
+        <Button
+          size="sm" variant="outline"
+          className="h-8 px-2.5 text-xs"
+          disabled={setMut.isPending || (data?.services ?? []).length === 0}
+          onClick={() => setMut.mutate((data?.services ?? []).map((s) => s.id))}
+        >
+          Block all
+        </Button>
+        <Button
+          size="sm" variant="outline"
+          className="h-8 px-2.5 text-xs"
+          disabled={setMut.isPending || blocked.size === 0}
+          onClick={() => setMut.mutate([])}
+        >
+          Unblock all
+        </Button>
+        <Button
+          size="sm" variant="outline"
+          className="h-8 px-2.5"
+          disabled={isFetching}
+          onClick={() => refetch()}
+          title="Pull current state from AdGuard"
+        >
+          <RefreshCw className={cn('h-3.5 w-3.5', isFetching && 'animate-spin')} />
+        </Button>
       </div>
 
       {/* Categories */}
