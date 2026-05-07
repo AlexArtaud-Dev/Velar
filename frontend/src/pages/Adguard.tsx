@@ -1,4 +1,4 @@
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Server, ChevronDown, RefreshCw, Plus, Trash2, AlertTriangle,
@@ -21,6 +21,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
@@ -60,18 +67,6 @@ export default function Adguard() {
   const [source, setSource] = useState<AdguardSource>(null)
   const [tab, setTab] = useState<Tab>('overview')
   const [refreshing, setRefreshing] = useState(false)
-  const [selectorOpen, setSelectorOpen] = useState(false)
-  const selectorRef = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
-        setSelectorOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
 
   async function pullFromAdguard() {
     setRefreshing(true)
@@ -97,6 +92,7 @@ export default function Adguard() {
 
   const cardClass = cn(isApple && 'apple-glass', isCyber && 'cyber-card')
   const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
+
 
   return (
     <div className="p-4 sm:p-6 space-y-4 pb-20 lg:pb-6">
@@ -133,114 +129,62 @@ export default function Adguard() {
             <RefreshCw className={cn('h-4 w-4', refreshing && 'animate-spin')} />
           </Button>
 
-          {/* Custom instance selector */}
-          <div className="relative" ref={selectorRef}>
-            <button
-              onClick={() => setSelectorOpen((o) => !o)}
-              className={cn(
-                'flex items-center gap-2 h-9 pl-3 pr-3 rounded-xl border text-sm font-medium transition-all',
-                'focus:outline-none',
+          {/* Instance selector — Radix DropdownMenu for guaranteed opaque background */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className={cn(
+                'flex items-center gap-2 h-9 pl-3 pr-3 rounded-xl border text-sm font-medium transition-all focus:outline-none',
                 isCyber
-                  ? cn(
-                      'bg-[rgba(7,12,23,0.8)] text-[hsl(180,60%,85%)]',
-                      'border-[rgba(0,255,255,0.2)] hover:border-[rgba(0,255,255,0.5)]',
-                      selectorOpen && 'border-[rgba(0,255,255,0.6)] shadow-[0_0_12px_rgba(0,255,255,0.15)]',
-                    )
-                  : cn(
-                      'bg-background text-foreground border-border',
-                      'hover:border-primary/60 hover:bg-accent/40',
-                      selectorOpen && 'border-primary/60 bg-accent/40',
-                    ),
-              )}
-            >
-              <span className={cn(
-                'flex items-center justify-center h-5 w-5 rounded-md shrink-0',
-                isCyber ? 'bg-[rgba(0,255,255,0.1)]' : 'bg-muted',
+                  ? 'bg-[rgba(7,12,23,0.8)] text-[hsl(180,60%,85%)] border-[rgba(0,255,255,0.2)] hover:border-[rgba(0,255,255,0.5)]'
+                  : 'bg-background text-foreground border-border hover:border-primary/60 hover:bg-accent/40',
               )}>
-                {source === null
-                  ? <Shield className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-primary')} />
-                  : <Server className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-primary')} />}
-              </span>
-              <span>{sourceName}</span>
-              <ChevronDown className={cn(
-                'h-3.5 w-3.5 text-muted-foreground transition-transform shrink-0',
-                selectorOpen && 'rotate-180',
-              )} />
-            </button>
-
-            {selectorOpen && (
-              <div className={cn(
-                'absolute right-0 top-full mt-1.5 z-50 min-w-[180px]',
-                'rounded-xl border shadow-xl overflow-hidden',
-                isCyber
-                  ? 'bg-[rgb(7,12,23)] border-[rgba(0,255,255,0.2)]'
-                  : 'border-border',
-              )}
-              style={isCyber ? undefined : { backgroundColor: 'hsl(var(--popover))' }}
-              >
-                {/* Master */}
-                <div className={cn(
-                  'px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest',
-                  isCyber ? 'text-[hsl(180,50%,45%)]' : 'text-muted-foreground',
+                <span className={cn(
+                  'flex items-center justify-center h-5 w-5 rounded-md shrink-0',
+                  isCyber ? 'bg-[rgba(0,255,255,0.1)]' : 'bg-muted',
                 )}>
-                  Master
-                </div>
-                <button
-                  onClick={() => { setSource(null); setSelectorOpen(false) }}
-                  className={cn(
-                    'w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                    source === null
-                      ? isCyber
-                        ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,75%)]'
-                        : 'bg-accent text-accent-foreground'
-                      : isCyber
-                        ? 'text-foreground/80 hover:bg-[rgba(0,255,255,0.06)]'
-                        : 'text-foreground hover:bg-accent',
-                  )}
-                >
-                  <Shield className={cn('h-3.5 w-3.5 shrink-0', isCyber ? 'text-[hsl(180,70%,55%)]' : 'text-primary')} />
-                  <span className="font-medium">Master</span>
-                  {source === null && <Check className="h-3 w-3 ml-auto opacity-70" />}
-                </button>
+                  {source === null
+                    ? <Shield className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-primary')} />
+                    : <Server className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-primary')} />}
+                </span>
+                <span>{sourceName}</span>
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              </button>
+            </DropdownMenuTrigger>
 
-                {enabledSlaves.length > 0 && (
-                  <>
-                    <div className={cn(
-                      'mx-2 my-1 border-t',
-                      isCyber ? 'border-[rgba(0,255,255,0.1)]' : 'border-border',
-                    )} />
-                    <div className={cn(
-                      'px-2.5 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest',
-                      isCyber ? 'text-[hsl(180,50%,45%)]' : 'text-muted-foreground',
-                    )}>
-                      Slaves
-                    </div>
-                    {enabledSlaves.map((inst) => (
-                      <button
-                        key={inst.id}
-                        onClick={() => { setSource(inst.id); setSelectorOpen(false) }}
-                        className={cn(
-                          'w-full flex items-center gap-2.5 px-3 py-2 text-sm transition-colors',
-                          source === inst.id
-                            ? isCyber
-                              ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,75%)]'
-                              : 'bg-accent text-accent-foreground'
-                            : isCyber
-                              ? 'text-foreground/80 hover:bg-[rgba(0,255,255,0.06)]'
-                              : 'text-foreground hover:bg-accent',
-                        )}
-                      >
-                        <Server className={cn('h-3.5 w-3.5 shrink-0', isCyber ? 'text-[hsl(180,70%,55%)]' : 'text-muted-foreground')} />
-                        <span className="font-medium truncate">{inst.name}</span>
-                        {source === inst.id && <Check className="h-3 w-3 ml-auto opacity-70 shrink-0" />}
-                      </button>
-                    ))}
-                  </>
-                )}
-                <div className="pb-1" />
+            <DropdownMenuContent align="end" className="min-w-[180px]">
+              <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Master
               </div>
-            )}
-          </div>
+              <DropdownMenuItem
+                onClick={() => setSource(null)}
+                className="flex items-center gap-2.5 cursor-pointer"
+              >
+                <Shield className="h-3.5 w-3.5 shrink-0 text-primary" />
+                <span className="flex-1 font-medium">Master</span>
+                {source === null && <Check className="h-3.5 w-3.5 opacity-70" />}
+              </DropdownMenuItem>
+
+              {enabledSlaves.length > 0 && (
+                <>
+                  <DropdownMenuSeparator />
+                  <div className="px-2.5 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                    Slaves
+                  </div>
+                  {enabledSlaves.map((inst) => (
+                    <DropdownMenuItem
+                      key={inst.id}
+                      onClick={() => setSource(inst.id)}
+                      className="flex items-center gap-2.5 cursor-pointer"
+                    >
+                      <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="flex-1 font-medium truncate">{inst.name}</span>
+                      {source === inst.id && <Check className="h-3.5 w-3.5 opacity-70 shrink-0" />}
+                    </DropdownMenuItem>
+                  ))}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
 
