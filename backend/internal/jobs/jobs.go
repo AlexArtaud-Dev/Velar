@@ -54,7 +54,6 @@ func Start(wg wgsvc.Service, nft nftquota.Service, ddnsSvc *ddns.Service, ag *ad
 
 	// AdGuard sync — push master config to slaves that have sync enabled.
 	if ag != nil {
-		go syncAllAdguardSlaves(ag)
 		c.AddFunc("@every 5m", func() { syncAllAdguardSlaves(ag) })
 	}
 

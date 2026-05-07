@@ -50,12 +50,12 @@ func syncAdguardToInstance(inst models.RemoteInstance, ag *adguard.Client) error
 	base := inst.URL + "/api/v1/adguard"
 	hc := &http.Client{Timeout: 15 * time.Second}
 
+	// Each section is fully independent — failures are warned but never abort the sync.
+
 	// Filtering config
-	fs, err := ag.GetFilteringStatus()
-	if err != nil {
-		return fmt.Errorf("get filtering status: %w", err)
-	}
-	if err := slavePut(hc, base+"/filtering/config", token, map[string]any{
+	if fs, err := ag.GetFilteringStatus(); err != nil {
+		slog.Warn("adguard sync: get filtering status", "instance", inst.Name, "err", err)
+	} else if err := slavePut(hc, base+"/filtering/config", token, map[string]any{
 		"enabled":  fs.Enabled,
 		"interval": fs.Interval,
 	}); err != nil {
@@ -63,33 +63,31 @@ func syncAdguardToInstance(inst models.RemoteInstance, ag *adguard.Client) error
 	}
 
 	// User rules
-	rules, err := ag.GetUserRules()
-	if err != nil {
-		return fmt.Errorf("get user rules: %w", err)
-	}
-	if err := slavePut(hc, base+"/rules", token, map[string]any{"rules": rules}); err != nil {
+	if rules, err := ag.GetUserRules(); err != nil {
+		slog.Warn("adguard sync: get user rules", "instance", inst.Name, "err", err)
+	} else if err := slavePut(hc, base+"/rules", token, map[string]any{"rules": rules}); err != nil {
 		slog.Warn("adguard sync: rules", "instance", inst.Name, "err", err)
 	}
 
-	// Safe browsing (best-effort — not all AdGuard builds expose this)
-	if sbEnabled, err := ag.GetSafeBrowsingStatus(); err == nil {
-		if err := slavePut(hc, base+"/safebrowsing", token, map[string]bool{"enabled": sbEnabled}); err != nil {
-			slog.Warn("adguard sync: safebrowsing", "instance", inst.Name, "err", err)
-		}
+	// Safe browsing
+	if sbEnabled, err := ag.GetSafeBrowsingStatus(); err != nil {
+		slog.Warn("adguard sync: get safebrowsing", "instance", inst.Name, "err", err)
+	} else if err := slavePut(hc, base+"/safebrowsing", token, map[string]bool{"enabled": sbEnabled}); err != nil {
+		slog.Warn("adguard sync: safebrowsing", "instance", inst.Name, "err", err)
 	}
 
 	// Parental control
-	if parEnabled, err := ag.GetParentalStatus(); err == nil {
-		if err := slavePut(hc, base+"/parental", token, map[string]bool{"enabled": parEnabled}); err != nil {
-			slog.Warn("adguard sync: parental", "instance", inst.Name, "err", err)
-		}
+	if parEnabled, err := ag.GetParentalStatus(); err != nil {
+		slog.Warn("adguard sync: get parental", "instance", inst.Name, "err", err)
+	} else if err := slavePut(hc, base+"/parental", token, map[string]bool{"enabled": parEnabled}); err != nil {
+		slog.Warn("adguard sync: parental", "instance", inst.Name, "err", err)
 	}
 
 	// Safe search
-	if ssSettings, err := ag.GetSafeSearchStatus(); err == nil {
-		if err := slavePut(hc, base+"/safesearch", token, ssSettings); err != nil {
-			slog.Warn("adguard sync: safesearch", "instance", inst.Name, "err", err)
-		}
+	if ssSettings, err := ag.GetSafeSearchStatus(); err != nil {
+		slog.Warn("adguard sync: get safesearch", "instance", inst.Name, "err", err)
+	} else if err := slavePut(hc, base+"/safesearch", token, ssSettings); err != nil {
+		slog.Warn("adguard sync: safesearch", "instance", inst.Name, "err", err)
 	}
 
 	return nil
