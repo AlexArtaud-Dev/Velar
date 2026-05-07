@@ -894,9 +894,10 @@ function ServiceRow({ name, iconSvg, blocked, pending, onToggle, isCyber }: {
   return (
     <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
       {iconSvg ? (
-        <span
-          className="h-5 w-5 shrink-0 [&_svg]:h-5 [&_svg]:w-5"
-          dangerouslySetInnerHTML={{ __html: iconSvg }}
+        <img
+          src={`data:image/svg+xml;base64,${iconSvg}`}
+          alt={name}
+          className="h-5 w-5 shrink-0"
         />
       ) : (
         <span className="h-5 w-5 shrink-0 rounded bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground">
