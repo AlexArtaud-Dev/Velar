@@ -212,3 +212,259 @@
 ::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
 /* Firefox */
 * { scrollbar-width: thin; scrollbar-color: hsl(var(--border)) transparent; }
+
+/* ── Surrealist mode (Konami) ────────────────────────────────────────────── */
+
+@keyframes sr-shift {
+  0%, 100% { background-position: 0% 50%; }
+  50%       { background-position: 100% 50%; }
+}
+@keyframes sr-hue {
+  from { filter: hue-rotate(0deg); }
+  to   { filter: hue-rotate(360deg); }
+}
+@keyframes sr-border {
+  0%   { border-color: #ff0055; }
+  14%  { border-color: #ff8800; }
+  28%  { border-color: #ffee00; }
+  42%  { border-color: #00ee88; }
+  57%  { border-color: #00aaff; }
+  71%  { border-color: #8800ff; }
+  85%  { border-color: #ff00cc; }
+  100% { border-color: #ff0055; }
+}
+@keyframes sr-flicker {
+  0%, 86%, 89%, 92%, 100% { opacity: 1; }
+  87% { opacity: 0.15; }
+  90% { opacity: 0.75; }
+  93% { opacity: 0.3;  }
+}
+@keyframes sr-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33%       { transform: translateY(-7px) rotate(2deg); }
+  66%       { transform: translateY(4px) rotate(-1.5deg); }
+}
+@keyframes sr-pop {
+  0%   { opacity: 0;   transform: scale(0.4) rotate(-8deg); }
+  12%  { opacity: 1;   transform: scale(1.08) rotate(2deg);  }
+  20%  { transform: scale(0.97) rotate(-1deg); }
+  30%  { transform: scale(1) rotate(0deg); }
+  75%  { opacity: 1;   transform: scale(1) rotate(0deg); }
+  100% { opacity: 0;   transform: scale(0.85) rotate(4deg); }
+}
+@keyframes sr-warp {
+  0%, 100% { letter-spacing: normal; }
+  50%       { letter-spacing: 0.06em; }
+}
+@keyframes sr-wobble {
+  0%, 100% { transform: rotate(0deg); }
+  20%       { transform: rotate(-2.5deg); }
+  50%       { transform: rotate(2.5deg); }
+  80%       { transform: rotate(-1deg); }
+}
+@keyframes sr-levitate {
+  0%, 100% { transform: translateY(0px); }
+  40%       { transform: translateY(-9px); }
+  65%       { transform: translateY(-5px); }
+}
+@keyframes sr-drift {
+  0%, 100% { transform: translateX(0px); }
+  30%       { transform: translateX(-7px); }
+  70%       { transform: translateX(5px); }
+}
+@keyframes sr-pulse {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.045); }
+}
+@keyframes sr-ghost {
+  0%, 50%, 100% { opacity: 1; }
+  62%  { opacity: 0.4; }
+  68%  { opacity: 0.85; }
+  74%  { opacity: 0.5; }
+  80%  { opacity: 1; }
+}
+@keyframes sr-spin-moment {
+  0%, 85%, 100% { transform: rotate(0deg) scale(1); }
+  91%           { transform: rotate(200deg) scale(1.12); }
+  96%           { transform: rotate(360deg) scale(1); }
+}
+@keyframes sr-skew {
+  0%, 100% { transform: skewX(0deg); }
+  25%       { transform: skewX(-3deg); }
+  75%       { transform: skewX(2.5deg); }
+}
+
+@keyframes sr-rain-fall {
+  0%   { transform: translateY(-60px) rotate(0deg)   scale(0.8); opacity: 0;   }
+  6%   { opacity: 1; }
+  88%  { opacity: 0.85; }
+  100% { transform: translateY(108vh) rotate(600deg) scale(1.1); opacity: 0;   }
+}
+
+/* Body: full-spectrum rainbow animated background */
+.surrealist body {
+  background: linear-gradient(
+    120deg,
+    #ff003332 0%,
+    #ff880028 14%,
+    #ffee0026 28%,
+    #00ee8828 42%,
+    #00aaff32 57%,
+    #8800ff30 71%,
+    #ff00cc28 85%,
+    #ff003332 100%
+  ) !important;
+  background-size: 700% 700% !important;
+  background-attachment: fixed !important;
+  animation: sr-shift 9s ease infinite !important;
+}
+
+/* Sidebar: iridescent panel */
+.surrealist aside {
+  background: linear-gradient(
+    160deg,
+    rgba(136, 0, 255, 0.18) 0%,
+    rgba(0, 160, 255, 0.15) 35%,
+    rgba(0, 255, 140, 0.13) 65%,
+    rgba(255, 0, 150, 0.18) 100%
+  ) !important;
+  background-size: 200% 200% !important;
+  animation: sr-shift 9s ease infinite, sr-border 5s linear infinite !important;
+  border-right-color: transparent !important;
+}
+
+/* Top header bar */
+.surrealist header {
+  border-bottom-color: transparent !important;
+  animation: sr-border 4s linear infinite !important;
+}
+
+/* Headings: rainbow gradient clip text */
+.surrealist h1,
+.surrealist h2,
+.surrealist h3 {
+  background: linear-gradient(90deg, #ff0055, #ff8800, #ffee00, #00ee88, #00aaff, #8800ff, #ff00cc, #ff0055) !important;
+  background-size: 300% 100% !important;
+  -webkit-background-clip: text !important;
+  background-clip: text !important;
+  color: transparent !important;
+  animation: sr-shift 4s ease infinite, sr-warp 7s ease-in-out infinite !important;
+  text-shadow: none !important;
+}
+
+/* Cards: each nth-child gets a different chaos movement */
+.surrealist [class*="Card"]:nth-child(3n+1) {
+  animation: sr-border 3s linear infinite, sr-wobble 6s ease-in-out infinite !important;
+}
+.surrealist [class*="Card"]:nth-child(3n+2) {
+  animation: sr-border 3.5s linear -1s infinite, sr-levitate 5s ease-in-out -2s infinite !important;
+}
+.surrealist [class*="Card"]:nth-child(3n) {
+  animation: sr-border 2.8s linear -2s infinite, sr-pulse 4s ease-in-out -1.5s infinite !important;
+}
+
+/* Badges, pills, status chips: flicker + hue spin */
+.surrealist [class*="rounded-full"],
+.surrealist [class*="badge"],
+.surrealist [class*="Badge"] {
+  animation: sr-flicker 5s ease infinite, sr-hue 3s linear infinite !important;
+}
+
+/* Buttons: rainbow sweep + neon glow */
+.surrealist button:not([disabled]) {
+  background: linear-gradient(90deg, #ff0055, #ff8800, #00aaff, #8800ff, #ff00cc, #ff0055) !important;
+  background-size: 400% 100% !important;
+  animation: sr-shift 2.5s linear infinite !important;
+  color: #fff !important;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.45) !important;
+  border: none !important;
+  box-shadow: 0 0 14px rgba(200, 0, 255, 0.4), 0 0 6px rgba(0, 180, 255, 0.3) !important;
+}
+
+/* Nav links: odd ones drift left, even ones drift right (staggered) */
+.surrealist nav a:nth-child(odd),
+.surrealist aside a:nth-child(odd) {
+  animation: sr-drift 7s ease-in-out infinite !important;
+}
+.surrealist nav a:nth-child(even),
+.surrealist aside a:nth-child(even) {
+  animation: sr-drift 7s ease-in-out -3.5s infinite !important;
+}
+
+/* Icons: base hue rotation — every 3rd spins wildly on a timer */
+.surrealist svg {
+  animation: sr-hue 10s linear infinite !important;
+}
+.surrealist svg:nth-child(3n+1) {
+  animation: sr-hue 10s linear infinite, sr-spin-moment 9s ease-in-out -1s infinite !important;
+}
+.surrealist svg:nth-child(3n+2) {
+  animation: sr-hue 10s linear infinite, sr-spin-moment 11s ease-in-out -6s infinite !important;
+}
+
+/* Table rows: ghost + skew in alternating patterns */
+.surrealist tr:nth-child(3n+1) {
+  animation: sr-ghost 8s ease-in-out infinite !important;
+}
+.surrealist tr:nth-child(3n+2) {
+  animation: sr-ghost 8s ease-in-out -4s infinite !important;
+}
+.surrealist tr:nth-child(3n) {
+  animation: sr-skew 9s ease-in-out -2s infinite !important;
+}
+
+/* List items: levitate in waves */
+.surrealist li:nth-child(4n+1) { animation: sr-levitate 5s ease-in-out 0s infinite !important; }
+.surrealist li:nth-child(4n+2) { animation: sr-levitate 5s ease-in-out -1.25s infinite !important; }
+.surrealist li:nth-child(4n+3) { animation: sr-levitate 5s ease-in-out -2.5s infinite !important; }
+.surrealist li:nth-child(4n)   { animation: sr-levitate 5s ease-in-out -3.75s infinite !important; }
+
+/* Paragraphs: subtle drift on alternating ones */
+.surrealist p:nth-child(odd)  { animation: sr-drift 11s ease-in-out infinite !important; }
+.surrealist p:nth-child(even) { animation: sr-ghost 13s ease-in-out -5s infinite !important; }
+
+/* Separators: rainbow bar */
+.surrealist [role="separator"],
+.surrealist hr {
+  background: linear-gradient(90deg, #ff0055, #ff8800, #ffee00, #00ee88, #00aaff, #8800ff, #ff00cc) !important;
+  background-size: 300% 100% !important;
+  height: 2px !important;
+  border: none !important;
+  animation: sr-shift 3s linear infinite !important;
+}
+
+/* Online / status dots: disco */
+.surrealist [class*="bg-green-"],
+.surrealist [class*="bg-emerald-"] {
+  animation: sr-hue 2s linear infinite !important;
+}
+
+/* Big stat numbers: hue + occasional flicker */
+.surrealist .text-2xl,
+.surrealist .text-3xl,
+.surrealist .text-4xl {
+  animation: sr-hue 7s linear infinite, sr-flicker 11s ease infinite !important;
+}
+
+/* Card hover: deep rainbow glow */
+.surrealist [class*="Card"]:hover {
+  box-shadow:
+    0 0 28px rgba(200, 0, 255, 0.3),
+    0 0 56px rgba(0, 200, 255, 0.18),
+    0 0 4px rgba(255, 220, 0, 0.2) !important;
+  transition: box-shadow 0.25s ease !important;
+}
+
+/* Input focus: cycling border + soft glow */
+.surrealist input:focus,
+.surrealist textarea:focus {
+  outline: none !important;
+  animation: sr-border 1.2s linear infinite !important;
+  box-shadow: 0 0 0 2px rgba(255, 0, 85, 0.35), 0 0 10px rgba(200, 0, 255, 0.25) !important;
+}
+
+/* Scrollbar: full rainbow */
+.surrealist ::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #ff0055, #ff8800, #ffee00, #00ee88, #00aaff, #8800ff, #ff00cc) !important;
+  border-radius: 999px;
+}

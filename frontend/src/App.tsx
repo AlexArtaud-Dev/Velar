@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { useAuthStore } from '@/stores/auth'
 import { refreshToken } from '@/api/auth'
@@ -57,11 +57,102 @@ function AuthInit({ children }: { children: React.ReactNode }) {
   return <>{children}</>
 }
 
+const RAIN_EMOJIS = ['🌈','🦄','✨','💫','🔮','🎠','🌀','💥','🎆','🍭','🎡','👾','🌟','🎇','🎉','🌸','💎','🍄','🎊','🏳️‍🌈','⚡','🫧','🎐','🪩','🌊']
+
+function RainbowRain() {
+  const drops = useMemo(() =>
+    Array.from({ length: 55 }, (_, i) => ({
+      id: i,
+      emoji: RAIN_EMOJIS[Math.floor(Math.random() * RAIN_EMOJIS.length)],
+      left: Math.random() * 100,
+      delay: -(Math.random() * 9),
+      duration: 2.8 + Math.random() * 4,
+      size: 15 + Math.random() * 20,
+    }))
+  , [])
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: 99994, overflow: 'hidden' }}>
+      {drops.map((d) => (
+        <span
+          key={d.id}
+          style={{
+            position: 'absolute',
+            left: `${d.left}%`,
+            top: 0,
+            fontSize: `${d.size}px`,
+            lineHeight: 1,
+            userSelect: 'none',
+            animation: `sr-rain-fall ${d.duration}s ${d.delay}s linear infinite`,
+            filter: 'drop-shadow(0 0 4px rgba(255,200,0,0.5))',
+          }}
+        >
+          {d.emoji}
+        </span>
+      ))}
+    </div>
+  )
+}
+
+const KONAMI = ['ArrowUp','ArrowUp','ArrowDown','ArrowDown','ArrowLeft','ArrowRight','ArrowLeft','ArrowRight','b','a']
+
 export default function App() {
   const { isAuthenticated, admin } = useAuthStore()
+  const konamiSeq = useRef<string[]>([])
+  const [surrealist, setSurrealist] = useState(false)
+  const [konamiFlash, setKonamiFlash] = useState(false)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      konamiSeq.current = [...konamiSeq.current, e.key].slice(-KONAMI.length)
+      if (konamiSeq.current.join(',') === KONAMI.join(',')) {
+        konamiSeq.current = []
+        setSurrealist((prev) => {
+          const next = !prev
+          if (next) document.documentElement.classList.add('surrealist')
+          else document.documentElement.classList.remove('surrealist')
+          return next
+        })
+        setKonamiFlash(true)
+        setTimeout(() => setKonamiFlash(false), 3200)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   return (
     <BrowserRouter>
+      {surrealist && <RainbowRain />}
+      {konamiFlash && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 999999,
+          pointerEvents: 'none',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <div style={{
+            padding: '1.75rem 3rem',
+            borderRadius: '1.5rem',
+            background: 'linear-gradient(135deg, #ff0055, #ff8800, #ffee00, #00ee88, #00aaff, #8800ff, #ff00cc)',
+            backgroundSize: '300% 300%',
+            animation: 'sr-pop 3.2s ease-out forwards, sr-shift 1.8s ease infinite',
+            color: '#fff',
+            fontWeight: 900,
+            fontSize: '2rem',
+            textAlign: 'center',
+            lineHeight: 1.35,
+            letterSpacing: '0.03em',
+            textShadow: '0 2px 10px rgba(0,0,0,0.45)',
+            boxShadow: '0 0 60px rgba(200,0,255,0.55), 0 0 120px rgba(0,180,255,0.3)',
+          }}>
+            {surrealist ? (
+              <><div>🌈 SURREALIST MODE</div><div>ACTIVATED 🦄</div></>
+            ) : (
+              <><div>🌑 REALITY</div><div>RESTORED 🌑</div></>
+            )}
+          </div>
+        </div>
+      )}
       <AuthInit>
         <Routes>
           <Route
