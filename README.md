@@ -56,13 +56,24 @@ Enable **local network access** per interface with one click. Velar detects your
 - **One-time download links** — share a single-use, time-limited URL that delivers the config without requiring login
 - **Email delivery** — send the config or a download link directly to the client's inbox
 
+### 📋 Audit Log
+Every admin-initiated change is recorded and searchable. The Audit Log page gives you a full, timestamped trail of what happened and who did it:
+
+- **Complete coverage** — client create/update/delete/enable/disable, interface up/down/create/delete, backup export/restore, API token lifecycle, TOTP changes, password changes, sync operations
+- **Federation-aware** — mutations made through the slave proxy are logged on the master with inferred action names (e.g. `slave.interface.up`, `slave.client.delete`)
+- **Server-side search** — free-text search across action, target name, and detail; prefix-based category filter (Clients, Interfaces, Instances, Slave, Admin, Backup, Tokens)
+- **Colour-coded action badges** — distinct colour per action type for instant visual scanning
+- **Admin attribution** — every entry shows which admin performed the action
+- **Configurable page size** — 10 / 20 / 30 / 50 / 100 entries per page
+
 ### 🛡️ Security First
 - **TOTP two-factor authentication** (Google Authenticator, Aegis, any TOTP app)
 - WireGuard private keys **encrypted at rest** with AES-256-GCM
 - JWT access tokens kept in **memory only** — never written to `localStorage`
 - **httpOnly refresh cookies** — immune to XSS token theft
 - bcrypt password hashing + forced password change on first login
-- Rate limiting on the login endpoint
+- Rate limiting on login, API token creation, and slave proxy endpoints
+- WebSocket `Origin` header validation — only connections from `CORS_ORIGIN` are accepted
 
 ### 🌐 DNS & Network
 - Integrated **AdGuard Home** for network-wide ad and tracker blocking

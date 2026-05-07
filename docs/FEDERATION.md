@@ -138,6 +138,25 @@ Portal links always use `master/portal/s/:instanceId/:viewToken`. The master pro
 
 ---
 
+## Audit Log
+
+The master's Audit Log tracks **both local and remote mutations** in one unified timeline.
+
+When any mutating operation (create, update, delete, enable, disable, up, down…) is executed on a slave through the proxy, the master automatically writes an audit entry with an inferred action name:
+
+| Operation | Audit action |
+|---|---|
+| Interface brought up on slave | `slave.interface.up` |
+| Client disabled on slave | `slave.client.disable` |
+| Client deleted on slave | `slave.client.delete` |
+| Client created on slave | `slave.client.create` |
+
+The **Slave** category pill in the Audit Log page filters to these entries. Detail includes the slave name, HTTP method, and path for full traceability.
+
+> Slave operations are logged on the **master** only. Slaves do not expose an audit log endpoint.
+
+---
+
 ## Limitations
 
 | Limitation | Details |

@@ -45,14 +45,15 @@ backend/
 ├── cmd/server/          Main entrypoint, router setup
 ├── internal/
 │   ├── api/
-│   │   ├── handlers/    HTTP handlers (clients, interfaces, auth, settings, backup…)
-│   │   └── middleware/  JWT auth, rate limiting
-│   ├── auth/            JWT generation/validation, AES-256-GCM encryption, bcrypt
-│   ├── config/          Environment variable loading (godotenv)
+│   │   ├── handlers/    HTTP handlers (clients, interfaces, auth, audit, backup…)
+│   │   └── middleware/  JWT auth, rate limiting (per-route token buckets)
+│   ├── auth/            JWT generation/validation, AES-256-GCM encryption, bcrypt, TOTP
+│   ├── config/          Environment variable loading (godotenv); AppVersion injectable via ldflags
 │   ├── database/        GORM init, AutoMigrate
 │   ├── jobs/            Background jobs (quota enforcement, peer snapshots, expiry checks)
-│   ├── models/          GORM models (Interface, Client, Admin, …)
+│   ├── models/          GORM models (Interface, Client, Admin, AuditLog, …)
 │   └── services/
+│       ├── audit/       Audit log writer — called by every mutating handler
 │       ├── bandwidth/   Linux tc wrapper (HTB egress + ingress police)
 │       ├── ddns/        Public IP tracking
 │       ├── mailer/      SMTP email (admin + client notifications)
@@ -63,10 +64,12 @@ backend/
 ### Request lifecycle
 
 1. Request hits Nginx → proxied to Go API at `:8080`
-2. `middleware/auth.go` validates the JWT `Authorization: Bearer` header
-3. Handler reads/writes via GORM to SQLite
-4. For WireGuard changes: handler calls `wgsvc.Service` interface → writes `.conf` → runs `wg syncconf`
-5. For bandwidth changes: handler calls `bwsvc.Apply` → executes `tc` commands
+2. `middleware/auth.go` validates the JWT `Authorization: Bearer` header (or PAT hash)
+3. Rate limiter middleware (per-route token bucket) enforces per-minute caps on sensitive endpoints
+4. Handler reads/writes via GORM to SQLite
+5. For WireGuard changes: handler calls `wgsvc.Service` interface → writes `.conf` → runs `wg syncconf`
+6. For bandwidth changes: handler calls `bwsvc.Apply` → executes `tc` commands
+7. Every mutating handler calls `auditsvc.Log(...)` → inserts a row into `audit_logs`
 
 ### Authentication flow
 
@@ -126,6 +129,9 @@ SQLite with WAL journal mode and foreign key enforcement. GORM `AutoMigrate` run
 | `DownloadToken` | One-time config download tokens |
 | `ConnectionEvent` | Peer connect/disconnect history |
 | `PeerSnapshot` | Periodic traffic snapshots used for quota enforcement and history charts |
+| `AuditLog` | Timestamped record of every admin-initiated mutation (action, target, detail, admin ID) |
+| `PersonalAccessToken` | Long-lived API tokens (PATs) for programmatic access |
+| `RemoteInstance` | Registered slave nodes — stores encrypted token and last-seen timestamp |
 
 ---
 
@@ -195,6 +201,19 @@ The master polls each slave's `GET /api/v1/stats` every 5 seconds via the proxy 
 - Live connected/total peer counts per slave interface
 - RX/TX updates on client cards (same cadence as the local WebSocket)
 - Slave traffic contributions to the live bandwidth chart
+
+### Audit log — federation
+
+When the master's `Proxy` handler forwards a mutating request (POST / PUT / PATCH / DELETE) to a slave and the slave returns a success status (`< 400`), the master writes an audit entry. The action name is inferred from the HTTP method and path:
+
+| Proxy call | Audit action written on master |
+|---|---|
+| `POST /api/v1/interfaces/3/up` | `slave.interface.up` |
+| `DELETE /api/v1/clients/7` | `slave.client.delete` |
+| `POST /api/v1/clients/7/enable` | `slave.client.enable` |
+| `PUT /api/v1/clients/7` | `slave.client.update` |
+
+This means the master's Audit Log page shows a complete trail covering both local and remote mutations.
 
 ---
 
