@@ -87,9 +87,6 @@ type DNSRewrite struct {
 	Answer string `json:"answer"`
 }
 
-type DNSRewriteList struct {
-	Rewrites []DNSRewrite `json:"rewrites"`
-}
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
@@ -239,11 +236,11 @@ func (c *Client) SetUserRules(rules []string) error {
 }
 
 func (c *Client) GetDNSRewrites() ([]DNSRewrite, error) {
-	var out DNSRewriteList
+	var out []DNSRewrite
 	if err := c.get("/control/rewrite/list", &out); err != nil {
 		return nil, err
 	}
-	return out.Rewrites, nil
+	return out, nil
 }
 
 func (c *Client) AddDNSRewrite(domain, answer string) error {
