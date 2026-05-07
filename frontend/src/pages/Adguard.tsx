@@ -440,44 +440,52 @@ function ProtectionTab({ source, cardClass, isCyber, borderClass }: {
   return (
     <div className="space-y-4">
       {/* Safe browsing */}
-      <Card className={cardClass}>
+      <Card
+        className={cn(cardClass, 'cursor-pointer transition-colors', isCyber ? 'hover:bg-[rgba(0,255,255,0.04)]' : 'hover:bg-accent/40')}
+        onClick={() => !sbMut.isPending && sbMut.mutate(!(sbData?.enabled ?? false))}
+      >
         <CardContent className="pt-4">
           <ProtectionRow
             title="Safe Browsing"
             description="Block domains known to host malware or phishing content using AdGuard's privacy-respecting lookup service."
             enabled={sbData?.enabled ?? false}
             loading={sbMut.isPending}
-            onToggle={(v) => sbMut.mutate(v)}
             isCyber={isCyber}
           />
         </CardContent>
       </Card>
 
       {/* Parental control */}
-      <Card className={cardClass}>
+      <Card
+        className={cn(cardClass, 'cursor-pointer transition-colors', isCyber ? 'hover:bg-[rgba(0,255,255,0.04)]' : 'hover:bg-accent/40')}
+        onClick={() => !parMut.isPending && parMut.mutate(!(parData?.enabled ?? false))}
+      >
         <CardContent className="pt-4">
           <ProtectionRow
             title="Parental Control"
             description="Block adult content domains using AdGuard's parental control service."
             enabled={parData?.enabled ?? false}
             loading={parMut.isPending}
-            onToggle={(v) => parMut.mutate(v)}
             isCyber={isCyber}
           />
         </CardContent>
       </Card>
 
-      {/* Safe search */}
+      {/* Safe search — only the header row is clickable, not the engine pills */}
       <Card className={cardClass}>
         <CardContent className="pt-4 space-y-4">
+          <div
+            className={cn('cursor-pointer rounded-lg transition-colors -mx-2 px-2 py-1', isCyber ? 'hover:bg-[rgba(0,255,255,0.04)]' : 'hover:bg-accent/40')}
+            onClick={() => !ssMut.isPending && ssData && ssMut.mutate({ ...ssData, enabled: !ssData.enabled })}
+          >
           <ProtectionRow
             title="Safe Search"
             description="Force safe search mode on supported search engines."
             enabled={ssData?.enabled ?? false}
             loading={ssMut.isPending}
-            onToggle={(v) => ssData && ssMut.mutate({ ...ssData, enabled: v })}
             isCyber={isCyber}
           />
+          </div>
           {ssData?.enabled && (
             <div className={cn('grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t', borderClass)}>
               {SAFE_SEARCH_ENGINES.map(({ key, label }) => (
@@ -509,9 +517,9 @@ function ProtectionTab({ source, cardClass, isCyber, borderClass }: {
   )
 }
 
-function ProtectionRow({ title, description, enabled, loading, onToggle, isCyber }: {
+function ProtectionRow({ title, description, enabled, loading, isCyber }: {
   title: string; description: string; enabled: boolean
-  loading: boolean; onToggle: (v: boolean) => void; isCyber: boolean
+  loading: boolean; isCyber: boolean
 }) {
   return (
     <div className="flex items-start justify-between gap-4">
@@ -519,17 +527,13 @@ function ProtectionRow({ title, description, enabled, loading, onToggle, isCyber
         <p className="text-sm font-semibold">{title}</p>
         <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
       </div>
-      <button
-        onClick={() => onToggle(!enabled)}
-        disabled={loading}
-        className="shrink-0 mt-0.5"
-      >
+      <div className="shrink-0 mt-0.5 pointer-events-none">
         {loading
           ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
           : enabled
             ? <ToggleRight className={cn('h-6 w-6', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-green-500')} />
             : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
-      </button>
+      </div>
     </div>
   )
 }
