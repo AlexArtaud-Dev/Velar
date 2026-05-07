@@ -75,15 +75,26 @@ Every admin-initiated change is recorded and searchable. The Audit Log page give
 - Rate limiting on login, API token creation, and slave proxy endpoints
 - WebSocket `Origin` header validation — only connections from `CORS_ORIGIN` are accepted
 
+### 🛡️ AdGuard Home Integration
+Manage AdGuard Home directly from Velar, for both master and all federated slave nodes from a single UI:
+
+- **Blocklists** — add, remove, enable/disable filter lists, force refresh
+- **Custom rules** — write and save DNS block/allow rules
+- **DNS rewrites** — map domains to custom answers
+- **Protection toggles** — Safe Browsing, Parental Control, per-engine Safe Search
+- **Service blocking** — browse all services grouped by category (Social, Streaming, Gaming, AI, …), toggle individually or **Block all / Unblock all** per category
+- **Pull from AdGuard** — re-sync the Velar UI with the live AdGuard state at any time
+- **AdGuard federation** — enable AdGuard per slave and optionally turn on **auto-sync** to push master's config to slaves every 5 minutes (filters, rules, rewrites, services, protection settings)
+- **Dashboard aggregate** — see total DNS queries, blocked requests, and per-instance block rate at a glance on the dashboard
+
 ### 🌐 DNS & Network
-- Integrated **AdGuard Home** for network-wide ad and tracker blocking
 - DNS preset selector — Cloudflare, Google, Quad9, or your own
 - **DDNS support** — auto-tracks your public IP
 - Per-interface **connectivity checker** — verifies the interface is UP and the UDP port is bound
 
 ### 🎨 Beautiful, Responsive UI
 - **Dark mode by default**, switchable to light — preference persisted, no flash on reload
-- Fully **mobile-responsive** — bottom nav bar on small screens, sidebar on desktop
+- Fully **mobile-responsive** — bottom nav bar on small screens with a "More" drawer for secondary pages; drill-in navigation on the Instances page; compact adaptive headers on all management pages
 - Thin themed scrollbar, smooth transitions, shadcn/ui component system
 - Live connection indicator in the nav
 

@@ -157,6 +157,48 @@ The **Slave** category pill in the Audit Log page filters to these entries. Deta
 
 ---
 
+## AdGuard Home Federation
+
+Slaves can optionally expose an AdGuard Home instance and have it managed from the master UI.
+
+### Per-slave toggle
+
+In the master UI → **Instances** → select a slave → enable **AdGuard** toggle. This sets `adguard_enabled = true` on the instance record. Once enabled, the slave appears in the **AdGuard** page instance selector alongside the master.
+
+All AdGuard API calls to a slave are proxied through the master's `/api/v1/instances/:id/adguard/proxy` endpoint using the same slave token as all other federated calls.
+
+### Automatic sync
+
+Enable **Auto-sync** on an instance (`adguard_sync_enabled = true`) to have the master periodically push its own AdGuard configuration to that slave. The sync job runs **every 5 minutes** and copies:
+
+| What is synced | Notes |
+|---|---|
+| Blocklist filters | Full list with enabled/disabled state |
+| Custom rules | User-defined DNS block/allow rules |
+| DNS rewrites | All `domain → answer` mappings |
+| Safe Browsing | Enabled/disabled |
+| Parental Control | Enabled/disabled |
+| Safe Search | Master's per-engine settings |
+| Blocked services | Master's service block list |
+| Filtering enabled | Master's global filtering toggle |
+
+The sync is **one-way**: master → slave. Manual changes made directly on the slave's AdGuard Home UI may be overwritten on the next sync cycle.
+
+### Manual sync / pull
+
+- **Sync now** — pushes the master's current configuration to the slave immediately (same payload as the auto-sync job)
+- **Pull from AdGuard** — re-fetches the live AdGuard state for the currently selected source (master or slave) and invalidates all cached query data in the UI. Use this after making changes directly in the AdGuard Home interface to bring Velar in sync with reality
+
+### Services tab
+
+The **Services** tab in the AdGuard page shows every service AdGuard Home knows about, grouped into categories (Social Networks, Streaming, Gaming, etc.). Services currently blocked by AdGuard are highlighted. You can:
+
+- Toggle individual services
+- **Block all** / **Unblock all** per category or globally
+- Search by service name — matching categories expand automatically
+
+---
+
 ## Limitations
 
 | Limitation | Details |
@@ -164,5 +206,5 @@ The **Slave** category pill in the Audit Log page filters to these entries. Deta
 | No slave SMTP | Slaves cannot send emails on their own. All notifications are routed through the master. If the master has no SMTP configured, email features are silently disabled for slaves too. |
 | No slave WebSocket | The master polls `/api/v1/stats` on slaves every 5 s instead. Latency is slightly higher than the local 5 s WebSocket push. |
 | Jobs run on every instance | Background jobs (quota enforcement, expiry checks, DDNS refresh, bandwidth snapshots) run independently on each slave. Expiry/quota emails from jobs are silently skipped on slaves since SMTP is not configured. |
-| No slave AdGuard | AdGuard Home is only available on master-mode instances. |
+| AdGuard availability | AdGuard Home is optional per slave — enable it in the Instances page. The slave must be running AdGuard Home and have it reachable from the master. |
 | Slave traffic history | The dashboard traffic history chart shows local snapshots only. Slave 24 h / 7 d totals are included in the stat cards but not overlaid on the historical chart. |

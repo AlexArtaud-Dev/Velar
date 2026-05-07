@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu'
 import { cn } from '@/lib/utils'
@@ -152,33 +153,33 @@ export default function Adguard() {
             </DropdownMenuTrigger>
 
             <DropdownMenuContent align="end" className="min-w-[180px]">
-              <div className="px-2.5 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground py-1.5">
                 Master
-              </div>
+              </DropdownMenuLabel>
               <DropdownMenuItem
                 onClick={() => setSource(null)}
-                className="flex items-center gap-2.5 cursor-pointer"
+                className="flex items-center gap-2 cursor-pointer"
               >
                 <Shield className="h-3.5 w-3.5 shrink-0 text-primary" />
                 <span className="flex-1 font-medium">Master</span>
-                {source === null && <Check className="h-3.5 w-3.5 opacity-70" />}
+                {source === null && <Check className="h-3.5 w-3.5 opacity-60" />}
               </DropdownMenuItem>
 
               {enabledSlaves.length > 0 && (
                 <>
                   <DropdownMenuSeparator />
-                  <div className="px-2.5 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  <DropdownMenuLabel className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground py-1.5">
                     Slaves
-                  </div>
+                  </DropdownMenuLabel>
                   {enabledSlaves.map((inst) => (
                     <DropdownMenuItem
                       key={inst.id}
                       onClick={() => setSource(inst.id)}
-                      className="flex items-center gap-2.5 cursor-pointer"
+                      className="flex items-center gap-2 cursor-pointer"
                     >
                       <Server className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                       <span className="flex-1 font-medium truncate">{inst.name}</span>
-                      {source === inst.id && <Check className="h-3.5 w-3.5 opacity-70 shrink-0" />}
+                      {source === inst.id && <Check className="h-3.5 w-3.5 opacity-60 shrink-0" />}
                     </DropdownMenuItem>
                   ))}
                 </>
