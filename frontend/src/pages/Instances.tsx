@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Server, Plus, Trash2, RefreshCw,
   WifiOff, AlertTriangle, Check, Loader2,
-  Network, Users, Activity, ChevronRight,
+  Network, Users, Activity, ChevronRight, ChevronLeft,
   Pencil, Shield, ToggleLeft, ToggleRight,
   ExternalLink,
 } from 'lucide-react'
@@ -52,13 +52,22 @@ export default function Instances() {
 
   const showOverview = selected === null && !showAdd && instances.length > 0
   const showRegister = showAdd || instances.length === 0
+  // On mobile, "drill-in" = any non-overview state
+  const isDrilled = !showOverview
+
+  const handleBack = () => {
+    setSelected(null)
+    setShowAdd(false)
+  }
 
   return (
     <div className="flex h-full">
 
-      {/* ── Sidebar ── */}
+      {/* ── Sidebar — hidden on mobile when drilled in ── */}
       <aside className={cn(
-        'w-56 shrink-0 border-r flex flex-col overflow-y-auto',
+        'shrink-0 border-r flex flex-col overflow-y-auto',
+        'w-full lg:w-56',                          // full width on mobile, fixed on desktop
+        isDrilled && 'hidden lg:flex',             // hide on mobile when detail is shown
         borderClass,
         isApple && 'apple-glass',
         isCyber && 'bg-[rgba(7,12,23,0.8)]',
@@ -92,8 +101,8 @@ export default function Instances() {
                   )}
                 >
                   <Server className="h-3.5 w-3.5 shrink-0" />
-                  <span className="flex-1 truncate text-xs font-medium">{inst.name}</span>
-                  {active && <ChevronRight className="h-3 w-3 opacity-50 shrink-0" />}
+                  <span className="flex-1 truncate text-sm font-medium">{inst.name}</span>
+                  <ChevronRight className="h-3.5 w-3.5 opacity-40 shrink-0" />
                 </button>
               )
             })}
@@ -112,38 +121,60 @@ export default function Instances() {
           )}
         >
           <Plus className="h-3.5 w-3.5 shrink-0" />
-          <span className="text-xs font-medium">Add instance</span>
+          <span className="text-sm font-medium">Add instance</span>
         </button>
       </aside>
 
-      {/* ── Main content ── */}
-      <main className="flex-1 overflow-y-auto p-6">
-        {showOverview ? (
-          <InstancesOverview
-            instances={instances}
-            theme={theme}
-            onSelect={handleSelectInstance}
-            onAdd={handleShowAdd}
-          />
-        ) : showRegister ? (
-          <RegisterForm theme={theme} onRegistered={handleRegistered} />
-        ) : (() => {
-          const inst = instances.find((i) => i.id === selected)
-          if (!inst) return (
-            <div className="flex items-center gap-2 text-sm text-muted-foreground p-6">
-              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
-            </div>
-          )
-          return (
-            <InstancePanel
-              key={selected}
-              instanceId={selected!}
-              instance={inst}
+      {/* ── Main content — hidden on mobile when showing list ── */}
+      <main className={cn(
+        'flex-1 overflow-y-auto',
+        !isDrilled && 'hidden lg:block',          // hide on mobile when sidebar (list) is shown
+      )}>
+        {/* Mobile back button */}
+        <div className={cn(
+          'flex items-center gap-2 px-4 pt-4 pb-2 lg:hidden',
+          !isDrilled && 'hidden',
+        )}>
+          <button
+            onClick={handleBack}
+            className={cn(
+              'flex items-center gap-1.5 text-sm font-medium transition-colors',
+              isCyber ? 'text-[hsl(180,80%,65%)]' : 'text-primary',
+            )}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Instances
+          </button>
+        </div>
+
+        <div className="p-4 lg:p-6 pb-20 lg:pb-6">
+          {showOverview ? (
+            <InstancesOverview
+              instances={instances}
               theme={theme}
-              onDelete={() => { setSelected(null); setShowAdd(false) }}
+              onSelect={handleSelectInstance}
+              onAdd={handleShowAdd}
             />
-          )
-        })()}
+          ) : showRegister ? (
+            <RegisterForm theme={theme} onRegistered={handleRegistered} />
+          ) : (() => {
+            const inst = instances.find((i) => i.id === selected)
+            if (!inst) return (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+              </div>
+            )
+            return (
+              <InstancePanel
+                key={selected}
+                instanceId={selected!}
+                instance={inst}
+                theme={theme}
+                onDelete={handleBack}
+              />
+            )
+          })()}
+        </div>
       </main>
     </div>
   )
@@ -178,7 +209,7 @@ function InstancesOverview({
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pb-4">
         {instances.map((inst) => (
           <button
             key={inst.id}
@@ -464,17 +495,17 @@ function InstancePanel({
   return (
     <div className="space-y-5 max-w-2xl">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-3 min-w-0">
           <span className={cn('h-2.5 w-2.5 rounded-full shrink-0 mt-1', statusColor)} />
-          <div>
-            <h1 className="text-xl font-bold">{instance.name}</h1>
-            <p className={cn('text-sm font-mono', isCyber ? 'text-[hsl(180,60%,55%)]' : 'text-muted-foreground')}>
+          <div className="min-w-0">
+            <h1 className="text-xl font-bold truncate">{instance.name}</h1>
+            <p className={cn('text-sm font-mono truncate', isCyber ? 'text-[hsl(180,60%,55%)]' : 'text-muted-foreground')}>
               {instance.url}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button variant="outline" size="sm" onClick={() => reping()} disabled={pinging}>
             <RefreshCw className={cn('h-3.5 w-3.5 mr-1.5', pinging && 'animate-spin')} />
             Refresh
