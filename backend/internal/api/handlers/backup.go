@@ -127,6 +127,14 @@ func (h *BackupHandler) Export(c *gin.Context) {
 	}
 
 	filename := fmt.Sprintf("velar-backup-%s.json", time.Now().UTC().Format("2006-01-02"))
+
+	totalClients := 0
+	for _, bi := range bf.Interfaces {
+		totalClients += len(bi.Clients)
+	}
+	auditLog(c, "backup.export", "admin", 0, "backup",
+		fmt.Sprintf("interfaces=%d clients=%d file=%s", len(bf.Interfaces), totalClients, filename))
+
 	c.Header("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 	c.Data(http.StatusOK, "application/json", data)
 	slog.Info("backup exported", "interfaces", len(bf.Interfaces))
@@ -323,6 +331,11 @@ func (h *BackupHandler) Restore(c *gin.Context) {
 		"clients", result.ClientsCreated,
 		"errors", len(result.Errors),
 	)
+
+	auditLog(c, "backup.restore", "admin", 0, "backup",
+		fmt.Sprintf("interfaces=%d clients=%d errors=%d wipe=%v",
+			result.InterfacesCreated, result.ClientsCreated, len(result.Errors), wipe))
+
 	c.JSON(http.StatusOK, result)
 }
 

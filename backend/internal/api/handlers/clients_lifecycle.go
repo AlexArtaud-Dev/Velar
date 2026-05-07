@@ -68,7 +68,9 @@ func (h *ClientHandler) setEnabled(c *gin.Context, enabled bool) {
 	if enabled {
 		action = "client.enable"
 	}
-	auditLog(c, action, "client", client.ID, client.Name, "")
+	auditLog(c, action, "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s email=%s owner=%s",
+			client.Interface.Name, client.AssignedIP, client.Email, client.OwnerLabel))
 
 	// Notify the client of the status change.
 	if enabled {

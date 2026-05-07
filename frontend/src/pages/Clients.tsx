@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
-import { ArrowLeft, Server, Network } from 'lucide-react'
+import { ArrowLeft, Server, Network, Search, X } from 'lucide-react'
 import { listClients, type Client } from '@/api/clients'
 import { listInterfaces } from '@/api/interfaces'
 import { listInstances, proxyToInstance, type RemoteInstance } from '@/api/instances'
@@ -41,9 +41,31 @@ export default function Clients() {
     stats?.interfaces.flatMap((i) => i.peers ?? []).map((p) => [p.client_id, p]) ?? [],
   )
 
+  // Search + status filter (client-side)
+  const [search, setSearch]             = useState('')
+  const [statusFilter, setStatusFilter] = useState<'all' | 'connected' | 'disabled' | 'expired' | 'suspended'>('all')
+
+  const now = new Date()
+  const filteredClients = clients.filter((c) => {
+    if (statusFilter === 'connected'  && !peerMap.get(c.id)?.connected) return false
+    if (statusFilter === 'disabled'   && (c.enabled || c.quota_suspended)) return false
+    if (statusFilter === 'expired'    && !(c.expires_at && new Date(c.expires_at) < now)) return false
+    if (statusFilter === 'suspended'  && !c.quota_suspended) return false
+    if (search) {
+      const q = search.toLowerCase()
+      if (
+        !c.name.toLowerCase().includes(q) &&
+        !c.assigned_ip.toLowerCase().includes(q) &&
+        !(c.owner_label ?? '').toLowerCase().includes(q) &&
+        !(c.email ?? '').toLowerCase().includes(q)
+      ) return false
+    }
+    return true
+  })
+
   const [selected, setSelected] = useState<Set<number>>(new Set())
-  const toggleSelect  = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
-  const selectAll     = () => setSelected(new Set(clients.map((c) => c.id)))
+  const toggleSelect   = (id: number) => setSelected((prev) => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s })
+  const selectAll      = () => setSelected(new Set(filteredClients.map((c) => c.id)))
   const clearSelection = () => setSelected(new Set())
 
   function invalidateLocal() { qc.invalidateQueries({ queryKey: ['clients'] }) }
@@ -144,13 +166,23 @@ export default function Clients() {
         />
       ) : (
         <>
+          {/* Search & status filter */}
+          {!isLoading && (
+            <ClientFilterBar
+              search={search}
+              onSearchChange={(v) => { setSearch(v); clearSelection() }}
+              statusFilter={statusFilter}
+              onStatusFilterChange={(v) => { setStatusFilter(v); clearSelection() }}
+            />
+          )}
+
           {isLoading ? (
             <div className="p-6 animate-pulse space-y-3">
               {[1, 2, 3].map((i) => <div key={i} className="h-20 bg-muted rounded-lg" />)}
             </div>
           ) : (
             <div className="space-y-3">
-              {clients.map((client) => (
+              {filteredClients.map((client) => (
                 <ClientCard
                   key={client.id}
                   client={client}
@@ -166,18 +198,87 @@ export default function Clients() {
                   <p>No clients yet.</p>
                 </div>
               )}
+              {clients.length > 0 && filteredClients.length === 0 && (
+                <div className="text-center py-12 text-muted-foreground">
+                  <p>No clients match your filters.</p>
+                </div>
+              )}
             </div>
           )}
           {selected.size > 0 && (
             <BulkBar
               selected={selected}
-              totalCount={clients.length}
+              totalCount={filteredClients.length}
               onSelectAll={selectAll}
               onClearSelection={clearSelection}
             />
           )}
         </>
       )}
+    </div>
+  )
+}
+
+// ── Client filter bar ─────────────────────────────────────────────────────────
+
+type StatusFilter = 'all' | 'connected' | 'disabled' | 'expired' | 'suspended'
+
+const STATUS_FILTERS: { label: string; value: StatusFilter }[] = [
+  { label: 'All',       value: 'all' },
+  { label: 'Connected', value: 'connected' },
+  { label: 'Disabled',  value: 'disabled' },
+  { label: 'Expired',   value: 'expired' },
+  { label: 'Suspended', value: 'suspended' },
+]
+
+function ClientFilterBar({
+  search, onSearchChange,
+  statusFilter, onStatusFilterChange,
+}: {
+  search: string
+  onSearchChange: (v: string) => void
+  statusFilter: StatusFilter
+  onStatusFilterChange: (v: StatusFilter) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {/* Text search */}
+      <div className="relative flex-1 min-w-44">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+        <input
+          type="text"
+          placeholder="Search by name, IP, owner…"
+          value={search}
+          onChange={(e) => onSearchChange(e.target.value)}
+          className="w-full pl-8 pr-7 py-1.5 text-xs rounded-lg bg-muted border border-border focus:outline-none focus:ring-1 focus:ring-primary placeholder:text-muted-foreground/60"
+        />
+        {search && (
+          <button
+            onClick={() => onSearchChange('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        )}
+      </div>
+
+      {/* Status pills */}
+      <div className="flex flex-wrap gap-1">
+        {STATUS_FILTERS.map(({ label, value }) => (
+          <button
+            key={value}
+            onClick={() => onStatusFilterChange(value)}
+            className={cn(
+              'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+              statusFilter === value
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-muted text-muted-foreground border-border hover:border-primary hover:text-foreground',
+            )}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }

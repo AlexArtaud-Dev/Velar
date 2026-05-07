@@ -143,7 +143,8 @@ func (h *InterfaceHandler) Create(c *gin.Context) {
 	}
 
 	auditLog(c, "interface.create", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("port=%d subnet=%s", iface.Port, iface.Subnet))
+		fmt.Sprintf("port=%d subnet=%s dns=%s lan_access=%v listen=%s",
+			iface.Port, iface.Subnet, iface.DNSServer, iface.LanAccess, iface.ListenAddress))
 
 	c.JSON(http.StatusCreated, iface)
 }
@@ -296,6 +297,9 @@ func (h *InterfaceHandler) Update(c *gin.Context) {
 			"allowed_ips", newAllowedIPs, "clients", len(allClients))
 	}
 
+	auditLog(c, "interface.update", "interface", iface.ID, iface.Name,
+		fmt.Sprintf("port=%d subnet=%s dns=%s lan_access=%v", iface.Port, iface.Subnet, iface.DNSServer, iface.LanAccess))
+
 	// Notify enabled clients by email when subnet or DNS changes require
 	// re-importing the VPN profile.
 	if subnetChanged || dnsChanged {
@@ -367,7 +371,7 @@ func (h *InterfaceHandler) Delete(c *gin.Context) {
 	}
 
 	auditLog(c, "interface.delete", "interface", iface.ID, iface.Name,
-		fmt.Sprintf("clients_removed=%d", len(clients)))
+		fmt.Sprintf("port=%d subnet=%s clients_removed=%d", iface.Port, iface.Subnet, len(clients)))
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }

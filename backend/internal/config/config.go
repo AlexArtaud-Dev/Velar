@@ -36,8 +36,9 @@ type Config struct {
 	SlaveTokenReset bool
 }
 
-// AppVersion is the current Velar release. Bump this on each release.
-const AppVersion = "1.0.0"
+// AppVersion is the current Velar release.
+// Injected at build time via: -ldflags "-X github.com/AlexArtaud-Dev/velar/backend/internal/config.AppVersion=x.y.z"
+var AppVersion = "dev"
 
 var C Config
 

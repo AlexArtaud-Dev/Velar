@@ -142,12 +142,14 @@ func NewRouter(
 		}
 
 		// Personal Access Tokens
+		tokenRL := middleware.NewRateLimiter(20, time.Minute)
 		api.GET("/tokens", handlers.ListPATs)
-		api.POST("/tokens", handlers.CreatePAT)
+		api.POST("/tokens", tokenRL.Middleware(), handlers.CreatePAT)
 		api.DELETE("/tokens/:id", handlers.DeletePAT)
 
 		// Developer proxy — server-side API tester
-		api.POST("/dev/proxy", handlers.DevProxy)
+		proxyRL := middleware.NewRateLimiter(60, time.Minute)
+		api.POST("/dev/proxy", proxyRL.Middleware(), handlers.DevProxy)
 
 		// Remote instances (slave management)
 		instances := api.Group("/instances")
@@ -156,7 +158,7 @@ func NewRouter(
 			instances.POST("", instanceHandler.Register)
 			instances.DELETE("/:id", instanceHandler.Delete)
 			instances.GET("/:id/ping", instanceHandler.Ping)
-			instances.POST("/:id/proxy", instanceHandler.Proxy)
+			instances.POST("/:id/proxy", proxyRL.Middleware(), instanceHandler.Proxy)
 			instances.POST("/:id/clients/:clientId/send-config", instanceHandler.SendSlaveClientConfig)
 			instances.POST("/:id/clients/notify", instanceHandler.NotifySlaveClient)
 		}

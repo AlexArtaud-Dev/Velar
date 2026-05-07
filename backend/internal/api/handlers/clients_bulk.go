@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/auth"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
@@ -52,6 +54,21 @@ func (h *ClientHandler) BulkEnable(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	ifaceSet := map[string]struct{}{}
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+		ifaceSet[cl.Interface.Name] = struct{}{}
+	}
+	ifaces := make([]string, 0, len(ifaceSet))
+	for k := range ifaceSet {
+		ifaces = append(ifaces, k)
+	}
+	auditLog(c, "client.bulk_enable", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d interfaces=[%s] clients=[%s]",
+			len(clients), strings.Join(ifaces, ","), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
 }
 
@@ -85,6 +102,21 @@ func (h *ClientHandler) BulkDisable(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	ifaceSet2 := map[string]struct{}{}
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+		ifaceSet2[cl.Interface.Name] = struct{}{}
+	}
+	ifaces2 := make([]string, 0, len(ifaceSet2))
+	for k := range ifaceSet2 {
+		ifaces2 = append(ifaces2, k)
+	}
+	auditLog(c, "client.bulk_disable", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d interfaces=[%s] clients=[%s]",
+			len(clients), strings.Join(ifaces2, ","), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"updated": len(clients)})
 }
 
@@ -124,5 +156,20 @@ func (h *ClientHandler) BulkDelete(c *gin.Context) {
 	for _, iface := range ifacesSynced {
 		h.syncConf(iface)
 	}
+
+	names := make([]string, 0, len(clients))
+	ifaceSet3 := map[string]struct{}{}
+	for _, cl := range clients {
+		names = append(names, cl.Name)
+		ifaceSet3[cl.Interface.Name] = struct{}{}
+	}
+	ifaces3 := make([]string, 0, len(ifaceSet3))
+	for k := range ifaceSet3 {
+		ifaces3 = append(ifaces3, k)
+	}
+	auditLog(c, "client.bulk_delete", "client", 0, fmt.Sprintf("%d clients", len(clients)),
+		fmt.Sprintf("count=%d interfaces=[%s] clients=[%s]",
+			len(clients), strings.Join(ifaces3, ","), strings.Join(names, ",")))
+
 	c.JSON(http.StatusOK, gin.H{"deleted": len(clients)})
 }

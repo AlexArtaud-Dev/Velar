@@ -9,7 +9,14 @@
       "Bash(git push *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(gh pr create --title 'feat: per-client bandwidth limiting \\(v0.4\\)' --body ' *)",
+      "Bash(gh pr *)",
+      "Bash(git merge *)",
+      "Bash(gh release create v1.0.0 --title v1.0.0 --target main --notes ' *)",
+      "Bash(go build *)"
     ]
   }
 }

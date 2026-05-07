@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"github.com/AlexArtaud-Dev/velar/backend/internal/config"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/database"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/models"
+	auditsvc "github.com/AlexArtaud-Dev/velar/backend/internal/services/audit"
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/token"
 	"github.com/gin-gonic/gin"
 )
@@ -72,6 +74,8 @@ func Login() gin.HandlerFunc {
 			return
 		}
 
+		auditsvc.Log(admin.ID, "admin.login", "admin", admin.ID, admin.Username, "ip="+c.ClientIP())
+
 		c.SetCookie("refresh_token", rawRefresh, int(auth.RefreshTokenTTL.Seconds()), "/", "", config.C.AppEnv == "production", true)
 		c.JSON(http.StatusOK, gin.H{
 			"access_token": accessToken,
@@ -122,6 +126,8 @@ func Logout() gin.HandlerFunc {
 				Where("token_hash = ?", hash).
 				Update("revoked", true)
 		}
+		auditLog(c, "admin.logout", "admin", adminIDFromCtx(c), c.GetString("username"), "ip="+c.ClientIP())
+
 		c.SetCookie("refresh_token", "", -1, "/", "", false, true)
 		c.JSON(http.StatusOK, gin.H{"message": "logged out"})
 	}
@@ -143,6 +149,8 @@ func TOTPSetup() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "could not save TOTP secret"})
 			return
 		}
+
+		auditLog(c, "admin.totp_setup", "admin", adminID, username, "secret_generated=true status=pending_activation")
 
 		c.JSON(http.StatusOK, setup)
 	}
@@ -171,6 +179,9 @@ func TOTPActivate() gin.HandlerFunc {
 		}
 
 		database.DB.Model(&admin).Update("totp_enabled", true)
+
+		auditLog(c, "admin.totp_enable", "admin", admin.ID, admin.Username, "2fa=enabled code_verified=true")
+
 		c.JSON(http.StatusOK, gin.H{"message": "TOTP activated"})
 	}
 }
@@ -220,6 +231,9 @@ func ChangePassword() gin.HandlerFunc {
 			"password_hash":        hash,
 			"must_change_password": false,
 		})
+
+		auditLog(c, "admin.password_change", "admin", admin.ID, admin.Username, "ip="+c.ClientIP())
+
 		c.JSON(http.StatusOK, gin.H{"message": "password updated"})
 	}
 }
@@ -251,6 +265,9 @@ func TOTPDisable() gin.HandlerFunc {
 			"totp_enabled": false,
 			"totp_secret":  "",
 		})
+
+		auditLog(c, "admin.totp_disable", "admin", admin.ID, admin.Username, "2fa=disabled code_verified=true")
+
 		c.JSON(http.StatusOK, gin.H{"message": "TOTP disabled"})
 	}
 }
@@ -325,6 +342,9 @@ func RestoreDB() gin.HandlerFunc {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "restored but migration failed: " + err.Error()})
 			return
 		}
+
+		auditLog(c, "admin.db_restore", "admin", 0, "database",
+			fmt.Sprintf("file=%s size_bytes=%d ip=%s", file.Filename, file.Size, c.ClientIP()))
 
 		c.JSON(http.StatusOK, gin.H{"message": "database restored successfully"})
 	}

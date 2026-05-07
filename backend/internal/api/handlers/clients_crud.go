@@ -214,8 +214,18 @@ func (h *ClientHandler) Create(c *gin.Context) {
 		}
 	}
 
+	expiryStr := "never"
+	if client.ExpiresAt != nil {
+		expiryStr = client.ExpiresAt.UTC().Format("2006-01-02")
+	}
+	ownerStr := client.OwnerLabel
+	if ownerStr == "" {
+		ownerStr = "—"
+	}
 	auditLog(c, "client.create", "client", client.ID, client.Name,
-		fmt.Sprintf("interface=%s ip=%s", iface.Name, assignedIP))
+		fmt.Sprintf("interface=%s ip=%s email=%s owner=%s bw_down=%dMbps bw_up=%dMbps expires=%s",
+			iface.Name, assignedIP, client.Email, ownerStr,
+			client.BandwidthLimitDown, client.BandwidthLimitUp, expiryStr))
 
 	c.JSON(http.StatusCreated, client)
 }
@@ -346,6 +356,14 @@ func (h *ClientHandler) Update(c *gin.Context) {
 		mailer.HTMLAdminClientUpdated(client.Name, client.AssignedIP, client.Interface.Name),
 	)
 
+	changedKeys := make([]string, 0, len(updates))
+	for k := range updates {
+		changedKeys = append(changedKeys, k)
+	}
+	auditLog(c, "client.update", "client", client.ID, client.Name,
+		fmt.Sprintf("interface=%s ip=%s email=%s changed=[%s]",
+			client.Interface.Name, client.AssignedIP, client.Email, strings.Join(changedKeys, ",")))
+
 	c.JSON(http.StatusOK, client)
 }
 
@@ -395,7 +413,8 @@ func (h *ClientHandler) Delete(c *gin.Context) {
 	h.syncConf(client.Interface)
 
 	auditLog(c, "client.delete", "client", client.ID, client.Name,
-		fmt.Sprintf("interface=%s ip=%s", client.Interface.Name, client.AssignedIP))
+		fmt.Sprintf("interface=%s ip=%s email=%s owner=%s",
+			client.Interface.Name, client.AssignedIP, client.Email, client.OwnerLabel))
 
 	c.JSON(http.StatusOK, gin.H{"message": "deleted"})
 }
