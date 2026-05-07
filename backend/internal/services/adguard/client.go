@@ -248,7 +248,7 @@ func (c *Client) AddDNSRewrite(domain, answer string) error {
 }
 
 func (c *Client) DeleteDNSRewrite(domain, answer string) error {
-	return c.delete("/control/rewrite/delete", DNSRewrite{Domain: domain, Answer: answer})
+	return c.post("/control/rewrite/delete", DNSRewrite{Domain: domain, Answer: answer})
 }
 
 func (c *Client) SetProtection(enabled bool) error {
