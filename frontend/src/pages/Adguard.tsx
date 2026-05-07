@@ -162,8 +162,8 @@ export default function Adguard() {
                 'absolute right-0 top-full mt-1.5 z-50 min-w-[180px]',
                 'rounded-xl border shadow-lg overflow-hidden',
                 isCyber
-                  ? 'bg-[rgba(7,12,23,0.95)] border-[rgba(0,255,255,0.2)] backdrop-blur-md'
-                  : 'bg-popover border-border',
+                  ? 'bg-[rgb(7,12,23)] border-[rgba(0,255,255,0.2)]'
+                  : 'bg-popover border-border shadow-md',
               )}>
                 {/* Master */}
                 <div className={cn(
