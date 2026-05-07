@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  Shield, Server, RefreshCw, Plus, Trash2, AlertTriangle,
+  Shield, Server, ChevronDown, RefreshCw, Plus, Trash2, AlertTriangle,
   Loader2, Check, ToggleLeft, ToggleRight,
 } from 'lucide-react'
 import { listInstances } from '@/api/instances'
@@ -67,39 +67,35 @@ export default function Adguard() {
           </div>
         </div>
 
-        {/* Instance selector — pill buttons */}
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={() => setSource(null)}
+        {/* Instance selector */}
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center">
+            {source === null
+              ? <Shield className="h-3.5 w-3.5 text-muted-foreground" />
+              : <Server className="h-3.5 w-3.5 text-muted-foreground" />}
+          </div>
+          <select
+            value={source === null ? '__master__' : String(source)}
+            onChange={(e) => setSource(e.target.value === '__master__' ? null : Number(e.target.value))}
             className={cn(
-              'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
-              source === null
-                ? isCyber
-                  ? 'bg-[rgba(0,255,255,0.15)] border-[rgba(0,255,255,0.4)] text-[hsl(180,80%,70%)]'
-                  : 'bg-primary border-primary text-primary-foreground'
-                : 'bg-muted border-border text-muted-foreground hover:text-foreground hover:border-primary/40',
+              'h-9 pl-7 pr-8 text-sm rounded-lg border bg-background text-foreground',
+              'focus:outline-none focus:ring-2 focus:ring-primary/50 appearance-none cursor-pointer transition-colors',
+              'hover:border-primary/50',
+              isCyber ? 'border-[rgba(0,255,255,0.2)] hover:border-[rgba(0,255,255,0.5)] focus:ring-[rgba(0,255,255,0.3)]' : 'border-border',
             )}
           >
-            <Shield className="h-3 w-3" />
-            Master
-          </button>
-          {enabledSlaves.map((i) => (
-            <button
-              key={i.id}
-              onClick={() => setSource(i.id)}
-              className={cn(
-                'flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border transition-colors',
-                source === i.id
-                  ? isCyber
-                    ? 'bg-[rgba(0,255,255,0.15)] border-[rgba(0,255,255,0.4)] text-[hsl(180,80%,70%)]'
-                    : 'bg-primary border-primary text-primary-foreground'
-                  : 'bg-muted border-border text-muted-foreground hover:text-foreground hover:border-primary/40',
-              )}
-            >
-              <Server className="h-3 w-3" />
-              {i.name}
-            </button>
-          ))}
+            <option value="__master__">Master</option>
+            {enabledSlaves.length > 0 && (
+              <optgroup label="Slaves">
+                {enabledSlaves.map((i) => (
+                  <option key={i.id} value={i.id}>{i.name}</option>
+                ))}
+              </optgroup>
+            )}
+          </select>
+          <div className="pointer-events-none absolute inset-y-0 right-2.5 flex items-center">
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+          </div>
         </div>
       </div>
 
