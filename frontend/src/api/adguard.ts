@@ -50,6 +50,17 @@ export interface AdguardRewrite {
   answer: string
 }
 
+export interface AdguardServiceInfo {
+  id: string
+  name: string
+  icon_svg: string
+}
+
+export interface AdguardServicesData {
+  services: AdguardServiceInfo[]
+  blocked: string[]
+}
+
 // ── Unified call ──────────────────────────────────────────────────────────────
 
 async function call<T>(
@@ -144,3 +155,9 @@ export const getSafeSearchStatus = (src: AdguardSource) =>
 
 export const setSafeSearch = (src: AdguardSource, settings: SafeSearchSettings) =>
   call<void>(src, 'PUT', '/safesearch', settings)
+
+export const getServices = (src: AdguardSource) =>
+  call<AdguardServicesData>(src, 'GET', '/services')
+
+export const setBlockedServices = (src: AdguardSource, ids: string[]) =>
+  call<void>(src, 'PUT', '/services', { ids })

@@ -87,6 +87,12 @@ type DNSRewrite struct {
 	Answer string `json:"answer"`
 }
 
+type ServiceInfo struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	IconSVG string `json:"icon_svg"`
+}
+
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
@@ -286,4 +292,23 @@ func (c *Client) GetSafeSearchStatus() (*SafeSearchSettings, error) {
 
 func (c *Client) SetSafeSearch(settings SafeSearchSettings) error {
 	return c.put("/control/safesearch/settings", settings)
+}
+
+func (c *Client) GetAllServices() ([]ServiceInfo, error) {
+	var out struct {
+		BlockedServices []ServiceInfo `json:"blocked_services"`
+	}
+	return out.BlockedServices, c.get("/control/blocked_services/all", &out)
+}
+
+func (c *Client) GetBlockedServices() ([]string, error) {
+	var out []string
+	return out, c.get("/control/blocked_services/list", &out)
+}
+
+func (c *Client) SetBlockedServices(ids []string) error {
+	if ids == nil {
+		ids = []string{}
+	}
+	return c.post("/control/blocked_services/set", ids)
 }

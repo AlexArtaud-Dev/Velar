@@ -1,8 +1,8 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Server, ChevronDown, RefreshCw, Plus, Trash2, AlertTriangle,
-  Loader2, Check, ToggleLeft, ToggleRight,
+  Loader2, Check, ToggleLeft, ToggleRight, Search,
 } from 'lucide-react'
 import { listInstances } from '@/api/instances'
 import {
@@ -14,6 +14,7 @@ import {
   getSafeBrowsingStatus, setSafeBrowsing,
   getParentalStatus, setParental,
   getSafeSearchStatus, setSafeSearch,
+  getServices, setBlockedServices,
   type AdguardSource, type SafeSearchSettings,
 } from '@/api/adguard'
 import { Button } from '@/components/ui/button'
@@ -23,14 +24,31 @@ import { Label } from '@/components/ui/label'
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
-type Tab = 'overview' | 'protection' | 'blocklists' | 'rules' | 'rewrites'
+type Tab = 'overview' | 'protection' | 'blocklists' | 'rules' | 'rewrites' | 'services'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',   label: 'Overview'    },
   { id: 'protection', label: 'Protection'  },
+  { id: 'services',   label: 'Services'    },
   { id: 'blocklists', label: 'Blocklists'  },
   { id: 'rules',      label: 'Custom Rules'},
   { id: 'rewrites',   label: 'DNS Rewrites'},
+]
+
+// Hardcoded category → service IDs, mirroring AdGuard Home's own grouping
+const SERVICE_CATEGORIES: { id: string; label: string; ids: string[] }[] = [
+  { id: 'ai', label: 'Artificial Intelligence', ids: ['chatgpt', 'claude', 'copilot', 'deepseek', 'gemini', 'grok', 'mistral', 'meta', 'meta_ai', 'perplexity'] },
+  { id: 'cdn', label: 'CDN', ids: ['cloudflare'] },
+  { id: 'dating', label: 'Dating', ids: ['plenty_of_fish', 'tinder', 'wizz'] },
+  { id: 'gambling', label: 'Gambling', ids: ['betano', 'betfair', 'betway', 'blaze'] },
+  { id: 'gaming', label: 'Video Games', ids: ['activision', 'battle_net', 'blizzard_entertainment', 'ea', 'epic_games', 'gog', 'io_interactive', 'leagueoflegends', 'minecraft', 'nintendo', 'origin', 'playstation', 'riot_games', 'rockstar_games', 'roblox', 'steam', 'ubisoft', 'valorant', 'wargaming', 'warnerbros', 'xbox'] },
+  { id: 'hosting', label: 'Web Hosting', ids: ['box', 'dropbox', 'flickr', 'imgur'] },
+  { id: 'messaging', label: 'Messaging', ids: ['kakaotalk', 'kik', 'max', 'microsoft_teams', 'okru', 'signal', 'skype', 'slack', 'telegram', 'viber', 'wechat', 'whatsapp'] },
+  { id: 'privacy', label: 'Privacy', ids: ['icloud_private_relay', 'privacy', 'proton'] },
+  { id: 'shopping', label: 'Shopping', ids: ['aliexpress', 'amazon', 'coolapk', 'ebay', 'lazada', 'mercadolibre', 'shein', 'shopee', 'temu', 'xiaohongshu'] },
+  { id: 'social', label: 'Social Networks', ids: ['4chan', '500px', '9gag', 'amino', 'bluesky', 'clubhouse', 'discord', 'douban', 'facebook', 'instagram', 'kook', 'line', 'linkedin', 'mailru', 'mastodon', 'odysee', 'onlyfans', 'pinterest', 'reddit', 'snapchat', 'tiktok', 'tumblr', 'vk', 'twitter', 'zhihu'] },
+  { id: 'softdev', label: 'Software Development', ids: ['google_play', 'nvidia'] },
+  { id: 'streaming', label: 'Streaming', ids: ['amazon_music', 'amazon_video', 'apple_music', 'apple_tv', 'bilibili', 'crunchyroll', 'dailymotion', 'deezer', 'directv', 'discovery_plus', 'disney_plus', 'espn', 'hbo', 'hulu', 'iheartradio', 'iqiyi', 'netflix', 'paramount_plus', 'peacock', 'plex', 'pluto_tv', 'soundcloud', 'spotify', 'twitch', 'vimeo', 'youtube'] },
 ]
 
 export default function Adguard() {
@@ -140,6 +158,7 @@ export default function Adguard() {
       <div className={cn(isSynced && 'opacity-50 pointer-events-none select-none')}>
         {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+        {tab === 'services'   && <ServicesTab    source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'rewrites'   && <RewritesTab    source={source} cardClass={cardClass} borderClass={borderClass} />}
@@ -731,6 +750,170 @@ function RewritesTab({ source, cardClass, borderClass }: {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ── Service Blocking ──────────────────────────────────────────────────────────
+
+function ServicesTab({ source, cardClass, isCyber, borderClass }: {
+  source: AdguardSource; cardClass: string; isCyber: boolean; borderClass: string
+}) {
+  const qc = useQueryClient()
+  const qk = ['adguard-services', source]
+  const [search, setSearch] = useState('')
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: qk,
+    queryFn: () => getServices(source),
+    retry: 1,
+  })
+
+  const setMut = useMutation({
+    mutationFn: (ids: string[]) => setBlockedServices(source, ids),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk }),
+  })
+
+  const blocked = useMemo(() => new Set(data?.blocked ?? []), [data?.blocked])
+  const serviceMap = useMemo(() => {
+    const m: Record<string, { name: string; icon_svg: string }> = {}
+    for (const s of data?.services ?? []) m[s.id] = s
+    return m
+  }, [data?.services])
+
+  function toggle(id: string) {
+    const next = new Set(blocked)
+    if (next.has(id)) next.delete(id)
+    else next.add(id)
+    setMut.mutate([...next])
+  }
+
+  // Build categorised list — filter by search
+  const q = search.toLowerCase()
+  const categorised = SERVICE_CATEGORIES.map((cat) => ({
+    ...cat,
+    services: cat.ids
+      .filter((id) => id in serviceMap)
+      .filter((id) => !q || serviceMap[id].name.toLowerCase().includes(q) || id.includes(q)),
+  })).filter((cat) => cat.services.length > 0)
+
+  // Services not in any category
+  const categorisedIds = new Set(SERVICE_CATEGORIES.flatMap((c) => c.ids))
+  const other = (data?.services ?? [])
+    .filter((s) => !categorisedIds.has(s.id))
+    .filter((s) => !q || s.name.toLowerCase().includes(q))
+
+  if (isLoading) return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground py-8">
+      <Loader2 className="h-4 w-4 animate-spin" /> Loading services…
+    </div>
+  )
+  if (isError) return (
+    <p className="text-sm text-destructive flex items-center gap-2 py-8">
+      <AlertTriangle className="h-4 w-4" /> Could not load blocked services
+    </p>
+  )
+
+  return (
+    <div className="space-y-5">
+      {/* Search + stats */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-48">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search services…"
+            className={cn(
+              'w-full h-8 pl-8 pr-3 text-sm rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary',
+              isCyber ? 'border-[rgba(0,255,255,0.2)]' : 'border-border',
+            )}
+          />
+        </div>
+        {blocked.size > 0 && (
+          <span className="text-xs text-muted-foreground">
+            <span className="font-semibold text-foreground">{blocked.size}</span> service{blocked.size !== 1 ? 's' : ''} blocked
+          </span>
+        )}
+      </div>
+
+      {/* Categories */}
+      {categorised.map((cat) => (
+        <div key={cat.id} className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">{cat.label}</h3>
+          <div className={cn('rounded-lg border overflow-hidden divide-y', borderClass)}>
+            {cat.services.map((id) => {
+              const svc = serviceMap[id]
+              const isBlocked = blocked.has(id)
+              return (
+                <ServiceRow
+                  key={id}
+                  id={id}
+                  name={svc.name}
+                  iconSvg={svc.icon_svg}
+                  blocked={isBlocked}
+                  pending={setMut.isPending}
+                  onToggle={() => toggle(id)}
+                  isCyber={isCyber}
+                />
+              )
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Other / uncategorised */}
+      {other.length > 0 && (
+        <div className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Other</h3>
+          <div className={cn('rounded-lg border overflow-hidden divide-y', borderClass)}>
+            {other.map((svc) => (
+              <ServiceRow
+                key={svc.id}
+                id={svc.id}
+                name={svc.name}
+                iconSvg={svc.icon_svg}
+                blocked={blocked.has(svc.id)}
+                pending={setMut.isPending}
+                onToggle={() => toggle(svc.id)}
+                isCyber={isCyber}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {categorised.length === 0 && other.length === 0 && (
+        <p className="text-sm text-muted-foreground py-8 text-center">No services found.</p>
+      )}
+    </div>
+  )
+}
+
+function ServiceRow({ id, name, iconSvg, blocked, pending, onToggle, isCyber }: {
+  id: string; name: string; iconSvg: string; blocked: boolean
+  pending: boolean; onToggle: () => void; isCyber: boolean
+}) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/30 transition-colors">
+      {iconSvg ? (
+        <span
+          className="h-5 w-5 shrink-0 [&_svg]:h-5 [&_svg]:w-5"
+          dangerouslySetInnerHTML={{ __html: iconSvg }}
+        />
+      ) : (
+        <span className="h-5 w-5 shrink-0 rounded bg-muted flex items-center justify-center text-[9px] font-bold text-muted-foreground">
+          {name.charAt(0)}
+        </span>
+      )}
+      <span className="flex-1 text-sm">{name}</span>
+      <button onClick={onToggle} disabled={pending} className="shrink-0">
+        {pending
+          ? <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+          : blocked
+            ? <ToggleRight className={cn('h-6 w-6', isCyber ? 'text-[hsl(180,100%,50%)]' : 'text-destructive')} />
+            : <ToggleLeft className="h-6 w-6 text-muted-foreground" />}
+      </button>
+    </div>
   )
 }
 

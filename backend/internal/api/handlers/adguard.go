@@ -240,3 +240,34 @@ func (h *AdguardHandler) SetSafeSearch(c *gin.Context) {
 	}
 	c.Status(http.StatusNoContent)
 }
+
+func (h *AdguardHandler) GetServices(c *gin.Context) {
+	services, err := h.ag.GetAllServices()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	blocked, _ := h.ag.GetBlockedServices()
+	if blocked == nil {
+		blocked = []string{}
+	}
+	c.JSON(http.StatusOK, gin.H{"services": services, "blocked": blocked})
+}
+
+func (h *AdguardHandler) SetServices(c *gin.Context) {
+	var req struct {
+		IDs []string `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.IDs == nil {
+		req.IDs = []string{}
+	}
+	if err := h.ag.SetBlockedServices(req.IDs); err != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}

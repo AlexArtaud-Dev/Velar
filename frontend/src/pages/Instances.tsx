@@ -5,6 +5,7 @@ import {
   WifiOff, AlertTriangle, Check, Loader2,
   Network, Users, Activity, ChevronRight,
   Pencil, Shield, ToggleLeft, ToggleRight,
+  ExternalLink,
 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
@@ -25,6 +26,7 @@ export default function Instances() {
   const isCyber = theme === 'cyberpunk'
   const isApple = theme === 'apple'
   const [selected, setSelected] = useState<number | null>(null)
+  const [showAdd, setShowAdd] = useState(false)
 
   const { data: instances = [] } = useQuery({
     queryKey: ['instances'],
@@ -33,13 +35,30 @@ export default function Instances() {
 
   const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
 
+  const handleSelectInstance = (id: number) => {
+    setSelected(id)
+    setShowAdd(false)
+  }
+
+  const handleShowAdd = () => {
+    setSelected(null)
+    setShowAdd(true)
+  }
+
+  const handleRegistered = (id: number) => {
+    setSelected(id)
+    setShowAdd(false)
+  }
+
+  const showOverview = selected === null && !showAdd && instances.length > 0
+  const showRegister = showAdd || instances.length === 0
+
   return (
-    <div className="flex" style={{ minHeight: 'calc(100vh - 57px)' }}>
+    <div className="flex h-[calc(100vh-57px)]">
 
       {/* ── Sidebar ── */}
       <aside className={cn(
-        'w-56 shrink-0 border-r flex flex-col sticky top-0 overflow-y-auto',
-        'max-h-[calc(100vh-57px)]',
+        'w-56 shrink-0 border-r flex flex-col overflow-y-auto',
         borderClass,
         isApple && 'apple-glass',
         isCyber && 'bg-[rgba(7,12,23,0.8)]',
@@ -62,7 +81,7 @@ export default function Instances() {
               return (
                 <button
                   key={inst.id}
-                  onClick={() => setSelected(inst.id)}
+                  onClick={() => handleSelectInstance(inst.id)}
                   className={cn(
                     'w-full flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius)] text-sm transition-colors text-left',
                     active
@@ -84,10 +103,10 @@ export default function Instances() {
         <div className={cn('mx-3 my-2 border-t', borderClass)} />
 
         <button
-          onClick={() => setSelected(null)}
+          onClick={handleShowAdd}
           className={cn(
             'mx-2 mb-2 flex items-center gap-2 px-2.5 py-2 rounded-[var(--radius)] text-sm transition-colors text-left',
-            selected === null
+            showAdd
               ? isCyber ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,70%)]' : 'bg-accent text-foreground'
               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
           )}
@@ -99,8 +118,15 @@ export default function Instances() {
 
       {/* ── Main content ── */}
       <main className="flex-1 overflow-y-auto p-6">
-        {selected === null ? (
-          <RegisterForm theme={theme} onRegistered={(id) => setSelected(id)} />
+        {showOverview ? (
+          <InstancesOverview
+            instances={instances}
+            theme={theme}
+            onSelect={handleSelectInstance}
+            onAdd={handleShowAdd}
+          />
+        ) : showRegister ? (
+          <RegisterForm theme={theme} onRegistered={handleRegistered} />
         ) : (() => {
           const inst = instances.find((i) => i.id === selected)
           if (!inst) return (
@@ -111,14 +137,103 @@ export default function Instances() {
           return (
             <InstancePanel
               key={selected}
-              instanceId={selected}
+              instanceId={selected!}
               instance={inst}
               theme={theme}
-              onDelete={() => setSelected(null)}
+              onDelete={() => { setSelected(null); setShowAdd(false) }}
             />
           )
         })()}
       </main>
+    </div>
+  )
+}
+
+// ── Instances overview ────────────────────────────────────────────────────────
+
+function InstancesOverview({
+  instances, theme, onSelect, onAdd,
+}: {
+  instances: RemoteInstance[]
+  theme: string
+  onSelect: (id: number) => void
+  onAdd: () => void
+}) {
+  const isCyber = theme === 'cyberpunk'
+  const isApple = theme === 'apple'
+  const borderClass = isCyber ? 'border-[rgba(0,255,255,0.12)]' : 'border-border'
+
+  return (
+    <div className="space-y-5 max-w-3xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold">Slave Instances</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">
+            {instances.length} instance{instances.length !== 1 ? 's' : ''} registered
+          </p>
+        </div>
+        <Button size="sm" onClick={onAdd}>
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
+          Add instance
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {instances.map((inst) => (
+          <button
+            key={inst.id}
+            onClick={() => onSelect(inst.id)}
+            className={cn(
+              'group text-left rounded-[var(--radius)] border p-4 transition-colors',
+              isApple && 'apple-glass',
+              isCyber
+                ? 'border-[rgba(0,255,255,0.12)] hover:border-[rgba(0,255,255,0.3)] hover:bg-[rgba(0,255,255,0.04)] bg-[rgba(7,12,23,0.6)]'
+                : 'border-border hover:border-primary/50 hover:bg-accent/50 bg-card',
+            )}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className={cn(
+                  'h-8 w-8 rounded-[var(--radius)] flex items-center justify-center shrink-0',
+                  isCyber ? 'bg-[rgba(0,255,255,0.08)]' : 'bg-muted',
+                )}>
+                  <Server className={cn('h-4 w-4', isCyber ? 'text-[hsl(180,80%,60%)]' : 'text-primary')} />
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-sm truncate">{inst.name}</p>
+                  <p className={cn(
+                    'text-[11px] font-mono truncate mt-0.5',
+                    isCyber ? 'text-[hsl(180,55%,50%)]' : 'text-muted-foreground',
+                  )}>
+                    {inst.url}
+                  </p>
+                </div>
+              </div>
+              <ExternalLink className={cn(
+                'h-3.5 w-3.5 shrink-0 mt-0.5 opacity-0 group-hover:opacity-50 transition-opacity',
+                isCyber ? 'text-[hsl(180,80%,60%)]' : 'text-muted-foreground',
+              )} />
+            </div>
+
+            {inst.adguard_enabled && (
+              <div className={cn('mt-3 pt-3 border-t flex items-center gap-2', borderClass)}>
+                <Shield className={cn('h-3 w-3', isCyber ? 'text-[hsl(180,80%,60%)]' : 'text-primary')} />
+                <span className="text-[11px] text-muted-foreground">AdGuard configured</span>
+                {inst.adguard_sync_enabled && (
+                  <span className={cn(
+                    'ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded-full',
+                    isCyber
+                      ? 'bg-[rgba(0,255,255,0.1)] text-[hsl(180,80%,65%)]'
+                      : 'bg-green-500/10 text-green-600 dark:text-green-400',
+                  )}>
+                    Auto-sync on
+                  </span>
+                )}
+              </div>
+            )}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
