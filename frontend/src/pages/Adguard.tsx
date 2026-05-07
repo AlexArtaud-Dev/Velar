@@ -158,7 +158,7 @@ export default function Adguard() {
       <div className={cn(isSynced && 'opacity-50 pointer-events-none select-none')}>
         {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
-        {tab === 'services'   && <ServicesTab    source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+        {tab === 'services'   && <ServicesTab    source={source} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'rewrites'   && <RewritesTab    source={source} cardClass={cardClass} borderClass={borderClass} />}
@@ -755,8 +755,8 @@ function RewritesTab({ source, cardClass, borderClass }: {
 
 // ── Service Blocking ──────────────────────────────────────────────────────────
 
-function ServicesTab({ source, cardClass, isCyber, borderClass }: {
-  source: AdguardSource; cardClass: string; isCyber: boolean; borderClass: string
+function ServicesTab({ source, isCyber, borderClass }: {
+  source: AdguardSource; isCyber: boolean; borderClass: string
 }) {
   const qc = useQueryClient()
   const qk = ['adguard-services', source]
@@ -847,7 +847,6 @@ function ServicesTab({ source, cardClass, isCyber, borderClass }: {
               return (
                 <ServiceRow
                   key={id}
-                  id={id}
                   name={svc.name}
                   iconSvg={svc.icon_svg}
                   blocked={isBlocked}
@@ -869,7 +868,6 @@ function ServicesTab({ source, cardClass, isCyber, borderClass }: {
             {other.map((svc) => (
               <ServiceRow
                 key={svc.id}
-                id={svc.id}
                 name={svc.name}
                 iconSvg={svc.icon_svg}
                 blocked={blocked.has(svc.id)}
@@ -889,8 +887,8 @@ function ServicesTab({ source, cardClass, isCyber, borderClass }: {
   )
 }
 
-function ServiceRow({ id, name, iconSvg, blocked, pending, onToggle, isCyber }: {
-  id: string; name: string; iconSvg: string; blocked: boolean
+function ServiceRow({ name, iconSvg, blocked, pending, onToggle, isCyber }: {
+  name: string; iconSvg: string; blocked: boolean
   pending: boolean; onToggle: () => void; isCyber: boolean
 }) {
   return (
