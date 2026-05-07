@@ -554,14 +554,17 @@ function InstancePanel({
                   {syncNowMut.isSuccess && (
                     <span className="text-[11px] text-green-500">Synced</span>
                   )}
-                  {syncNowMut.isError && (
-                    <span
-                      className="text-[11px] text-destructive cursor-help"
-                      title={(syncNowMut.error as Error)?.message}
-                    >
-                      Failed — {(syncNowMut.error as Error)?.message}
-                    </span>
-                  )}
+                  {syncNowMut.isError && (() => {
+                    const msg =
+                      (syncNowMut.error as any)?.response?.data?.error ??
+                      (syncNowMut.error as Error)?.message ??
+                      'Unknown error'
+                    return (
+                      <span className="text-[11px] text-destructive max-w-xs text-right">
+                        {msg}
+                      </span>
+                    )
+                  })()}
                   <Button
                     size="sm" variant="outline"
                     disabled={syncNowMut.isPending}
