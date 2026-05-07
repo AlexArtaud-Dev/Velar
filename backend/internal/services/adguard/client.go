@@ -285,5 +285,5 @@ func (c *Client) GetSafeSearchStatus() (*SafeSearchSettings, error) {
 }
 
 func (c *Client) SetSafeSearch(settings SafeSearchSettings) error {
-	return c.post("/control/safesearch/settings", settings)
+	return c.put("/control/safesearch/settings", settings)
 }
