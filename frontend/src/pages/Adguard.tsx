@@ -100,7 +100,7 @@ export default function Adguard() {
       {tab === 'overview'   && <OverviewTab   source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
       {tab === 'blocklists' && <BlocklistsTab source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
       {tab === 'rules'      && <RulesTab      source={source} cardClass={cardClass} isCyber={isCyber} />}
-      {tab === 'rewrites'   && <RewritesTab   source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+      {tab === 'rewrites'   && <RewritesTab   source={source} cardClass={cardClass} borderClass={borderClass} />}
     </div>
   )
 }
@@ -416,8 +416,8 @@ function RulesTab({ source, cardClass, isCyber }: {
 
 // ── DNS Rewrites ──────────────────────────────────────────────────────────────
 
-function RewritesTab({ source, cardClass, isCyber, borderClass }: {
-  source: AdguardSource; cardClass: string; isCyber: boolean; borderClass: string
+function RewritesTab({ source, cardClass, borderClass }: {
+  source: AdguardSource; cardClass: string; borderClass: string
 }) {
   const qc = useQueryClient()
   const qk = ['adguard-rewrites', source]
