@@ -225,7 +225,10 @@ export function DownloadLinkButton({ clientId, open, onOpenChange, instanceId, i
     mutationFn: instanceId
       ? () => proxyToInstance(instanceId, 'POST', `/api/v1/clients/${clientId}/download-link`).then((r) => JSON.parse(r.body) as { token: string; url: string })
       : () => createDownloadLink(clientId),
-    onSuccess: (data) => setUrl(instanceId && instanceUrl ? `${instanceUrl}${data.url}` : `${window.location.origin}${data.url}`),
+    onSuccess: (data) => {
+      const path = instanceId ? `/dl/s/${instanceId}/${data.token}` : data.url
+      setUrl(`${window.location.origin}${path}`)
+    },
   })
 
   useEffect(() => {
