@@ -36,6 +36,27 @@ Velar auto-detects the default interface for NAT rules via `ip route show defaul
 
 ---
 
+## Clients reach the LAN but not the internet — DNS_PROBE_FINISHED_BAD_CONFIG
+
+**Symptom:** VPN clients can ping LAN hosts, but browsers show `DNS_PROBE_FINISHED_BAD_CONFIG`. On the host, `dig @10.0.0.1 google.com` returns `SERVFAIL` while `dig @1.1.1.1 google.com` works. AdGuard logs loop on:
+
+```
+dnsproxy: exchange failed upstream=https://dns10.quad9.net:443/dns-query ... no addresses
+```
+
+**Cause:** AdGuard Home ships with Quad9 as its upstream (`https://dns10.quad9.net/dns-query`) and bootstrap (`9.9.9.10`, `149.112.112.10`). Since 24/11/2026 Quad9 no longer answers queries from France, so every instance still on the defaults stops resolving at once.
+
+**Fix:**
+1. Go to **AdGuard → Upstream DNS** with the affected source selected (Master or a slave)
+2. Click **Edit**, pick a preset (e.g. **Cloudflare**), click **Test** and check every server shows a green check
+3. Click **Save**
+4. Repeat for each slave, or let **auto-sync** push the master's upstream config to slaves
+5. Verify: `dig @10.0.0.1 google.com +short`
+
+**Rule:** bootstrap servers must be **IP addresses** of a provider reachable from your location. A hostname in the bootstrap list cannot be resolved and reproduces the `no addresses` error — Velar rejects it on save.
+
+---
+
 ## Data quota not blocking traffic
 
 - Verify nftables rules are installed: `docker exec velar-api nft list table ip velar_quota`

@@ -1,7 +1,12 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/AlexArtaud-Dev/velar/backend/internal/services/adguard"
 	"github.com/gin-gonic/gin"
@@ -270,4 +275,103 @@ func (h *AdguardHandler) SetServices(c *gin.Context) {
 		return
 	}
 	c.Status(http.StatusNoContent)
+}
+
+// ── Upstream DNS ──────────────────────────────────────────────────────────────
+
+var validUpstreamModes = map[string]bool{
+	"":             true,
+	"load_balance": true,
+	"parallel":     true,
+	"fastest_addr": true,
+}
+
+// cleanDNSList trims entries and drops blank lines and # comments.
+func cleanDNSList(in []string) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		s = strings.TrimSpace(s)
+		if s == "" || strings.HasPrefix(s, "#") {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
+}
+
+// isIPAddr accepts "1.1.1.1", "1.1.1.1:53", "2606:4700::1111" and "[2606:4700::1111]:53".
+func isIPAddr(s string) bool {
+	if host, _, err := net.SplitHostPort(s); err == nil {
+		s = host
+	}
+	s = strings.TrimSuffix(strings.TrimPrefix(s, "["), "]")
+	return net.ParseIP(s) != nil
+}
+
+// validateDNSConfig cleans the lists in place and rejects configs AdGuard
+// cannot use. Bootstrap servers must be IPs: a hostname there cannot be
+// resolved and makes every encrypted upstream fail with "no addresses".
+func validateDNSConfig(cfg *adguard.DNSConfig) error {
+	cfg.UpstreamDNS = cleanDNSList(cfg.UpstreamDNS)
+	cfg.BootstrapDNS = cleanDNSList(cfg.BootstrapDNS)
+	cfg.FallbackDNS = cleanDNSList(cfg.FallbackDNS)
+
+	if len(cfg.UpstreamDNS) == 0 {
+		return errors.New("at least one upstream DNS server is required")
+	}
+	if !validUpstreamModes[cfg.UpstreamMode] {
+		return fmt.Errorf("invalid upstream_mode %q (expected load_balance, parallel or fastest_addr)", cfg.UpstreamMode)
+	}
+	for _, b := range cfg.BootstrapDNS {
+		if !isIPAddr(b) {
+			return fmt.Errorf("bootstrap DNS %q must be an IP address (optionally with port)", b)
+		}
+	}
+	return nil
+}
+
+func (h *AdguardHandler) GetDNSConfig(c *gin.Context) {
+	cfg, err := h.ag.GetDNSConfig()
+	if err != nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, cfg)
+}
+
+func (h *AdguardHandler) SetDNSConfig(c *gin.Context) {
+	var req adguard.DNSConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateDNSConfig(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := h.ag.SetDNSConfig(req); err != nil {
+		slog.Warn("adguard: set dns config", "err", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+func (h *AdguardHandler) TestUpstreams(c *gin.Context) {
+	var req adguard.DNSConfig
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := validateDNSConfig(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	results, err := h.ag.TestUpstreams(req)
+	if err != nil {
+		slog.Warn("adguard: test upstreams", "err", err)
+		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"results": results})
 }

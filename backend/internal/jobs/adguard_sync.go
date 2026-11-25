@@ -105,6 +105,16 @@ func syncAdguardToInstance(inst models.RemoteInstance, ag *adguard.Client) error
 		slog.Warn("adguard sync: blocked services", "instance", inst.Name, "err", err)
 	}
 
+	// Upstream / bootstrap / fallback DNS — never push an empty upstream list,
+	// it would leave the slave unable to resolve anything.
+	if dnsCfg, err := ag.GetDNSConfig(); err != nil {
+		slog.Warn("adguard sync: get dns config", "instance", inst.Name, "err", err)
+	} else if len(dnsCfg.UpstreamDNS) == 0 {
+		slog.Warn("adguard sync: master has no upstream DNS, skipping", "instance", inst.Name)
+	} else if err := slavePut(hc, base+"/dns", token, dnsCfg); err != nil {
+		slog.Warn("adguard sync: dns config", "instance", inst.Name, "err", err)
+	}
+
 	// DNS rewrites — diff master vs slave, add missing, remove extra
 	if masterRewrites, err := ag.GetDNSRewrites(); err != nil {
 		slog.Warn("adguard sync: get dns rewrites", "instance", inst.Name, "err", err)
