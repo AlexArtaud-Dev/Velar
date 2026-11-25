@@ -149,6 +149,9 @@ func NewRouter(
 			agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
 			agGroup.GET("/services", agHandler.GetServices)
 			agGroup.PUT("/services", agHandler.SetServices)
+			agGroup.GET("/dns", agHandler.GetDNSConfig)
+			agGroup.PUT("/dns", agHandler.SetDNSConfig)
+			agGroup.POST("/dns/test", agHandler.TestUpstreams)
 		}
 
 		adminHandler := handlers.NewAdminHandler(wg)
@@ -290,6 +293,9 @@ func buildSlaveRoutes(
 		agGroup.PUT("/safesearch", agHandler.SetSafeSearch)
 		agGroup.GET("/services", agHandler.GetServices)
 		agGroup.PUT("/services", agHandler.SetServices)
+		agGroup.GET("/dns", agHandler.GetDNSConfig)
+		agGroup.PUT("/dns", agHandler.SetDNSConfig)
+		agGroup.POST("/dns/test", agHandler.TestUpstreams)
 	}
 
 	slave.GET("/metrics", handlers.GetMetrics)

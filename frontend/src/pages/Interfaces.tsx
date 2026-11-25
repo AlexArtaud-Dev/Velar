@@ -22,7 +22,7 @@ import { cn } from '@/lib/utils'
 const DNS_PRESETS = [
   { label: 'Cloudflare', value: '1.1.1.1' },
   { label: 'Google', value: '8.8.8.8' },
-  { label: 'Quad9', value: '9.9.9.9' },
+  { label: 'Mullvad', value: '194.242.2.2' },
 ]
 
 function serverIPFromSubnet(subnet: string): string {

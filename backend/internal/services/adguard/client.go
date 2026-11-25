@@ -93,6 +93,19 @@ type ServiceInfo struct {
 	IconSVG string `json:"icon_svg"`
 }
 
+// DNSConfig is the subset of AdGuard's DNS settings Velar manages: where
+// queries are forwarded (upstream), how encrypted upstream hostnames are
+// resolved (bootstrap) and what is used when every upstream fails (fallback).
+type DNSConfig struct {
+	UpstreamDNS  []string `json:"upstream_dns"`
+	BootstrapDNS []string `json:"bootstrap_dns"`
+	FallbackDNS  []string `json:"fallback_dns"`
+	UpstreamMode string   `json:"upstream_mode,omitempty"` // "load_balance" | "parallel" | "fastest_addr"
+}
+
+// UpstreamTestResult maps each tested server to "OK" or an error message.
+type UpstreamTestResult map[string]string
+
 
 // ── Client ────────────────────────────────────────────────────────────────────
 
@@ -311,4 +324,71 @@ func (c *Client) SetBlockedServices(ids []string) error {
 		ids = []string{}
 	}
 	return c.post("/control/blocked_services/set", ids)
+}
+
+// GetDNSConfig reads the upstream/bootstrap/fallback servers and upstream mode.
+// Only these fields are decoded from /control/dns_info.
+func (c *Client) GetDNSConfig() (*DNSConfig, error) {
+	var cfg DNSConfig
+	if err := c.get("/control/dns_info", &cfg); err != nil {
+		return nil, err
+	}
+	cfg.normalize()
+	return &cfg, nil
+}
+
+// SetDNSConfig updates only the managed DNS fields. AdGuard applies partial
+// updates on /control/dns_config, so every other DNS setting is left untouched.
+func (c *Client) SetDNSConfig(cfg DNSConfig) error {
+	cfg.normalize()
+	return c.post("/control/dns_config", cfg)
+}
+
+// TestUpstreams asks AdGuard to resolve a probe through each given server.
+// It uses a longer timeout than other calls: an unreachable server only fails
+// after AdGuard's own upstream timeout.
+func (c *Client) TestUpstreams(cfg DNSConfig) (UpstreamTestResult, error) {
+	cfg.normalize()
+	b, err := json.Marshal(map[string][]string{
+		"upstream_dns":  cfg.UpstreamDNS,
+		"bootstrap_dns": cfg.BootstrapDNS,
+		"fallback_dns":  cfg.FallbackDNS,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+"/control/test_upstream_dns", bytes.NewReader(b))
+	if err != nil {
+		return nil, err
+	}
+	req.SetBasicAuth(c.username, c.password)
+	req.Header.Set("Content-Type", "application/json")
+	hc := &http.Client{Timeout: 30 * time.Second}
+	resp, err := hc.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("adguard unreachable: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("adguard returned %d: %s", resp.StatusCode, string(body))
+	}
+	out := UpstreamTestResult{}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// normalize replaces nil slices with empty ones so they serialize as [] not null.
+func (cfg *DNSConfig) normalize() {
+	if cfg.UpstreamDNS == nil {
+		cfg.UpstreamDNS = []string{}
+	}
+	if cfg.BootstrapDNS == nil {
+		cfg.BootstrapDNS = []string{}
+	}
+	if cfg.FallbackDNS == nil {
+		cfg.FallbackDNS = []string{}
+	}
 }

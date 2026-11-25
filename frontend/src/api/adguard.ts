@@ -161,3 +161,23 @@ export const getServices = (src: AdguardSource) =>
 
 export const setBlockedServices = (src: AdguardSource, ids: string[]) =>
   call<void>(src, 'PUT', '/services', { ids })
+
+// ── Upstream DNS ──────────────────────────────────────────────────────────────
+
+export type UpstreamMode = 'load_balance' | 'parallel' | 'fastest_addr'
+
+export interface AdguardDNSConfig {
+  upstream_dns: string[]
+  bootstrap_dns: string[]
+  fallback_dns: string[]
+  upstream_mode?: UpstreamMode | ''
+}
+
+export const getDNSConfig = (src: AdguardSource) =>
+  call<AdguardDNSConfig>(src, 'GET', '/dns')
+
+export const setDNSConfig = (src: AdguardSource, cfg: AdguardDNSConfig) =>
+  call<void>(src, 'PUT', '/dns', cfg)
+
+export const testUpstreams = (src: AdguardSource, cfg: AdguardDNSConfig) =>
+  call<{ results: Record<string, string> }>(src, 'POST', '/dns/test', cfg)

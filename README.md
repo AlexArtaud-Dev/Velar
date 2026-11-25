@@ -84,11 +84,12 @@ Manage AdGuard Home directly from Velar, for both master and all federated slave
 - **Protection toggles** — Safe Browsing, Parental Control, per-engine Safe Search
 - **Service blocking** — browse all services grouped by category (Social, Streaming, Gaming, AI, …), toggle individually or **Block all / Unblock all** per category
 - **Pull from AdGuard** — re-sync the Velar UI with the live AdGuard state at any time
-- **AdGuard federation** — enable AdGuard per slave and optionally turn on **auto-sync** to push master's config to slaves every 5 minutes (filters, rules, rewrites, services, protection settings)
+- **AdGuard federation** — enable AdGuard per slave and optionally turn on **auto-sync** to push master's config to slaves every 5 minutes (filters, rules, rewrites, services, protection settings, upstream DNS)
 - **Dashboard aggregate** — see total DNS queries, blocked requests, and per-instance block rate at a glance on the dashboard
 
 ### 🌐 DNS & Network
-- DNS preset selector — Cloudflare, Google, Quad9, or your own
+- DNS preset selector — Cloudflare, Google, Mullvad, or your own
+- **AdGuard upstream DNS** — view and edit upstream, bootstrap and fallback servers per instance, with Cloudflare / Mullvad / Google presets, a live **Test** of every server, and auto-sync to slaves
 - **DDNS support** — auto-tracks your public IP
 - Per-interface **connectivity checker** — verifies the interface is UP and the UDP port is bound
 

@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   Shield, Server, ChevronDown, RefreshCw, Plus, Trash2, AlertTriangle,
-  Loader2, Check, ToggleLeft, ToggleRight, Search,
+  Loader2, Check, ToggleLeft, ToggleRight, Search, Zap,
 } from 'lucide-react'
 import { listInstances } from '@/api/instances'
 import {
@@ -15,7 +15,9 @@ import {
   getParentalStatus, setParental,
   getSafeSearchStatus, setSafeSearch,
   getServices, setBlockedServices,
+  getDNSConfig, setDNSConfig, testUpstreams,
   type AdguardSource, type SafeSearchSettings,
+  type AdguardDNSConfig, type UpstreamMode,
 } from '@/api/adguard'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -32,11 +34,12 @@ import {
 import { cn } from '@/lib/utils'
 import { useThemeStore } from '@/stores/theme'
 
-type Tab = 'overview' | 'protection' | 'blocklists' | 'rules' | 'rewrites' | 'services'
+type Tab = 'overview' | 'protection' | 'upstream' | 'blocklists' | 'rules' | 'rewrites' | 'services'
 
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview',   label: 'Overview'    },
   { id: 'protection', label: 'Protection'  },
+  { id: 'upstream',   label: 'Upstream DNS'},
   { id: 'services',   label: 'Services'    },
   { id: 'blocklists', label: 'Blocklists'  },
   { id: 'rules',      label: 'Custom Rules'},
@@ -228,6 +231,7 @@ export default function Adguard() {
       <div className={cn(isSynced && 'opacity-50 pointer-events-none select-none')}>
         {tab === 'overview'   && <OverviewTab    source={source} sourceName={sourceName} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'protection' && <ProtectionTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
+        {tab === 'upstream'   && <UpstreamTab    source={source} cardClass={cardClass} isCyber={isCyber} />}
         {tab === 'services'   && <ServicesTab    source={source} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'blocklists' && <BlocklistsTab  source={source} cardClass={cardClass} isCyber={isCyber} borderClass={borderClass} />}
         {tab === 'rules'      && <RulesTab       source={source} cardClass={cardClass} isCyber={isCyber} />}
@@ -715,6 +719,285 @@ function RulesTab({ source, cardClass, isCyber }: {
         )}
       </CardContent>
     </Card>
+  )
+}
+
+// ── Upstream DNS ──────────────────────────────────────────────────────────────
+
+const UPSTREAM_MODES: { id: UpstreamMode; label: string; description: string }[] = [
+  { id: 'load_balance', label: 'Load balance', description: 'Queries one upstream at a time, weighted towards the fastest ones.' },
+  { id: 'parallel',     label: 'Parallel',     description: 'Queries all upstreams at once and uses the first answer — most resilient.' },
+  { id: 'fastest_addr', label: 'Fastest IP',   description: 'Queries all upstreams and returns the IP that answers fastest — slower lookups.' },
+]
+
+const UPSTREAM_PRESETS: { label: string; cfg: AdguardDNSConfig }[] = [
+  {
+    label: 'Cloudflare',
+    cfg: {
+      upstream_dns:  ['https://cloudflare-dns.com/dns-query', 'tls://one.one.one.one'],
+      bootstrap_dns: ['1.1.1.1', '1.0.0.1', '2606:4700:4700::1111'],
+      fallback_dns:  ['1.1.1.1', '1.0.0.1'],
+      upstream_mode: 'parallel',
+    },
+  },
+  {
+    label: 'Mullvad',
+    cfg: {
+      upstream_dns:  ['https://dns.mullvad.net/dns-query', 'tls://dns.mullvad.net'],
+      bootstrap_dns: ['194.242.2.2', '1.1.1.1'],
+      fallback_dns:  ['194.242.2.2', '1.1.1.1'],
+      upstream_mode: 'parallel',
+    },
+  },
+  {
+    label: 'Google',
+    cfg: {
+      upstream_dns:  ['https://dns.google/dns-query', 'tls://dns.google'],
+      bootstrap_dns: ['8.8.8.8', '8.8.4.4'],
+      fallback_dns:  ['8.8.8.8', '8.8.4.4'],
+      upstream_mode: 'parallel',
+    },
+  },
+]
+
+const UPSTREAM_LISTS: { key: 'upstream_dns' | 'bootstrap_dns' | 'fallback_dns'; title: string; help: string }[] = [
+  { key: 'upstream_dns',  title: 'Upstream servers',  help: 'Plain IP, tls://, https:// or quic:// servers, one per line.' },
+  { key: 'bootstrap_dns', title: 'Bootstrap servers', help: 'IP addresses only — used to resolve the hostnames of encrypted upstreams.' },
+  { key: 'fallback_dns',  title: 'Fallback servers',  help: 'Used when every upstream server fails.' },
+]
+
+interface UpstreamDraft {
+  upstream_dns: string
+  bootstrap_dns: string
+  fallback_dns: string
+  upstream_mode: UpstreamMode | ''
+}
+
+const toDraft = (cfg: AdguardDNSConfig): UpstreamDraft => ({
+  upstream_dns:  cfg.upstream_dns.join('\n'),
+  bootstrap_dns: cfg.bootstrap_dns.join('\n'),
+  fallback_dns:  cfg.fallback_dns.join('\n'),
+  upstream_mode: cfg.upstream_mode ?? '',
+})
+
+const splitLines = (s: string) => s.split('\n').map((l) => l.trim()).filter(Boolean)
+
+const fromDraft = (d: UpstreamDraft): AdguardDNSConfig => ({
+  upstream_dns:  splitLines(d.upstream_dns),
+  bootstrap_dns: splitLines(d.bootstrap_dns),
+  fallback_dns:  splitLines(d.fallback_dns),
+  upstream_mode: d.upstream_mode || undefined,
+})
+
+const apiError = (e: unknown) =>
+  (e as { response?: { data?: { error?: string } } })?.response?.data?.error
+  ?? (e as Error)?.message
+  ?? 'Error'
+
+function UpstreamTab({ source, cardClass, isCyber }: {
+  source: AdguardSource; cardClass: string; isCyber: boolean
+}) {
+  const qc = useQueryClient()
+  const qk = ['adguard-dns', source]
+
+  const { data, isLoading, isError, error } = useQuery({
+    queryKey: qk,
+    queryFn: () => getDNSConfig(source),
+    retry: 1,
+  })
+
+  const [draft, setDraft] = useState<UpstreamDraft | null>(null)
+  const editing = draft !== null
+
+  const saveMut = useMutation({
+    mutationFn: (cfg: AdguardDNSConfig) => setDNSConfig(source, cfg),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: qk })
+      setDraft(null)
+    },
+  })
+
+  const testMut = useMutation({
+    mutationFn: (cfg: AdguardDNSConfig) => testUpstreams(source, cfg),
+  })
+
+  function startEdit() {
+    if (!data) return
+    saveMut.reset()
+    setDraft(toDraft(data))
+  }
+
+  function cancelEdit() {
+    saveMut.reset()
+    setDraft(null)
+  }
+
+  function runTest() {
+    const cfg = draft ? fromDraft(draft) : data
+    if (cfg) testMut.mutate(cfg)
+  }
+
+  const textareaClass = cn(
+    'w-full rounded-lg border text-xs font-mono p-3 resize-y bg-muted/50 focus:outline-none focus:ring-1 focus:ring-primary',
+    isCyber ? 'border-[rgba(0,255,255,0.2)]' : 'border-border',
+  )
+  const preClass = cn(
+    'text-xs font-mono p-3 rounded-lg border overflow-x-auto leading-relaxed',
+    isCyber ? 'bg-[rgba(0,255,255,0.04)] border-[rgba(0,255,255,0.12)] text-[hsl(180,60%,75%)]' : 'bg-muted border-border',
+  )
+  const currentMode = editing ? draft.upstream_mode : (data?.upstream_mode ?? '')
+  const currentModeInfo = UPSTREAM_MODES.find((m) => m.id === currentMode)
+
+  return (
+    <div className="space-y-4">
+      <Card className={cardClass}>
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="text-sm">Upstream DNS</CardTitle>
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={testMut.isPending || (!editing && !data)}
+                onClick={runTest}
+              >
+                {testMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                <span className="ml-1.5">Test</span>
+              </Button>
+              {!editing ? (
+                <Button size="sm" variant="outline" disabled={!data} onClick={startEdit}>
+                  Edit
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    size="sm"
+                    disabled={saveMut.isPending}
+                    onClick={() => saveMut.mutate(fromDraft(draft))}
+                  >
+                    {saveMut.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                    <span className="ml-1.5">Save</span>
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={cancelEdit}>Cancel</Button>
+                </>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {isLoading ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+            </div>
+          ) : isError && !editing ? (
+            <p className="text-xs text-destructive flex items-center gap-1.5">
+              <AlertTriangle className="h-3.5 w-3.5 shrink-0" /> {apiError(error)}
+            </p>
+          ) : (
+            <>
+              {editing && (
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Presets</Label>
+                  <div className="flex flex-wrap gap-2">
+                    {UPSTREAM_PRESETS.map((p) => (
+                      <Button
+                        key={p.label}
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs"
+                        onClick={() => setDraft(toDraft(p.cfg))}
+                      >
+                        {p.label}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {UPSTREAM_LISTS.map((l) => {
+                const values = data?.[l.key] ?? []
+                return (
+                  <div key={l.key} className="space-y-1.5">
+                    <div>
+                      <p className="text-xs font-medium">{l.title}</p>
+                      <p className="text-[11px] text-muted-foreground">{l.help}</p>
+                    </div>
+                    {editing ? (
+                      <textarea
+                        value={draft[l.key]}
+                        onChange={(e) => setDraft({ ...draft, [l.key]: e.target.value })}
+                        rows={l.key === 'upstream_dns' ? 5 : 3}
+                        className={textareaClass}
+                        spellCheck={false}
+                      />
+                    ) : values.length === 0 ? (
+                      <p className="text-xs text-muted-foreground italic">None configured.</p>
+                    ) : (
+                      <pre className={preClass}>{values.join('\n')}</pre>
+                    )}
+                  </div>
+                )
+              })}
+
+              <div className="space-y-1.5">
+                <p className="text-xs font-medium">Upstream mode</p>
+                {editing ? (
+                  <div className="flex flex-wrap gap-2">
+                    {UPSTREAM_MODES.map((m) => (
+                      <Button
+                        key={m.id}
+                        size="sm"
+                        variant={draft.upstream_mode === m.id ? 'default' : 'outline'}
+                        className="h-7 text-xs"
+                        onClick={() => setDraft({ ...draft, upstream_mode: m.id })}
+                      >
+                        {m.label}
+                      </Button>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-xs font-mono">{currentModeInfo?.label ?? (currentMode || 'default')}</p>
+                )}
+                {currentModeInfo && (
+                  <p className="text-[11px] text-muted-foreground">{currentModeInfo.description}</p>
+                )}
+              </div>
+
+              {saveMut.isError && (
+                <p className="text-xs text-destructive">{apiError(saveMut.error)}</p>
+              )}
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {(testMut.data || testMut.isError) && (
+        <Card className={cardClass}>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Test results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {testMut.isError ? (
+              <p className="text-xs text-destructive">{apiError(testMut.error)}</p>
+            ) : (
+              <ul className="space-y-1.5">
+                {Object.entries(testMut.data?.results ?? {}).map(([server, result]) => (
+                  <li key={server} className="flex items-start gap-2 text-xs">
+                    {result === 'OK' ? (
+                      <Check className={cn('h-3.5 w-3.5 shrink-0 mt-0.5', isCyber ? 'text-[hsl(150,100%,50%)]' : 'text-green-500')} />
+                    ) : (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-destructive" />
+                    )}
+                    <span className="font-mono break-all">{server}</span>
+                    {result !== 'OK' && <span className="text-destructive break-all">— {result}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
   )
 }
 
